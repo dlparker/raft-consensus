@@ -38,7 +38,7 @@ if __name__=="__main__":
     parser = create_parser()
     args = parser.parse_args()
     try:
-        run_client(args.ip_addr, args.port)
+        run_client(args.ip_addr, int(args.port))
     except KeyboardInterrupt:
         print('\nClient terminated')
         pass

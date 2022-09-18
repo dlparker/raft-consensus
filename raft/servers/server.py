@@ -20,9 +20,9 @@ class Server(object):
         self._queue = asyncio.Queue()
         self._sock = socket(AF_INET, SOCK_DGRAM)
         self._sock.bind(self.endpoint)
-        self._nei_portnum = []
+        self._others_ports = []
         for port in self.other_nodes:
-            self._nei_portnum.append(port[1])
+            self._others_ports.append(port[1])
 
         self.client_port = None
         self._total_nodes = len(self.other_nodes) + 1
@@ -68,10 +68,10 @@ class Server(object):
 
     def on_message(self, data, addr):
         addr = addr[1]
-        if (addr not in self._nei_portnum) and (len(self.other_nodes) != 0):
+        if (addr not in self._others_ports) and (len(self.other_nodes) != 0):
             command = data.decode('utf8')
             self._state.on_client_command(command, addr)
-        elif addr in self._nei_portnum:
+        elif addr in self._others_ports:
             try:
                 message = Serializer.deserialize(data)
                 message._receiver = message.receiver[0], message.receiver[1]
