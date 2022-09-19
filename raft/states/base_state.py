@@ -21,7 +21,6 @@ class State(object):
         elif (message.term < self._server._currentTerm):
             self._send_response_message(message, votedYes=False)
             return self, None
-
         if (_type == BaseMessage.AppendEntries):
             return self.on_append_entries(message)
         elif (_type == BaseMessage.RequestVote):

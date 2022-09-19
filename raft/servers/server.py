@@ -1,6 +1,4 @@
-
 from socket import *
-
 import copy
 import asyncio
 import threading
@@ -81,9 +79,13 @@ class Server(object):
                 message._receiver = message.receiver[0], message.receiver[1]
                 message._sender = message.sender[0], message.sender[1]
                 logger.debug("message %s", message)
-                state, response = self._state.on_message(message)
-                self._state = state
-
+                state_res = self._state.on_message(message)
+                if state_res is None:
+                    logger.error("State %s cannot handle message %s",
+                                 self._state, message)
+                else:
+                    state, response = state_res
+                    self._state = state
             except KeyError:
                 message = Serializer.deserialize_client(data)
                 self._state.on_client_command(message['command'], message['client_port'])
@@ -118,10 +120,14 @@ class UDP_Protocol(asyncio.DatagramProtocol):
                     logger.debug('Returning client request')
                     self._server._sock.sendto(data, addr)
                 except KeyError as e:
-                    logger.info("Redirecting client request on %s %s", e, message)
-                    data = Serializer.serialize_client(message['command'], message['client_port'])
-                    addr = self._server._state._leaderPort
-                    self.transport.sendto(data, (addr[0], addr[1]))
+                    if self._server._state._leaderPort is None:
+                        logger.error("cannot handle client request, no leader exists")
+                    else:
+                        logger.info("Redirecting client request on %s %s", e, message)
+                        data = Serializer.serialize_client(message['command'],
+                                                           message['client_port'])
+                        addr = self._server._state._leaderPort
+                        self.transport.sendto(data, (addr[0], addr[1]))
 
     def connection_made(self, transport):
         self.transport = transport

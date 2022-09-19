@@ -30,7 +30,7 @@ class UDPBankTellerServer:
         self._others = others
 
     async def _run(self):
-        state = raft.state_follower()
+        state = raft.state_follower(vote_at_start=True)
         data_log = []
         dummy_index = {
             'term': None,

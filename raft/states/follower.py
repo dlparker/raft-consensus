@@ -9,17 +9,22 @@ import asyncio
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
 
-    def __init__(self, timeout=0.75):
+    def __init__(self, timeout=0.75, vote_at_start=False):
         Voter.__init__(self)
         self._timeout = timeout
+        self._leaderPort = None
+        self._vote_at_start = vote_at_start
 
     def __str__(self):
         return "follower"
     
     def set_server(self, server):
         self._server = server
-        self.election_timer = Timer(self.election_interval(), self._start_election)
+        interval = self.election_interval()
+        self.election_timer = Timer(interval, self._start_election)
         self.election_timer.start()
+        if self._vote_at_start:
+            asyncio.get_event_loop().call_soon(self._start_election)
 
     def election_interval(self):
         return random.uniform(self._timeout, 2 * self._timeout)

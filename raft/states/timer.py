@@ -7,7 +7,6 @@ class Timer:
         self._interval = interval
         self._callback = callback
         self._loop = asyncio.get_event_loop()
-
         self._active = False
 
     def start(self):

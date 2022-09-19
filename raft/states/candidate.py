@@ -1,9 +1,11 @@
+import random
+import logging
+
 from .voter import Voter
 from .leader import Leader
 from ..messages.request_vote import RequestVoteMessage
 from .timer import Timer
-
-import random
+logger = logging.getLogger(__name__)
 
 
 # Raft Candidate. Transition state between Follower and Leader
@@ -26,12 +28,14 @@ class Candidate(Voter):
         return random.uniform(0, self._timeout)
 
     def on_append_entries(self, message):
+        logger.info("candidate resigning because we got new entries")
         self._resign()
 
     def on_vote_received(self, message):
         # reset timer
         self.candidate_timer.reset()
-
+        logger.info("vote received from %s, response %s", message.sender,
+                    message.data['response'])
         if message.sender[1] not in self._votes and message.data['response']:
             self._votes[message.sender[1]] = message.data['response']
 
@@ -45,6 +49,7 @@ class Candidate(Voter):
 
         # check if received all the votes -> resign
         if len(self._votes) == len(self._server.other_nodes):
+            logger.info("candidate resigning because all votes are in but we didn't win")
             self._resign()
         else:
             return self, None
@@ -53,6 +58,7 @@ class Candidate(Voter):
     def _start_election(self):
         self.candidate_timer.start()
         self._server._currentTerm += 1
+        logger.info("candidate starting election term is %d", self._server._currentTerm)
         election = RequestVoteMessage(
             self._server.endpoint,
             None,
@@ -69,6 +75,7 @@ class Candidate(Voter):
     def _resign(self):
         self.candidate_timer.stop()
 
+        logger.info("candidate resigning")
         from .follower import Follower
         follower = Follower()
         self._server._state = follower
