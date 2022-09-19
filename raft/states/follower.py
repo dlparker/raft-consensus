@@ -13,6 +13,9 @@ class Follower(Voter):
         Voter.__init__(self)
         self._timeout = timeout
 
+    def __str__(self):
+        return "follower"
+    
     def set_server(self, server):
         self._server = server
         self.election_timer = Timer(self.election_interval(), self._start_election)

@@ -13,6 +13,9 @@ class Candidate(Voter):
         Voter.__init__(self)
         self._timeout = timeout
 
+    def __str__(self):
+        return "candidate"
+    
     def set_server(self, server):
         self._server = server
         self._votes = {}

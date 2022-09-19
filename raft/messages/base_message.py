@@ -10,6 +10,9 @@ class BaseMessage(object):
         self._data = data
         self._term = term
 
+    def __str__(self):
+        return f"{self._type} {self._sender} {self._receiver} {self._term} {self._data}"
+    
     @property
     def receiver(self):
         return self._receiver

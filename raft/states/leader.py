@@ -15,6 +15,9 @@ class Leader(State):
         self._matchIndex = defaultdict(int)
         self._heartbeat_timeout = heartbeat_timeout
 
+    def __str__(self):
+        return "leader"
+    
     def set_server(self, server):
         self._server = server
         # send heartbeat immediately
@@ -82,6 +85,7 @@ class Leader(State):
                     'receiver': client_addr,
                     'value': response
                 }
+                print(f"sending reply message {message}", flush=True)
                 asyncio.ensure_future(self._server.post_message(message), loop=self._server._loop)
 
         return self, None
