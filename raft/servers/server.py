@@ -1,4 +1,3 @@
-from ..messages.serializer import Serializer
 
 from socket import *
 
@@ -6,7 +5,10 @@ import copy
 import asyncio
 import threading
 import errno
+import logging
 
+from ..messages.serializer import Serializer
+logger = logging.getLogger(__name__)
 
 class Server(object):
 
@@ -35,8 +37,7 @@ class Server(object):
         asyncio.ensure_future(self.start(), loop=self._loop)
         thread = UDP_Server(self._sock, self._loop, self)
         thread.start()
-
-        print('Listening on ', self.endpoint)
+        logger.info('Listening on %s', self.endpoint)
 
     async def start(self):
         udp = UDP_Protocol(
@@ -56,7 +57,8 @@ class Server(object):
             # Have to create a deep copy of message to have different receivers
             send_message = copy.deepcopy(message)
             send_message._receiver = n
-            print(f"{self._state} sending message {send_message} to {n}", flush=True)
+            logger.debug("%s {self._state} sending message %s{send_message} to %s", self._state,
+                   send_message, n)
             asyncio.ensure_future(self.post_message(send_message), loop=self._loop)
 
     def send_message_response(self, message):
@@ -71,14 +73,14 @@ class Server(object):
         addr = addr[1]
         if (addr not in self._others_ports) and (len(self.other_nodes) != 0):
             command = data.decode('utf8')
-            print(f"command {command}", flush=True)
+            logger.debug("command %s", command)
             self._state.on_client_command(command, addr)
         elif addr in self._others_ports:
             try:
                 message = Serializer.deserialize(data)
                 message._receiver = message.receiver[0], message.receiver[1]
                 message._sender = message.sender[0], message.sender[1]
-                print(f"message {message}", flush=True)
+                logger.debug("message %s", message)
                 state, response = self._state.on_message(message)
                 self._state = state
 
@@ -86,7 +88,7 @@ class Server(object):
                 message = Serializer.deserialize_client(data)
                 self._state.on_client_command(message['command'], message['client_port'])
         else:
-            print(f"no idea what to do with addr {addr}", flush=True)
+            logger.error("no idea what to do with addr %s", addr)
 
 
 # async class to send messages between server
@@ -106,34 +108,35 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             message = await self._queue.get()
             if not isinstance(message, dict):
                 data = Serializer.serialize(message)
-                print(f"sending dequed message {message} to {message.receiver}", flush=True)
+                logger.debug("sending dequed message %s to %s",
+                             message, message.receiver)
                 self.transport.sendto(data, message.receiver)
             else:
                 try:
                     data = message['value'].encode('utf8')
                     addr = message['receiver']
-                    print('Returning client request')
+                    logger.debug('Returning client request')
                     self._server._sock.sendto(data, addr)
                 except KeyError as e:
-                    print(f'Redirecting client request on {e} {message}')
+                    logger.info("Redirecting client request on %s %s", e, message)
                     data = Serializer.serialize_client(message['command'], message['client_port'])
                     addr = self._server._state._leaderPort
                     self.transport.sendto(data, (addr[0], addr[1]))
 
     def connection_made(self, transport):
         self.transport = transport
-        print(f"connection made {transport}", flush=True)
+        logger.debug("connection made %s", transport)
         asyncio.ensure_future(self.start(), loop=self._loop)
 
     def datagram_received(self, data, addr):
-        print(f"protocol got message from {addr} {data}", flush=True)
+        logger.debug("protocol got message from %s %s", addr, data)
         self.message_handler(data, addr)
 
     def error_received(self, exc):
-        print(f"got error {exc}", flush=True)
+        logger.error("got error %s", exc)
 
     def connection_lost(self, exc):
-        print(f"connection lost {exc}", flush=True)
+        logger.error("connection lost %s")
 
 # thread to wait for message from user client
 class UDP_Server(threading.Thread):

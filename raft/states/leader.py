@@ -1,10 +1,11 @@
 from collections import defaultdict
+import random
+import asyncio
+import logging
 from .base_state import State
 from ..messages.append_entries import AppendEntriesMessage
 from .timer import Timer
-
-import random
-import asyncio
+logger = logging.getLogger(__name__)
 
 
 # Raft leader. Currently does not support step down -> leader will stay forever until terminated
@@ -21,14 +22,15 @@ class Leader(State):
     def set_server(self, server):
         self._server = server
         # send heartbeat immediately
-        print('Leader on ', self._server.endpoint, 'in term', self._server._currentTerm)
+        logger.info('Leader on %s in term %s', self._server.endpoint,
+                    self._server._currentTerm)
         self._send_heartbeat()
         self.heartbeat_timer = Timer(self._heartbeat_interval(), self._send_heartbeat)
         self.heartbeat_timer.start()
 
-        for neiport in self._server.other_nodes:
-            self._nextIndexes[neiport[1]] = self._server._lastLogIndex + 1
-            self._matchIndex[neiport[1]] = 0
+        for other in self._server.other_nodes:
+            self._nextIndexes[other[1]] = self._server._lastLogIndex + 1
+            self._matchIndex[other[1]] = 0
 
     def _heartbeat_interval(self):
         return random.uniform(0, self._heartbeat_timeout)
@@ -85,7 +87,7 @@ class Leader(State):
                     'receiver': client_addr,
                     'value': response
                 }
-                print(f"sending reply message {message}", flush=True)
+                logger.debug("sending reply message %s", message)
                 asyncio.ensure_future(self._server.post_message(message), loop=self._server._loop)
 
         return self, None
