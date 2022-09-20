@@ -111,6 +111,8 @@ class Leader(State):
     def on_client_command(self, message, client_port):
         self._server.client_port = client_port
         response, balance = self.execute_command(message)
+        if response == "Invalid command":
+            return False
         entries = [{
             "term": self._server._currentTerm,
             "command": message,
@@ -136,6 +138,7 @@ class Leader(State):
         self._server._lastLogTerm = self._server._currentTerm
         self._server._lastLogIndex += 1
         self._server.broadcast(message)
+        return True
 
     def execute_command(self, command):
         command = command.split()

@@ -35,6 +35,10 @@ class TestTwoWay(unittest.TestCase):
                 break
             except:
                 pass
+        status = client.get_status()
+        print(status)
+        breakpoint()
+
         balance = client.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
         logger.info("calls to 5000 worked")

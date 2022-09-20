@@ -69,28 +69,34 @@ class Server(object):
 
     def on_message(self, data, addr):
         addr = addr[1]
-        if (addr not in self._others_ports) and (len(self.other_nodes) != 0):
+        message = None
+        client_message = None
+        try:
+            message = Serializer.deserialize(data)
+        except:
+            try:
+                client_message = Serializer.deserialize_client(data)
+            except:
+                pass
+
+        if not message and not client_message:
+            # must be an app level command
             command = data.decode('utf8')
             logger.debug("command %s", command)
             self._state.on_client_command(command, addr)
-        elif addr in self._others_ports:
-            try:
-                message = Serializer.deserialize(data)
-                message._receiver = message.receiver[0], message.receiver[1]
-                message._sender = message.sender[0], message.sender[1]
-                logger.debug("message %s", message)
-                state_res = self._state.on_message(message)
-                if state_res is None:
-                    logger.error("State %s cannot handle message %s",
-                                 self._state, message)
-                else:
-                    state, response = state_res
-                    self._state = state
-            except KeyError:
-                message = Serializer.deserialize_client(data)
-                self._state.on_client_command(message['command'], message['client_port'])
-        else:
-            logger.error("no idea what to do with addr %s", addr)
+        elif message:
+            message._receiver = message.receiver[0], message.receiver[1]
+            message._sender = message.sender[0], message.sender[1]
+            logger.debug("message %s", message)
+            state_res = self._state.on_message(message)
+            if state_res is None:
+                logger.error("State %s cannot handle message %s",
+                             self._state, message)
+            else:
+                state, response = state_res
+                self._state = state
+        elif client_message:
+            self._state.on_client_command(client_message['command'], client_message['client_port'])
 
 
 # async class to send messages between server
@@ -109,9 +115,12 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         while not self.transport.is_closing():
             message = await self._queue.get()
             if not isinstance(message, dict):
-                data = Serializer.serialize(message)
-                logger.debug("sending dequed message %s to %s",
-                             message, message.receiver)
+                try:
+                    data = Serializer.serialize(message)
+                    logger.debug("sending dequed message %s to %s",
+                                 message, message.receiver)
+                except Exception as e:
+                    logger.error("error serializing queued message %s", e)
                 self.transport.sendto(data, message.receiver)
             else:
                 try:

@@ -1,5 +1,9 @@
+import logging
 from ..messages.base_message import BaseMessage
 from ..messages.response import ResponseMessage
+from ..messages.status import StatusQueryResponseMessage
+
+logger = logging.getLogger(__name__)
 
 
 # abstract class for all states
@@ -15,6 +19,8 @@ class State(object):
 
         _type = message.type
 
+        if _type == BaseMessage.StatusQuery:
+            return self.on_status_query(message)
         # If the message.term < currentTerm -> tell the sender to update term
         if (message.term > self._server._currentTerm):
             self._server._currentTerm = message.term
@@ -45,6 +51,24 @@ class State(object):
 
     def on_client_command(self, message, client_port):
         """Called when there is a client request"""
+
+    def on_status_query(self, message):
+        """Called when there is a status query"""
+        state_type = str(self._server._state)
+        if state_type == "leader":
+            leader_addr = self._server.endpoint
+        else:
+            leader_addr = self._server._state._leaderPort
+        status_data = dict(state=state_type, leader=leader_addr)
+        logger.info(status_data)                  
+        status_response = StatusQueryResponseMessage(
+            self._server.endpoint,
+            message.sender,
+            self._server._currentTerm,
+            status_data
+        )
+        logger.info(status_response.__dict__)                  
+        self._server.post_message(status_response)
 
     def _send_response_message(self, msg, votedYes=True):
         response = ResponseMessage(

@@ -3,6 +3,8 @@ class BaseMessage(object):
     RequestVote = 'request_vote'
     RequestVoteResponse = 'request_vote_response'
     Response = 'response'
+    StatusQuery = 'status_query'
+    StatusQueryResponse = 'status_query_response'
 
     def __init__(self, sender, receiver, term, data):
         self._sender = sender

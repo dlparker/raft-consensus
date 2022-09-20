@@ -98,3 +98,4 @@ class Follower(Voter):
             'client_port': client_port,
         }
         asyncio.ensure_future(self._server.post_message(message), loop=self._server._loop)
+        return True
