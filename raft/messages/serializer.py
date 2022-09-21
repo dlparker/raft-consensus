@@ -1,7 +1,7 @@
 from .append_entries import AppendEntriesMessage
 from .request_vote import *
 from .response import ResponseMessage
-from .status import StatusQueryMessage
+from .status import StatusQueryMessage, StatusQueryResponseMessage
 
 import msgpack
 
@@ -32,6 +32,8 @@ class Serializer:
             return ResponseMessage(message['sender'], message['receiver'], message['term'], message['data'])
         elif type == 'status_query':
             return StatusQueryMessage(message['sender'], message['receiver'], message['term'], message['data'])
+        elif type == 'status_query_response':
+            return StatusQueryResponseMessage(message['sender'], message['receiver'], message['term'], message['data'])
 
         return None
 

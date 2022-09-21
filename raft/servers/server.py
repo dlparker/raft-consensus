@@ -65,6 +65,9 @@ class Server(object):
             asyncio.ensure_future(self.post_message(message), loop=self._loop)
 
     async def post_message(self, message):
+        if not isinstance(message, dict):
+            logger.debug("posting %s to %s",
+                         message, message.receiver)
         await self._queue.put(message)
 
     def on_message(self, data, addr):
@@ -117,8 +120,8 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             if not isinstance(message, dict):
                 try:
                     data = Serializer.serialize(message)
-                    logger.debug("sending dequed message %s to %s",
-                                 message, message.receiver)
+                    logger.debug("sending dequed message %s (%s) to %s",
+                                 message, message._type, message.receiver)
                 except Exception as e:
                     logger.error("error serializing queued message %s", e)
                 self.transport.sendto(data, message.receiver)
@@ -126,7 +129,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
                 try:
                     data = message['value'].encode('utf8')
                     addr = message['receiver']
-                    logger.debug('Returning client request')
+                    logger.info('Returning client request')
                     self._server._sock.sendto(data, addr)
                 except KeyError as e:
                     if self._server._state._leaderPort is None:

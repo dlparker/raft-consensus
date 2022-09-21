@@ -13,8 +13,15 @@ class BaseMessage(object):
         self._term = term
 
     def __str__(self):
-        return f"{self._type} {self._sender} {self._receiver} {self._term} {self._data}"
-    
+        return f"{self._type} from {self._sender} to {self._receiver} term {self._term}"
+
+    def props_as_dict(self):
+        return dict(_type=self._type,
+                    sender=self._sender,
+                    receiver=self._receiver,
+                    term=self._term,
+                    data=self._data)                      
+
     @property
     def receiver(self):
         return self._receiver

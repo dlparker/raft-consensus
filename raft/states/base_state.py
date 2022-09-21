@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from ..messages.base_message import BaseMessage
 from ..messages.response import ResponseMessage
 from ..messages.status import StatusQueryResponseMessage
@@ -57,18 +58,20 @@ class State(object):
         state_type = str(self._server._state)
         if state_type == "leader":
             leader_addr = self._server.endpoint
+        elif state_type == "candidate":
+            leader_addr = (-1,-1)
         else:
             leader_addr = self._server._state._leaderPort
         status_data = dict(state=state_type, leader=leader_addr)
-        logger.info(status_data)                  
         status_response = StatusQueryResponseMessage(
             self._server.endpoint,
             message.sender,
             self._server._currentTerm,
             status_data
         )
-        logger.info(status_response.__dict__)                  
-        self._server.post_message(status_response)
+        asyncio.ensure_future(self._server.post_message(status_response))
+        logger.debug("posted %s %s", status_response, status_response.__dict__)
+        return self, None
 
     def _send_response_message(self, msg, votedYes=True):
         response = ResponseMessage(
