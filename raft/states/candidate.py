@@ -40,8 +40,17 @@ class Candidate(Voter):
             self._votes[message.sender[1]] = message.data['response']
 
             # check if received majorities
-            #if len(self._votes.keys()) > (self._server._total_nodes - 1) / 2:
-            # my own vote is implied
+            # if len(self._votes.keys()) > (self._server._total_nodes - 1) / 2:
+            # The above original logic from upstream was wrong, it does
+            # not work with three servers if the leader dies, election
+            # cannot complete because number of votes receive cannot be more
+            # than one. 
+            # I changed the logic to include the fact that a candidate's
+            # own vote is included in the total votes, which makes sense.
+            # It is easy to see how you could read it the other way from
+            # the text of the paper, but it does not work for and election
+            # held by two out of three servers.
+            # with one dead.
             if len(self._votes.keys()) + 1 > self._server._total_nodes / 2:
                 self.candidate_timer.stop()
                 leader = Leader()
