@@ -40,7 +40,9 @@ class Candidate(Voter):
             self._votes[message.sender[1]] = message.data['response']
 
             # check if received majorities
-            if len(self._votes.keys()) > (self._server._total_nodes - 1) / 2:
+            #if len(self._votes.keys()) > (self._server._total_nodes - 1) / 2:
+            # my own vote is implied
+            if len(self._votes.keys()) + 1 > self._server._total_nodes / 2:
                 self.candidate_timer.stop()
                 leader = Leader()
                 self._server._state = leader

@@ -35,7 +35,7 @@ class TestUtils(unittest.TestCase):
         t2 = Timer(20, None)
         self.assertEqual(t2.get_interval(), 20)
         
-class TestFourServers(unittest.TestCase):
+class TestThreeServers(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -46,7 +46,7 @@ class TestFourServers(unittest.TestCase):
         pass
     
     def setUp(self):
-        self.start_res = start_servers(base_port=5000, num_servers=4)
+        self.start_res = start_servers(base_port=5000, num_servers=3)
 
     def tearDown(self):
         for name,sdef in self.start_res.items():
