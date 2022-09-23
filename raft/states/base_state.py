@@ -1,5 +1,7 @@
 import logging
 import asyncio
+import abc
+
 from ..messages.base_message import BaseMessage
 from ..messages.response import ResponseMessage
 from ..messages.status import StatusQueryResponseMessage
@@ -8,7 +10,22 @@ logger = logging.getLogger(__name__)
 
 
 # abstract class for all states
-class State(object):
+class State(metaclass=abc.ABCMeta):
+
+    @classmethod
+    def __subclasshook__(cls, subclass):
+        return (hasattr(subclass, 'on_vote_request') and 
+                callable(subclass.on_vote_request) and
+                hasattr(subclass, 'on_vote_received') and 
+                callable(subclass.on_vote_received) and
+                hasattr(subclass, 'on_append_entries') and 
+                callable(subclass.on_append_entries) and
+                hasattr(subclass, 'on_response_received') and 
+                callable(subclass.on_response_received) and
+                hasattr(subclass, 'on_client_command') and 
+                callable(subclass.on_client_command) or
+                NotImplemented)
+            
     def set_server(self, server):
         self._server = server
 
@@ -37,21 +54,30 @@ class State(object):
         elif (_type == BaseMessage.Response):
             return self.on_response_received(message)
 
+    @abc.abstractmethod
     def on_vote_request(self, message):
         """Called when there is a vote request"""
+        raise NotImplementedError
 
+    @abc.abstractmethod
     def on_vote_received(self, message):
         """Called when this node receives a vote"""
-        return self, None
+        raise NotImplementedError
 
+    @abc.abstractmethod
     def on_append_entries(self, message):
         """Called when there is a request for this node to append entries"""
+        raise NotImplementedError
 
+    @abc.abstractmethod
     def on_response_received(self, message):
         """Called when a response is sent back to the leader"""
+        raise NotImplementedError
 
+    @abc.abstractmethod
     def on_client_command(self, message, client_port):
         """Called when there is a client request"""
+        raise NotImplementedError
 
     def on_status_query(self, message):
         """Called when there is a status query"""

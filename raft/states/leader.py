@@ -165,3 +165,14 @@ class Leader(State):
         else:
             response = "Invalid command"
         return response, balance
+
+    def on_vote_received(self, message):
+        logger.info("leader got vote: message.term = %d local_term = %d",
+                    message.term, self._server._currentTerm)
+
+    def on_vote_request(self, message):
+        raise NotImplementedError
+    
+    def on_append_entries(self, message):
+        raise NotImplementedError
+    

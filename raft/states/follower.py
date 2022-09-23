@@ -99,3 +99,12 @@ class Follower(Voter):
         }
         asyncio.ensure_future(self._server.post_message(message), loop=self._server._loop)
         return True
+
+    def on_vote_received(self, message):
+        logger.info("follower got vote: message.term = %d local_term = %d",
+                    message.term, self._server._currentTerm)
+
+    def on_response_received(self, message):
+        raise NotImplementedError
+    
+    

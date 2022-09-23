@@ -2,7 +2,7 @@
 # fork of [baonguyen2604/raft-consensus](https://github.com/baonguyen2604/raft-consensus)
 
 The code orignally forked was chosen because it is the most
-understandably, straightforward implementation that provided enough of
+understandable, straightforward implementation that provided enough of
 the raft features, compared to the other python implementations
 chosen. A key motivator of the raft algorithm is to be sufficiently
 understandable that it is likely to be implemented correctly. It seems

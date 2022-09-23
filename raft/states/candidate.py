@@ -69,7 +69,8 @@ class Candidate(Voter):
     def _start_election(self):
         self.candidate_timer.start()
         self._server._currentTerm += 1
-        logger.info("candidate starting election term is %d", self._server._currentTerm)
+        logger.info("candidate starting election term is %d",
+                    self._server._currentTerm)
         election = RequestVoteMessage(
             self._server.endpoint,
             None,
@@ -92,3 +93,10 @@ class Candidate(Voter):
         self._server._state = follower
         follower.set_server(self._server)
         return follower, None
+
+    def on_client_command(self, command, client_port):
+        raise NotImplementedError
+
+    def on_response_received(self, message):
+        raise NotImplementedError
+    
