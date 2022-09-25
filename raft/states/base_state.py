@@ -6,8 +6,6 @@ from ..messages.base_message import BaseMessage
 from ..messages.response import ResponseMessage
 from ..messages.status import StatusQueryResponseMessage
 
-logger = logging.getLogger(__name__)
-
 
 # abstract class for all states
 class State(metaclass=abc.ABCMeta):
@@ -96,7 +94,6 @@ class State(metaclass=abc.ABCMeta):
             status_data
         )
         asyncio.ensure_future(self._server.post_message(status_response))
-        logger.debug("posted %s %s", status_response, status_response.__dict__)
         return self, None
 
     def _send_response_message(self, msg, votedYes=True):

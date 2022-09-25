@@ -18,7 +18,7 @@ def setup_test_dirs(num_servers):
         sdir.mkdir()
     return dict(base_dir=base_dir, server_dirs=sdirs)
 
-def start_servers(base_port, num_servers=3, reset_dirs=True):
+def start_servers(base_port, num_servers=3, reset_dirs=True, log_config=None):
     test_dirs = setup_test_dirs(num_servers)
     all_servers = [ ("localhost", base_port + port) for port in range(num_servers) ]
     servers = {}
@@ -30,7 +30,8 @@ def start_servers(base_port, num_servers=3, reset_dirs=True):
                 continue
             others.append(all_servers[i])
         s_process = Process(target=UDPBankTellerServer.make_and_start,
-                                 args=[base_port + port_index, sdir, sname, others])
+                                 args=[base_port + port_index, sdir,
+                                       sname, others, log_config])
         s_process.daemon = True
         s_process.start()
         servers[sname] = dict(port=base_port + port_index,

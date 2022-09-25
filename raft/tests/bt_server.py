@@ -1,12 +1,13 @@
 import asyncio
-import raft
 from pathlib import Path
 import traceback
+import logging
+import raft
 
 class UDPBankTellerServer:
 
     @classmethod
-    def make_and_start(cls, port, working_dir, name, others):
+    def make_and_start(cls, port, working_dir, name, others, log_config):
         from pytest_cov.embed import cleanup_on_sigterm
         cleanup_on_sigterm()
         import sys
@@ -15,6 +16,15 @@ class UDPBankTellerServer:
         sys.stderr = sys.stdout
         import os
         os.chdir(working_dir)
+        from logging.config import dictConfig
+        logging.getLogger().handlers = []
+        from pprint import pprint
+        try:
+            dictConfig(log_config)
+            #pprint(log_config)
+        except:
+            pprint(log_config)
+            raise
         try:
             instance = cls(port, working_dir, name, others)
             instance.start()
@@ -28,8 +38,11 @@ class UDPBankTellerServer:
         self._name = name
         self._working_dir = working_dir
         self._others = others
+        
 
     async def _run(self):
+        logger = logging.getLogger(__name__)
+        logger.info("bank teller server starting")
         state = raft.state_follower(vote_at_start=True)
         data_log = []
         dummy_index = {
@@ -39,9 +52,11 @@ class UDPBankTellerServer:
         }
         data_log.append(dummy_index)
         loop = asyncio.get_running_loop()
+        logger.info('creating server')
         server = raft.create_server(name='raft', state=state,
                                     log=data_log, other_nodes=self._others,
                                     endpoint=(self._host, self._port), loop=loop)
+        logger.info('created server')
         print(f"{self._name} started server on endpoint {(self._host, self._port)} with others at {self._others}", flush=True)
 
     def start(self):
