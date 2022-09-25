@@ -57,6 +57,7 @@ def config_logging(logfile_path, use_server=False, server_filepath=None):
     raft_log = dict(handlers=handler_names, level="INFO", propagate=False)
     log_loggers['raft'] = raft_log
     follower_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
+    log_loggers['raft.servers.server'] = follower_log
     log_loggers['raft.states.follower'] = follower_log
     log_loggers['raft.states.leader'] = follower_log
     log_config = dict(version=1, disable_existing_loggers = True,
