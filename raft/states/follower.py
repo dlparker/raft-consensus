@@ -1,10 +1,14 @@
+import random
+import asyncio
+from dataclasses import asdict
+import logging
+
+from .log_api import LogRec
 from .voter import Voter
 from .timer import Timer
 from .candidate import Candidate
+logger = logging.getLogger(__name__)
 
-import random
-import asyncio
-import logging
 
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
@@ -46,56 +50,57 @@ class Follower(Voter):
             self._send_response_message(message, votedYes=False)
             self.logger.debug("rejecting message because sender term is less than mine %s", message)
             return self, None
-
         if message.data != {}:
-            log = self._server._log
+            log = self._server.get_log()
+            log_tail = log.get_tail()
             data = message.data
             self._leaderPort = data["leaderPort"]
 
             # Check if leader is too far ahead in log
-            if data['leaderCommit'] != self._server._commitIndex:
-                # if so then we use length of log - 1
-                self._server._commitIndex = min(data['leaderCommit'], len(log) - 1)
-
+            if data['leaderCommit'] != log_tail.commit_index:
+                # if so then we use the last index
+                commit_index = min(int(data['leaderCommit']),
+                                   log_tail.last_index)
+                logger.info("commiting %d because %s != %s and last index = %s",
+                            commit_index, data['leaderCommit'],
+                            log_tail.commit_index,
+                            log_tail.last_index)
+                log.commit(commit_index)
             # If log is smaller than prevLogIndex -> not up-to-date
-            if len(log)-1 < data["prevLogIndex"]:
+            if log_tail.last_index < data["prevLogIndex"]:
+                # tell the leader we need more log records, the
+                # leader has more than we do.
                 self._send_response_message(message, votedYes=False)
                 self.logger.debug("rejecting message because our index is %s and sender is %s",
                              len(log)-1, data["prevLogIndex"])
                 return self, None
-
-            # make sure prevLogIndex term is always equal to the server
-            if len(log) > 1 and log[data["prevLogIndex"]]["term"] != data["prevLogTerm"]:
-                # conflict detected -> resync and delete everything from this
-                # prevLogIndex and forward (extraneous entries)
-                # send a failure to server
-                print('Follower conflicting??')
-                print(log)
-                print(data)
-                log = log[:data["prevLogIndex"]]
+            last_rec = log.read(log_tail.last_index)
+            if (last_rec and log_tail.last_index > 0
+                and last_rec.term != data['prevLogTerm']):
+                # somehow follower got ahead of leader
+                # not sure if this is possible
+                # TODO: experiement to see if this code ever
+                # runs
+                logger.error("Follower is ahead of leader!!!")
+                logger.error(asdict(log_tail))
+                logger.error(str(data))
+                log.trim_after(data['prevLogIndex'])
                 self._send_response_message(message, votedYes=False)
-                self._server._log = log
-                self._server._lastLogIndex = data["prevLogIndex"]
-                self._server._lastLogTerm = data["prevLogTerm"]
                 return self, None
             else:
-                # check if this is a heartbeat
                 if len(data["entries"]) > 0:
                     self.logger.debug("accepting message on our index=%s and sender=%s, data=%s",
-                                 len(log)-1, data["prevLogIndex"], data)
-                    for entry in data["entries"]:
-                        log.append(entry)
-                        self._server._commitIndex += 1
-
-                    self._server._lastLogIndex = len(log) - 1
-                    self._server._lastLogTerm = log[-1]["term"]
-                    self._commitIndex = len(log) - 1
-                    self._server._log = log
-
+                                 tail.last_index, data["prevLogIndex"], data)
+                    for ent in data["entries"]:
+                        log.append([LogRec(user_data=ent),],
+                                   data['prevLogTerm'])
+                    tail = log.commit()
+                    logger.info("commit %s from %s", tail, message.data)
                     self._send_response_message(message)
-
-            self._send_response_message(message)
-            return self, None
+                else:
+                    logger.debug("heartbeat")
+                    self._send_response_message(message)
+                return self, None
         else:
             return self, None
 
@@ -104,7 +109,7 @@ class Follower(Voter):
             'command': command,
             'client_port': client_port,
         }
-        asyncio.ensure_future(self._server.post_message(message), loop=self._server._loop)
+        asyncio.ensure_future(self._server.post_message(message))
         return True
 
     def on_vote_received(self, message):

@@ -3,6 +3,7 @@ import random
 import asyncio
 import logging
 from .base_state import State
+from .log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
 from .timer import Timer
 logger = logging.getLogger(__name__)
@@ -37,14 +38,31 @@ class Leader(State):
 
     def on_response_received(self, message):
         # check if last append_entries good?
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
         if not message.data["response"]:
-            # if not, back up log for this node
+            # Other node has an out of date log. Back up
+            # one log record and send that one. This may
+            # continue for multiple passes until the other
+            # node says it is happy with the new record. 
+            # if not, back up log for this node. Once it
+            # does, we will keep sending until caught up.
             self._nextIndexes[message.sender[1]] -= 1
             # get next log entry to send to follower
             prevIndex = max(0, self._nextIndexes[message.sender[1]] - 1)
-            prev = self._server._log[prevIndex]
-            current = self._server._log[self._nextIndexes[message.sender[1]]]
-
+            prev_rec = log.read(prevIndex)
+            if not prev_rec:
+                logger.error("cannot find log message %d for other node %s",
+                             prevIndex, message.sender)
+                return self, None
+            prev = prev_rec.user_data
+            next_i = self._nextIndexes[message.sender[1]]
+            current_rec = log.read(next_i)
+            if not current_rec:
+                logger.error("cannot find log message %d for other node %s",
+                             next_i, message.sender)
+                return self, None
+            
             # send new log to client and wait for respond
             append_entry = AppendEntriesMessage(
                 self._server.endpoint,
@@ -55,19 +73,22 @@ class Leader(State):
                     "leaderPort": self._server.endpoint,
                     "prevLogIndex": prevIndex,
                     "prevLogTerm": prev["term"],
-                    "entries": [current],
-                    "leaderCommit": self._server._commitIndex,
+                    "entries": [current_rec.user_data,],
+                    "leaderCommit": log_tail.commit_index,
                 })
-            asyncio.ensure_future(self._server.post_message(append_entry), loop=self._server._loop)
+            asyncio.ensure_future(self._server.post_message(append_entry))
         else:
             # last append was good -> increase index
             self._nextIndexes[message.sender[1]] += 1
             self._matchIndex[message.sender[1]] += 1
 
             # check if caught up?
-            if self._nextIndexes[message.sender[1]] > self._server._lastLogIndex:
-                self._nextIndexes[message.sender[1]] = self._server._lastLogIndex + 1
-                self._matchIndex[message.sender[1]] = self._server._lastLogIndex
+            # this logic seems a bit strange, can next index for send be more
+            # than one higher than the last local log?
+            # TODO: see if we can clear this up
+            if self._nextIndexes[message.sender[1]] > log_tail.last_index:
+                self._nextIndexes[message.sender[1]] = log_tail.last_index + 1
+                self._matchIndex[message.sender[1]] = log_tail.last_index
 
             majority_response_received = 0
 
@@ -75,24 +96,27 @@ class Leader(State):
                 if matchIndex == (self._server._lastLogIndex):
                     majority_response_received += 1
 
-            if majority_response_received >= (self._server._total_nodes - 1) / 2 \
-                    and self._server._lastLogIndex > 0 and self._server._lastLogIndex == self._server._commitIndex+1:
-                # committing next index
-                self._server._commitIndex += 1
+            if (majority_response_received >= (self._server._total_nodes - 1) / 2
+                and log_tail.last_index > 0 and log_tail.last_index == log_tail.commit_index +1):
 
                 client_addr = 'localhost', self._server.client_port
-                last_log = self._server._log[self._server._lastLogIndex]
-                response = last_log['response']
+                # committing next index
+
+                log.commit(log_tail.commit_index + 1)
+                last_log = log.read(log_tail.last_index)
+                response = last_log.user_data['response']
                 message = {
                     'receiver': client_addr,
                     'value': response
                 }
                 logger.debug("sending reply message %s", message)
-                asyncio.ensure_future(self._server.post_message(message), loop=self._server._loop)
+                asyncio.ensure_future(self._server.post_message(message))
 
         return self, None
 
     def _send_heartbeat(self):
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
         message = AppendEntriesMessage(
             self._server.endpoint,
             None,
@@ -103,23 +127,27 @@ class Leader(State):
                 "prevLogIndex": self._server._lastLogIndex,
                 "prevLogTerm": self._server._lastLogTerm,
                 "entries": [],
-                "leaderCommit": self._server._commitIndex,
+                "leaderCommit": log_tail.commit_index,
             }
         )
         self._server.broadcast(message)
 
     def on_client_command(self, message, client_port):
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
         self._server.client_port = client_port
         response, balance = self.execute_command(message)
         if response == "Invalid command":
             return False
         entries = [{
-            "term": self._server._currentTerm,
+            "term": log_tail.term,
             "command": message,
             "balance": balance,
             "response": response
         }]
-        self._server._log.append(entries[-1])
+        log = self._server.get_log()
+        pre_save_log_tail = log.get_tail()
+        log.append([LogRec(user_data=entries[0]),], self._server._currentTerm)
 
         message = AppendEntriesMessage(
             self._server.endpoint,
@@ -128,21 +156,21 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": self._server._lastLogIndex,
-                "prevLogTerm": self._server._lastLogTerm,
+                "prevLogIndex": pre_save_log_tail.last_index,
+                "prevLogTerm": pre_save_log_tail.last_term,
                 "entries": entries,
-                "leaderCommit": self._server._commitIndex,
+                "leaderCommit": pre_save_log_tail.commit_index,
             }
         )
-
-        self._server._lastLogTerm = self._server._currentTerm
-        self._server._lastLogIndex += 1
         self._server.broadcast(message)
         return True
 
     def execute_command(self, command):
         command = command.split()
-        balance = self._server._log[self._server._lastLogIndex]['balance'] or 0
+        log = self._server.get_log()
+        log_tail = log.get_tail()
+        log_rec = log.read(log_tail.last_index)
+        balance = log_rec.user_data['balance'] or 0
         if len(command) == 0:
             response = "Invalid command"
         elif len(command) == 1 and command[0] == 'query':

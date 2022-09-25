@@ -7,7 +7,7 @@ from ..messages.response import ResponseMessage
 from ..messages.status import StatusQueryResponseMessage
 
 
-# abstract class for all states
+# abstract class for all server states
 class State(metaclass=abc.ABCMeta):
 
     @classmethod

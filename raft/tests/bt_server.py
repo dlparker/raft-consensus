@@ -3,6 +3,8 @@ from pathlib import Path
 import traceback
 import logging
 import raft
+from raft.states.memory_log import MemoryLog
+from raft.states.log_api import LogRec
 
 class UDPBankTellerServer:
 
@@ -44,13 +46,15 @@ class UDPBankTellerServer:
         logger = logging.getLogger(__name__)
         logger.info("bank teller server starting")
         state = raft.state_follower(vote_at_start=True)
-        data_log = []
-        dummy_index = {
-            'term': None,
+        data_log = MemoryLog()
+        init_data = {
+            'term': -1,
             'command': None,
             'balance': None
         }
-        data_log.append(dummy_index)
+        init_record = LogRec(user_data=init_data)
+        data_log.append([init_record,], 0)
+        data_log.commit()
         loop = asyncio.get_running_loop()
         logger.info('creating server')
         server = raft.create_server(name='raft', state=state,

@@ -15,7 +15,6 @@ class Server(object):
         self._log = log
         self.endpoint = endpoint
         self.other_nodes = other_nodes
-        self._loop = loop
         self._queue = asyncio.Queue()
         self._sock = socket(AF_INET, SOCK_DGRAM)
         self._sock.bind(self.endpoint)
@@ -31,8 +30,8 @@ class Server(object):
         self._lastLogTerm = None
         self.logger = logging.getLogger(__name__)
         self._state.set_server(self)
-        asyncio.ensure_future(self.start(), loop=self._loop)
-        thread = UDP_Server(self._sock, self._loop, self)
+        asyncio.ensure_future(self.start())
+        thread = UDP_Server(self._sock, self)
         thread.start()
         # in testing, the logger config may change after file is imported, so we
         # need to get the logger again at startup
@@ -42,14 +41,12 @@ class Server(object):
         udp = UDP_Protocol(
             queue=self._queue,
             message_handler=self.on_message,
-            loop=self._loop,
             other_nodes=self.other_nodes,
             server=self
         )
         self.transport, _ = await asyncio.Task(
-            self._loop.create_datagram_endpoint(udp, sock=self._sock),
-            loop=self._loop
-        )
+            asyncio.get_event_loop().create_datagram_endpoint(udp,
+                                                              sock=self._sock))
 
     def broadcast(self, message):
         for n in self.other_nodes:
@@ -58,12 +55,12 @@ class Server(object):
             send_message._receiver = n
             self.logger.debug("%s {self._state} sending message %s{send_message} to %s", self._state,
                    send_message, n)
-            asyncio.ensure_future(self.post_message(send_message), loop=self._loop)
+            asyncio.ensure_future(self.post_message(send_message))
 
     def send_message_response(self, message):
         n = [n for n in self.other_nodes if n == message.receiver]
         if len(n) > 0:
-            asyncio.ensure_future(self.post_message(message), loop=self._loop)
+            asyncio.ensure_future(self.post_message(message))
 
     async def post_message(self, message):
         if not isinstance(message, dict):
@@ -71,6 +68,9 @@ class Server(object):
                          message, message.receiver)
         await self._queue.put(message)
 
+    def get_log(self):
+        return self._log
+    
     def on_message(self, data, addr):
         addr = addr[1]
         message = None
@@ -105,10 +105,9 @@ class Server(object):
 
 # async class to send messages between server
 class UDP_Protocol(asyncio.DatagramProtocol):
-    def __init__(self, queue, message_handler, loop, other_nodes, server):
+    def __init__(self, queue, message_handler, other_nodes, server):
         self._queue = queue
         self.message_handler = message_handler
-        self._loop = loop
         self.other_nodes = other_nodes
         self._server = server
         self.logger = logging.getLogger(__name__)
@@ -145,8 +144,8 @@ class UDP_Protocol(asyncio.DatagramProtocol):
 
     def connection_made(self, transport):
         self.transport = transport
-        self.logger.debug("connection made %s", transport)
-        asyncio.ensure_future(self.start(), loop=self._loop)
+        logger.debug("connection made %s", transport)
+        asyncio.ensure_future(self.start())
 
     def datagram_received(self, data, addr):
         self.logger.debug("protocol got message from %s %s", addr, data)
@@ -160,17 +159,17 @@ class UDP_Protocol(asyncio.DatagramProtocol):
 
 # thread to wait for message from user client
 class UDP_Server(threading.Thread):
-    def __init__(self, sock, loop, server, daemon=True):
+    def __init__(self, sock, server, daemon=True):
         threading.Thread.__init__(self, daemon=daemon)
         self._sock = sock
-        self._loop = loop
         self._server = server
 
     def run(self):
         while True:
             try:
                 data, addr = self._sock.recvfrom(1024)
-                self._loop.call_soon_threadsafe(self._server.on_message, data, addr)
+                asyncio.call_soon_threadsafe(self._server.on_message,
+                                             data, addr)
             except IOError as exc:
                 if exc.errno == errno.EWOULDBLOCK:
                     pass
