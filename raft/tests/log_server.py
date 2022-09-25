@@ -21,6 +21,7 @@ import socketserver
 import struct
 import time
 import os
+from logging.config import dictConfig
 
 class LogRecordStreamHandler(socketserver.StreamRequestHandler):
     """Handler for a streaming logging request.
@@ -123,7 +124,9 @@ class LogSocketServer:
         while not server_started.value:
             time.sleep(0.1)
         LogSocketServer.port = port.value
-        print('Log Record Socket Server is started at port %d.' % port.value, flush=True)
+        logger = logging.getLogger()
+        logger.info('Log Record Socket Server started at port %d from pid=%d.',
+                    port.value, os.getpid())
 
     @staticmethod
     def _start_server(server_started, port, **kwargs):
@@ -140,17 +143,16 @@ class LogSocketServer:
         else:
             if "configDict" in kwargs:
                 configDict = kwargs['configDict']
-                from logging.config import dictConfig
                 dictConfig(configDict)
             else:
                 logging.basicConfig(**kwargs)
         logger = logging.getLogger()
-        logger.error("Starting logging TCP server on port %d", port.value)
+        logger.info("Starting logging TCP server on port %d as process %d",
+                    port.value, os.getpid())
         tcp_server = LogRecordSocketReceiver()
-        print(f'{os.getpid()} - Starting TCP Logging server...')
         server_started.value = True
         port.value = tcp_server.port
-        logger.error("started logging server on port %d", tcp_server.port)
+        logger.info("started logging server on port %d", tcp_server.port)
         tcp_server.serve_until_stopped()
 
     @staticmethod
@@ -184,7 +186,6 @@ if __name__=="__main__":
                       loggers=log_loggers)
     from pprint import pprint
     pprint(log_config)
-    from logging.config import dictConfig
     dictConfig(log_config)
     logger = logging.getLogger("foo")
     logger.debug("Debug from main")

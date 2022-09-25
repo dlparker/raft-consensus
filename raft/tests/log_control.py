@@ -12,6 +12,7 @@ def config_server_logging(filepath):
     file_handler = dict(level="DEBUG",
                         formatter="standard",
                         encoding='utf-8',
+                        mode='w',
                         filename=str(filepath))
     file_handler['class'] = "logging.FileHandler"
     log_handlers = dict(file=file_handler)
@@ -65,18 +66,27 @@ def config_logging(logfile_path, use_server=False, server_filepath=None):
     return log_config, server_config
 
 def setup_logging_for_test(name, file_path="/tmp/raft_tests/test.log",
-                           use_server=True, server_filepath="/tmp/combined_raft.log"):
+                           use_server=True, server_filepath="/tmp/combined_raft.log",
+                           extra_levels=None):
     config,server_config = config_logging(file_path,  use_server=use_server,
                                          server_filepath=server_filepath)
-
-    # this is the place to modify the logging config if needed for debugging test failure
-    dictConfig(config)
+    
+    # apply the caller's modifications to the level specs
+    if extra_levels:
+        # get an example logger
+        examp = dict()
+        examp.update(config['loggers'][''])
+        for inspec in extra_levels:
+            spec = dict(examp)
+            spec['level'] = inspec['level']
+            spec['propagate'] = inspec.get("propagate", False)
+            config['loggers'][inspec['name']] = spec
     global have_logging_server
     if use_server and not have_logging_server:
         LogSocketServer.start(port=9999, configDict=server_config)
-        print("started logging server")
         have_logging_server = True
     logging.getLogger("test_control").info("starting test %s", name)
+    dictConfig(config)
     return config
     
 def stop_logging_server():
@@ -85,16 +95,19 @@ def stop_logging_server():
         LogSocketServer.stop()
         have_logging_server = False
     
-    
+
 if __name__=="__main__":
-    config,server_config = setup_logging("/tmp/first.log", True, "/tmp/server.log")
-    dictConfig(config)
-    logger = logging.getLogger()
+    lfile = Path("/tmp/client.log")
+    sfile = Path("/tmp/server.log")
+    for x in [lfile, sfile]:
+        if x.exists():
+            x.unlink()
+
+    levels = [dict(name="test", level="DEBUG", propagate=False),]
+    config = setup_logging_for_test("test1", lfile, True, sfile, extra_levels=levels)
+    logger = logging.getLogger("test")
     for i in range(10):
         logger.debug("log rec %d", i)
     import time
     time.sleep(0.5)
-    LogSocketServer.stop()
-    from pprint import pprint
-    pprint(config)
-    pprint(server_config)
+    stop_logging_server()

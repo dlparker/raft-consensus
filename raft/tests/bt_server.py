@@ -18,7 +18,13 @@ class UDPBankTellerServer:
         os.chdir(working_dir)
         logging.getLogger().handlers = []
         from logging.config import dictConfig
-        dictConfig(log_config)
+        from pprint import pprint
+        try:
+            dictConfig(log_config)
+            pprint(log_config)
+        except:
+            pprint(log_config)
+            raise
         try:
             instance = cls(port, working_dir, name, others)
             instance.start()
@@ -35,7 +41,8 @@ class UDPBankTellerServer:
         
 
     async def _run(self):
-        logging.getLogger().warning("bank teller server starting")
+        logger = logging.getLogger(__name__)
+        logger.info("bank teller server starting")
         state = raft.state_follower(vote_at_start=True)
         data_log = []
         dummy_index = {
@@ -45,9 +52,11 @@ class UDPBankTellerServer:
         }
         data_log.append(dummy_index)
         loop = asyncio.get_running_loop()
+        logger.info('creating server')
         server = raft.create_server(name='raft', state=state,
                                     log=data_log, other_nodes=self._others,
                                     endpoint=(self._host, self._port), loop=loop)
+        logger.info('created server')
         print(f"{self._name} started server on endpoint {(self._host, self._port)} with others at {self._others}", flush=True)
 
     def start(self):
