@@ -3,12 +3,18 @@ import asyncio
 from ..messages.base_message import BaseMessage
 from ..messages.response import ResponseMessage
 from ..messages.status import StatusQueryResponseMessage
-
 logger = logging.getLogger(__name__)
 
 
 # abstract class for all states
-class State(object):
+class State:
+
+    def __init__(self):
+        # in testing, the logger config may change after file is imported, so we
+        # need to get the logger again at startup
+        global logger
+        logger = logging.getLogger(__name__)
+
     def set_server(self, server):
         self._server = server
 
@@ -20,6 +26,7 @@ class State(object):
 
         _type = message.type
 
+        logger.debug("on_message %s", message)
         if _type == BaseMessage.StatusQuery:
             return self.on_status_query(message)
         # If the message.term < currentTerm -> tell the sender to update term

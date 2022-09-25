@@ -4,6 +4,7 @@ import time
 import logging
 
 from raft.tests.setup_utils import start_servers, stop_server
+from raft.tests.log_control import setup_logging_for_test, stop_logging_server
 from raft.tests.bt_client import UDPBankTellerClient
 
 
@@ -46,11 +47,14 @@ class TestThreeServers(unittest.TestCase):
         pass
     
     def setUp(self):
-        self.start_res = start_servers(base_port=5000, num_servers=3)
+        log_config = setup_logging_for_test("TestTreeServersCase")
+        self.start_res = start_servers(base_port=5000, num_servers=3, log_config=log_config)
 
     def tearDown(self):
         for name,sdef in self.start_res.items():
             stop_server(sdef)
+        time.sleep(0.5)
+        stop_logging_server()
 
     def test_non_leader_stop(self):
         logger = logging.getLogger()

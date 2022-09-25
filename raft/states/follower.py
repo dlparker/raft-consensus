@@ -4,7 +4,9 @@ from .candidate import Candidate
 
 import random
 import asyncio
+import logging
 
+logger = logging.getLogger(__name__)
 
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
@@ -42,6 +44,7 @@ class Follower(Voter):
 
         if message.term < self._server._currentTerm:
             self._send_response_message(message, votedYes=False)
+            logger.debug("rejecting message because sender term is less than mine %s", message)
             return self, None
 
         if message.data != {}:
@@ -57,6 +60,8 @@ class Follower(Voter):
             # If log is smaller than prevLogIndex -> not up-to-date
             if len(log)-1 < data["prevLogIndex"]:
                 self._send_response_message(message, votedYes=False)
+                logger.debug("rejecting message because our index is %s and sender is %s",
+                             len(log)-1, data["prevLogIndex"])
                 return self, None
 
             # make sure prevLogIndex term is always equal to the server
@@ -76,6 +81,8 @@ class Follower(Voter):
             else:
                 # check if this is a heartbeat
                 if len(data["entries"]) > 0:
+                    logger.debug("accepting message on our index=%s and sender=%s, data=%s",
+                                 len(log)-1, data["prevLogIndex"], data)
                     for entry in data["entries"]:
                         log.append(entry)
                         self._server._commitIndex += 1

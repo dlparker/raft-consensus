@@ -35,6 +35,10 @@ class Server(object):
         asyncio.ensure_future(self.start(), loop=self._loop)
         thread = UDP_Server(self._sock, self._loop, self)
         thread.start()
+        # in testing, the logger config may change after file is imported, so we
+        # need to get the logger again at startup
+        global logger
+        logger = logging.getLogger(__name__)
         logger.info('Listening on %s', self.endpoint)
 
     async def start(self):
