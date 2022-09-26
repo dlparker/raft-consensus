@@ -10,7 +10,11 @@ class Voter(State):
 
     def on_vote_request(self, message):
         # if node has not voted and lastLogIndex from message > node's lastLogIndex --> vote Yes
-        if self._last_vote is None and message.data["lastLogIndex"] >= self._server._lastLogIndex:
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
+
+        if (self._last_vote is None
+            and message.data["lastLogIndex"] >= log_tail.last_index):
             self._last_vote = message.sender
             self._send_vote_response_message(message)
         else:

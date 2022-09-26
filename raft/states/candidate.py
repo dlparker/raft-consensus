@@ -21,7 +21,7 @@ class Candidate(Voter):
     def set_server(self, server):
         self._server = server
         self._votes = {}
-        self.candidate_timer = Timer(self.candidate_interval(), self._resign)
+        self.candidate_timer = Timer(self.candidate_interval(), self.on_timer)
         self._start_election()
 
     def candidate_interval(self):
@@ -29,6 +29,10 @@ class Candidate(Voter):
 
     def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
+        self._resign()
+
+    def on_timer(self):
+        self.logger.info("candidate resigning because timer ended")
         self._resign()
 
     def on_vote_received(self, message):
@@ -56,6 +60,7 @@ class Candidate(Voter):
                 leader = Leader()
                 self._server._state = leader
                 leader.set_server(self._server)
+                self.logger.info("changing to leader")
                 return leader, None
 
         # check if received all the votes -> resign
@@ -72,13 +77,16 @@ class Candidate(Voter):
 
         self.logger.info("candidate starting election term is %d",
                     self._server._currentTerm)
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
+        
         election = RequestVoteMessage(
             self._server.endpoint,
             None,
             self._server._currentTerm,
             {
-                "lastLogIndex": self._server._lastLogIndex,
-                "lastLogTerm": self._server._lastLogTerm,
+                "lastLogIndex": log_tail.last_index,
+                "lastLogTerm": log_tail.term,
             }
         )
         self._server.broadcast(election)
@@ -88,11 +96,11 @@ class Candidate(Voter):
     def _resign(self):
         self.candidate_timer.stop()
 
-        self.logger.info("candidate resigning")
         from .follower import Follower
         follower = Follower()
         self._server._state = follower
         follower.set_server(self._server)
+        self.logger.info("candidate resigned")
         return follower, None
 
     def on_client_command(self, command, client_port):

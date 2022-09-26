@@ -5,15 +5,14 @@ from typing import Union, List, Optional
 @dataclass
 class LogTail:
     last_index: int  = field(default = -1)
-    last_term: int  = field(default = -1)
-    term: int  = field(default = -1)
+    term: int  = field(default = None)
     commit_index: int  = field(default = -1)
 
 @dataclass
 class LogRec:
     user_data: list =  field(default=None, repr=False)
     index: int = field(default = -1)
-    term: int = field(default = -1)
+    term: int = field(default = None)
     last_term: int = field(default = -1)
 
 # abstract class for all states

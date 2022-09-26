@@ -7,7 +7,6 @@ from .log_api import LogRec
 from .voter import Voter
 from .timer import Timer
 from .candidate import Candidate
-logger = logging.getLogger(__name__)
 
 
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
@@ -20,6 +19,7 @@ class Follower(Voter):
         self._vote_at_start = vote_at_start
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
+        self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         
     def __str__(self):
         return "follower"
@@ -46,9 +46,13 @@ class Follower(Voter):
         # reset timeout
         self.election_timer.reset()
 
+        if len(message.data["entries"]) != 0:
+            self.logger.debug("on_append_entries message %s", message)
+        else:
+            self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         if message.term < self._server._currentTerm:
             self._send_response_message(message, votedYes=False)
-            self.logger.debug("rejecting message because sender term is less than mine %s", message)
+            self.logger.info("rejecting message because sender term is less than mine %s", message)
             return self, None
         if message.data != {}:
             log = self._server.get_log()
@@ -61,7 +65,7 @@ class Follower(Voter):
                 # if so then we use the last index
                 commit_index = min(int(data['leaderCommit']),
                                    log_tail.last_index)
-                logger.info("commiting %d because %s != %s and last index = %s",
+                self.logger.info("commiting %d because %s != %s and last index = %s",
                             commit_index, data['leaderCommit'],
                             log_tail.commit_index,
                             log_tail.last_index)
@@ -72,35 +76,52 @@ class Follower(Voter):
                 # leader has more than we do.
                 self._send_response_message(message, votedYes=False)
                 self.logger.debug("rejecting message because our index is %s and sender is %s",
-                             len(log)-1, data["prevLogIndex"])
+                             log_tail.last_index, data["prevLogIndex"])
+                self.logger.debug("rejected message %s %s", message,
+                                  message.data)
                 return self, None
-            last_rec = log.read(log_tail.last_index)
+            # this checking of the last index is due
+            # to the hacky use of a dummy log initial
+            # record, meaning the first real record
+            # is at index 1.
+            # TODO: fix this when fixing the hack
+            last_rec = log.read(data['prevLogIndex'])
             if (last_rec and log_tail.last_index > 0
                 and last_rec.term != data['prevLogTerm']):
                 # somehow follower got ahead of leader
                 # not sure if this is possible
                 # TODO: experiement to see if this code ever
                 # runs
-                logger.error("Follower is ahead of leader!!!")
-                logger.error(asdict(log_tail))
-                logger.error(str(data))
+                self.logger.error("Follower is ahead of leader!!!")
+                self.logger.error("last record term = %d, msg prevLogTerm = %d",
+                                  last_rec.term, data['prevLogTerm'])
+                self.logger.error(asdict(log_tail))
+                self.logger.error(asdict(last_rec))
+                self.logger.error(str(data))
                 log.trim_after(data['prevLogIndex'])
                 self._send_response_message(message, votedYes=False)
                 return self, None
             else:
                 if len(data["entries"]) > 0:
                     self.logger.debug("accepting message on our index=%s and sender=%s, data=%s",
-                                 tail.last_index, data["prevLogIndex"], data)
+                                      log_tail.last_index,
+                                      data["prevLogIndex"], data)
                     for ent in data["entries"]:
                         log.append([LogRec(user_data=ent),],
-                                   data['prevLogTerm'])
-                    tail = log.commit()
-                    logger.info("commit %s from %s", tail, message.data)
+                                   ent['term'])
+                    tail = log.commit(data['leaderCommit'])
+                    self.logger.info("commit %s from %s", tail, message.data)
                     self._send_response_message(message)
                 else:
-                    logger.debug("heartbeat")
+                    #self.logger.debug("heartbeat")
                     self._send_response_message(message)
-                return self, None
+            # TODO: cleanup the logic in this code, this send
+            # is needed but it is also redundant in depending on the
+            # branching above
+            if len(data["entries"]) > 0:
+                self.logger.debug("sending trailing message")
+            self._send_response_message(message)
+            return self, None
         else:
             return self, None
 
@@ -113,7 +134,7 @@ class Follower(Voter):
         return True
 
     def on_vote_received(self, message):
-        logger.info("follower got vote: message.term = %d local_term = %d",
+        self.logger.info("follower got vote: message.term = %d local_term = %d",
                     message.term, self._server._currentTerm)
 
     def on_response_received(self, message):

@@ -6,7 +6,6 @@ from .base_state import State
 from .log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
 from .timer import Timer
-logger = logging.getLogger(__name__)
 
 
 # Raft leader. Currently does not support step down -> leader will stay forever until terminated
@@ -16,6 +15,7 @@ class Leader(State):
         self._nextIndexes = defaultdict(int)
         self._matchIndex = defaultdict(int)
         self._heartbeat_timeout = heartbeat_timeout
+        self.logger = logging.getLogger(__name__)
 
     def __str__(self):
         return "leader"
@@ -23,14 +23,16 @@ class Leader(State):
     def set_server(self, server):
         self._server = server
         # send heartbeat immediately
-        logger.info('Leader on %s in term %s', self._server.endpoint,
+        self.logger.info('Leader on %s in term %s', self._server.endpoint,
                     self._server._currentTerm)
         self._send_heartbeat()
         self.heartbeat_timer = Timer(self._heartbeat_interval(), self._send_heartbeat)
         self.heartbeat_timer.start()
 
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
         for other in self._server.other_nodes:
-            self._nextIndexes[other[1]] = self._server._lastLogIndex + 1
+            self._nextIndexes[other[1]] = log_tail.last_index + 1
             self._matchIndex[other[1]] = 0
 
     def _heartbeat_interval(self):
@@ -52,14 +54,14 @@ class Leader(State):
             prevIndex = max(0, self._nextIndexes[message.sender[1]] - 1)
             prev_rec = log.read(prevIndex)
             if not prev_rec:
-                logger.error("cannot find log message %d for other node %s",
+                self.logger.error("cannot find log message %d for other node %s",
                              prevIndex, message.sender)
                 return self, None
             prev = prev_rec.user_data
             next_i = self._nextIndexes[message.sender[1]]
             current_rec = log.read(next_i)
             if not current_rec:
-                logger.error("cannot find log message %d for other node %s",
+                self.logger.error("cannot find log message %d for other node %s",
                              next_i, message.sender)
                 return self, None
             
@@ -79,6 +81,9 @@ class Leader(State):
             asyncio.ensure_future(self._server.post_message(append_entry))
         else:
             # last append was good -> increase index
+            # TODO: fix the index logic for these bookkeeping lists,
+            # current logic is port number, which could be the same
+            # on different machines. Use the whole address tuple instead
             self._nextIndexes[message.sender[1]] += 1
             self._matchIndex[message.sender[1]] += 1
 
@@ -93,11 +98,18 @@ class Leader(State):
             majority_response_received = 0
 
             for follower, matchIndex in self._matchIndex.items():
-                if matchIndex == (self._server._lastLogIndex):
+                if matchIndex == log_tail.last_index:
                     majority_response_received += 1
+                    self.logger.debug("processing response from %s with "\
+                                      "next_i %d, tail = %s tally is now %d",
+                                      message.sender,
+                                      self._nextIndexes[message.sender[1]],
+                                      log_tail,
+                                      majority_response_received)
 
             if (majority_response_received >= (self._server._total_nodes - 1) / 2
-                and log_tail.last_index > 0 and log_tail.last_index == log_tail.commit_index +1):
+                and log_tail.last_index > 0
+                and log_tail.last_index == log_tail.commit_index +1):
 
                 client_addr = 'localhost', self._server.client_port
                 # committing next index
@@ -109,7 +121,7 @@ class Leader(State):
                     'receiver': client_addr,
                     'value': response
                 }
-                logger.debug("sending reply message %s", message)
+                self.logger.debug("sending reply message %s", message)
                 asyncio.ensure_future(self._server.post_message(message))
 
         return self, None
@@ -124,8 +136,8 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": self._server._lastLogIndex,
-                "prevLogTerm": self._server._lastLogTerm,
+                "prevLogIndex": log_tail.last_index,
+                "prevLogTerm": log_tail.term,
                 "entries": [],
                 "leaderCommit": log_tail.commit_index,
             }
@@ -140,13 +152,12 @@ class Leader(State):
         if response == "Invalid command":
             return False
         entries = [{
-            "term": log_tail.term,
+            "term": self._server._currentTerm,
             "command": message,
             "balance": balance,
             "response": response
         }]
         log = self._server.get_log()
-        pre_save_log_tail = log.get_tail()
         log.append([LogRec(user_data=entries[0]),], self._server._currentTerm)
 
         message = AppendEntriesMessage(
@@ -156,12 +167,14 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": pre_save_log_tail.last_index,
-                "prevLogTerm": pre_save_log_tail.last_term,
+                "prevLogIndex": log_tail.last_index,
+                "prevLogTerm": log_tail.term,
                 "entries": entries,
-                "leaderCommit": pre_save_log_tail.commit_index,
+                "leaderCommit": log_tail.commit_index,
             }
         )
+        self.logger.debug("(term %d) sending log update to all followers: %s",
+                          self._server._currentTerm, message.data)
         self._server.broadcast(message)
         return True
 
@@ -192,10 +205,14 @@ class Leader(State):
                 response = "Insufficient account balance"
         else:
             response = "Invalid command"
+        if response == "Invalid command":
+            self.logger.debug("invalid client command %s", command)
+        else:
+            self.logger.debug("completed client command %s", command)
         return response, balance
 
     def on_vote_received(self, message):
-        logger.info("leader got vote: message.term = %d local_term = %d",
+        self.logger.info("leader got vote: message.term = %d local_term = %d",
                     message.term, self._server._currentTerm)
 
     def on_vote_request(self, message):

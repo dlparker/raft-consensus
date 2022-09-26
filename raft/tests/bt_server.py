@@ -48,7 +48,7 @@ class UDPBankTellerServer:
         state = raft.state_follower(vote_at_start=True)
         data_log = MemoryLog()
         init_data = {
-            'term': -1,
+            'term': None,
             'command': None,
             'balance': None
         }

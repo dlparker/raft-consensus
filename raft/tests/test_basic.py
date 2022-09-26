@@ -45,15 +45,13 @@ class TestMemoryLog(unittest.TestCase):
         mlog = MemoryLog()
         empty_tail = mlog.get_tail()
         self.assertEqual(empty_tail.last_index, -1)
-        self.assertEqual(empty_tail.last_term, -1)
-        self.assertEqual(empty_tail.term, -1)
+        self.assertEqual(empty_tail.term, None)
         self.assertEqual(empty_tail.commit_index, -1)
         rec1_data = dict(name="rec1", value=1)
         rec1 = LogRec(user_data=rec1_data)
         mlog.append([rec1,], 1)
         one_rec_tail = mlog.get_tail()
         self.assertEqual(one_rec_tail.last_index, 0)
-        self.assertEqual(one_rec_tail.last_term, -1)
         self.assertEqual(one_rec_tail.term, 1)
         self.assertEqual(one_rec_tail.commit_index, -1)
         mlog.commit()
@@ -67,7 +65,6 @@ class TestMemoryLog(unittest.TestCase):
         mlog.commit()
         three_rec_tail = mlog.get_tail()
         self.assertEqual(three_rec_tail.last_index, 2)
-        self.assertEqual(three_rec_tail.last_term, 1)
         self.assertEqual(three_rec_tail.term, 2)
         self.assertEqual(three_rec_tail.commit_index, 2)
 
@@ -90,7 +87,6 @@ class TestMemoryLog(unittest.TestCase):
         mlog.trim_after(0)
         trimmed_tail = mlog.get_tail()
         self.assertEqual(trimmed_tail.last_index, 0)
-        self.assertEqual(trimmed_tail.last_term, -1)
         self.assertEqual(trimmed_tail.term, 1)
         self.assertEqual(trimmed_tail.commit_index, 0)
         
@@ -174,11 +170,13 @@ class TestThreeServers(unittest.TestCase):
         start_time = time.time()
         while time.time() - start_time < 3:
             try:
-                client1.do_credit(10)
+                status = client1.get_status()
                 break
             except:
                 time.sleep(0.5)
-        status = client1.get_status()
+                status = None
+        self.assertIsNotNone(status)
+        self.assertIsNotNone(status.data['leader'])
         leader_addr = status.data['leader']
         leader = None
         first_follower = None
@@ -194,6 +192,7 @@ class TestThreeServers(unittest.TestCase):
                     second_follower = sdef
                 sdef['role'] = "follower"
 
+        client1.do_credit(10)
         balance = client1.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
         logger.info("calls to 5000 worked")

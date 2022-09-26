@@ -5,8 +5,16 @@ import raft
 
 from bt_server import UDPBankTellerServer
 
-def setup_test_dirs(num_servers):
+def setup_base_dir(force_clear=False):
     base_dir = Path("/tmp/raft_tests")
+    if base_dir.exists() and force_clear:
+        shutil.rmtree(base_dir)
+    if not base_dir.exists():
+       base_dir.mkdir()
+    return base_dir
+    
+def setup_test_dirs(num_servers):
+    base_dir = setup_base_dir()
     if base_dir.exists():
         shutil.rmtree(base_dir)
     base_dir.mkdir()
@@ -15,6 +23,8 @@ def setup_test_dirs(num_servers):
         name = f"server_{i}"
         sdir = Path(base_dir, name)
         sdirs[name] = sdir
+        if sdir.exists():
+            shutil.rmtree(sdir)
         sdir.mkdir()
     return dict(base_dir=base_dir, server_dirs=sdirs)
 

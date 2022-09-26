@@ -1,0 +1,3 @@
+
+After making server and API, update state object constructors to expect an
+abstract server.

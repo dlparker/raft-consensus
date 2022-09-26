@@ -3,6 +3,7 @@ from logging.config import dictConfig
 from pathlib import Path
 
 from log_server import LogSocketServer
+from setup_utils import setup_base_dir
 
 have_logging_server = False
 
@@ -57,9 +58,10 @@ def config_logging(logfile_path, use_server=False, server_filepath=None):
     raft_log = dict(handlers=handler_names, level="INFO", propagate=False)
     log_loggers['raft'] = raft_log
     follower_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
-    log_loggers['raft.servers.server'] = follower_log
+    #log_loggers['raft.servers.server'] = follower_log
     log_loggers['raft.states.follower'] = follower_log
     log_loggers['raft.states.leader'] = follower_log
+    log_loggers['raft.states.memory_log'] = follower_log
     log_config = dict(version=1, disable_existing_loggers = True,
                       formatters=log_formaters,
                       handlers=log_handlers,
@@ -67,8 +69,10 @@ def config_logging(logfile_path, use_server=False, server_filepath=None):
     return log_config, server_config
 
 def setup_logging_for_test(name, file_path="/tmp/raft_tests/test.log",
-                           use_server=True, server_filepath="/tmp/combined_raft.log",
+                           use_server=True,
+                           server_filepath="/tmp/raft_tests/combined.log",
                            extra_levels=None):
+    setup_base_dir()
     config,server_config = config_logging(file_path,  use_server=use_server,
                                          server_filepath=server_filepath)
     
@@ -110,7 +114,8 @@ if __name__=="__main__":
             x.unlink()
 
     levels = [dict(name="test", level="DEBUG", propagate=False),]
-    config = setup_logging_for_test("test1", lfile, True, sfile, extra_levels=levels)
+    config = setup_logging_for_test("test1", lfile, True, sfile,
+                                    extra_levels=levels)
     logger = logging.getLogger("test")
     for i in range(10):
         logger.debug("log rec %d", i)
