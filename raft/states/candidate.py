@@ -10,6 +10,8 @@ from .timer import Timer
 # Raft Candidate. Transition state between Follower and Leader
 class Candidate(Voter):
 
+    _type = "candidate"
+    
     def __init__(self, timeout=0.5):
         Voter.__init__(self)
         self._timeout = timeout

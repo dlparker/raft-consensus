@@ -4,6 +4,7 @@ import asyncio
 import threading
 import errno
 import logging
+import traceback
 
 from ..messages.serializer import Serializer
 
@@ -48,7 +49,7 @@ class Server(object):
                                                               sock=self._sock)
             self.logger.debug("udp setup done")
         except Exception as e:
-            self.logger.error(e)
+            self.logger.error(traceback.format_exc())
             raise
 
     def broadcast(self, message):
@@ -66,9 +67,8 @@ class Server(object):
             asyncio.ensure_future(self.post_message(message))
 
     async def post_message(self, message):
-        if not isinstance(message, dict):
-            self.logger.debug("posting %s to %s",
-                         message, message.receiver)
+        self.logger.debug("posting %s to %s",
+                          message, message.receiver)
         await self._queue.put(message)
 
     def get_log(self):
@@ -78,26 +78,42 @@ class Server(object):
         try:
             self._on_message(data, addr)
         except Exception as e:
-            self.logger.error(e)
+            self.logger.error(traceback.format_exc())
             
     def _on_message(self, data, addr):
-        addr = addr[1]
         message = None
-        client_message = None
         try:
             message = Serializer.deserialize(data)
-        except:
-            try:
-                client_message = Serializer.deserialize_client(data)
-            except:
-                pass
-
-        if not message and not client_message:
-            # must be an app level command
-            command = data.decode('utf8')
-            self.logger.debug("command %s", command)
-            self._state.on_client_command(command, addr)
-        elif message:
+        except Exception as e:
+            self.logger.error(traceback.format_exc())
+            self.logger.error("cannot deserialze incoming data '%s...'",
+                              data[:30])
+            return
+        if message.is_type("command"):
+            # client does not set sender field, so set it
+            message._sender = addr
+            self.logger.info("command '%s' from %s", message, addr)
+            if message.original_sender:
+                self.logger.info("command originally from %s",
+                                 message.original_sender)
+                
+            if self._state.get_type() == "leader":
+                self._state.on_client_command(message, addr)
+            else:
+                leader_addr = self._state.get_leader_addr()
+                if leader_addr:
+                    message._receiver = leader_addr
+                    message._original_sender = addr
+                    self.logger.info("Redirecting client to %s on %s",
+                                     leader_addr, message)
+                    asyncio.ensure_future(self.post_message(message))
+                else:
+                    message._data = '{"error": "not available"}'
+                    message._sender = message._receiver
+                    message._receiver = addr
+                    self.logger.info("Client getting 'unavailable', no leader")
+                    asyncio.ensure_future(self.post_message(message))
+        else:
             message._receiver = message.receiver[0], message.receiver[1]
             message._sender = message.sender[0], message.sender[1]
             self.logger.debug("state %s message %s", self._state, message)
@@ -128,10 +144,9 @@ class Server(object):
                 #    state, response = state_res
                 #    self._state = state
             except Exception as e:
+                self.logger.error(traceback.format_exc())
                 self.logger.error("State %s got exception %e on message %s",
                                   self._state, e, message)
-        elif client_message:
-            self._state.on_client_command(client_message['command'], client_message['client_port'])
 
 
 # async class to send messages between server
@@ -151,33 +166,14 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         self.logger.info('UDP_protocol started')
         while not self.transport.is_closing():
             message = await self._queue.get()
-            if not isinstance(message, dict):
-                try:
-                    data = Serializer.serialize(message)
-                    self.logger.debug("sending dequed message %s (%s) to %s",
-                                 message, message._type, message.receiver)
-                except Exception as e:
-                    self.logger.error("error serializing queued message %s", e)
-                self.transport.sendto(data, message.receiver)
-            else:
-                # TODO: this code smells, looks like it is tied to demo client
-                try:
-                    data = message['value'].encode('utf8')
-                    addr = message['receiver']
-                    self.logger.info('Returning client request %s', message['value'])
-                    self._server._sock.sendto(data, addr)
-                except KeyError as ke:
-                    if self._server._state._leaderPort is None:
-                        self.logger.error("cannot handle client request, no leader exists")
-                    else:
-                        data = Serializer.serialize_client(message['command'],
-                                                           message['client_port'])
-                        addr = self._server._state._leaderPort
-                        self.logger.info("Redirecting client to %s on %s",
-                                         addr, message)
-                        self.transport.sendto(data, (addr[0], addr[1]))
-                except Exception as e:
-                    self.logger.error("got exception %s", e)
+            try:
+                data = Serializer.serialize(message)
+                self.logger.debug("sending dequed message %s (%s) to %s",
+                                  message, message._type, message.receiver)
+            except Exception as e:
+                self.logger.error(traceback.format_exc())
+                self.logger.error("error serializing queued message %s", e)
+            self.transport.sendto(data, message.receiver)
 
     def connection_made(self, transport):
         self.transport = transport
@@ -189,13 +185,13 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         try:
             self.message_handler(data, addr)
         except Exception as e:
-            self.logger.error("got exception %s", e)
+            self.logger.error(traceback.format_exc())
 
     def error_received(self, exc):
         self.logger.error("got error %s", exc)
 
     def connection_lost(self, exc):
-        self.logger.info("connection lost %s")
+        self.logger.info("connection lost %s", exc)
 
 # thread to wait for message from user client
 class UDP_Server(threading.Thread):

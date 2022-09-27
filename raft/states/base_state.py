@@ -9,7 +9,7 @@ from ..messages.status import StatusQueryResponseMessage
 
 # abstract class for all server states
 class State(metaclass=abc.ABCMeta):
-
+    _type = "base"
     @classmethod
     def __subclasshook__(cls, subclass):
         return (hasattr(subclass, 'on_vote_request') and 
@@ -52,6 +52,12 @@ class State(metaclass=abc.ABCMeta):
         elif (_type == BaseMessage.Response):
             return self.on_response_received(message)
 
+    def get_type(self):
+        return self._type
+
+    def get_leader_addr(self):
+        return None
+    
     @abc.abstractmethod
     def on_vote_request(self, message):
         """Called when there is a vote request"""
@@ -79,13 +85,13 @@ class State(metaclass=abc.ABCMeta):
 
     def on_status_query(self, message):
         """Called when there is a status query"""
-        state_type = str(self._server._state)
+        state_type = self._server._state.get_type()
         if state_type == "leader":
             leader_addr = self._server.endpoint
         elif state_type == "candidate":
             leader_addr = (-1,-1)
         else:
-            leader_addr = self._server._state._leaderPort
+            leader_addr = self._server._state.get_leader_addr()
         status_data = dict(state=state_type, leader=leader_addr)
         status_response = StatusQueryResponseMessage(
             self._server.endpoint,

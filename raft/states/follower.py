@@ -12,10 +12,12 @@ from .candidate import Candidate
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
 
+    _type = "follower"
+    
     def __init__(self, timeout=0.75, vote_at_start=False):
         Voter.__init__(self)
         self._timeout = timeout
-        self._leaderPort = None
+        self._leader_addr = None
         self._vote_at_start = vote_at_start
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
@@ -23,6 +25,9 @@ class Follower(Voter):
         
     def __str__(self):
         return "follower"
+
+    def get_leader_addr(self):
+        return self._leader_addr
     
     def set_server(self, server):
         self._server = server
@@ -46,6 +51,9 @@ class Follower(Voter):
         # reset timeout
         self.election_timer.reset()
 
+        data = message.data
+        self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
+
         if len(message.data["entries"]) != 0:
             self.logger.debug("on_append_entries message %s", message)
         else:
@@ -57,8 +65,6 @@ class Follower(Voter):
         if message.data != {}:
             log = self._server.get_log()
             log_tail = log.get_tail()
-            data = message.data
-            self._leaderPort = data["leaderPort"]
 
             # Check if leader is too far ahead in log
             if data['leaderCommit'] != log_tail.commit_index:

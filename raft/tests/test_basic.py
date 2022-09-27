@@ -171,7 +171,9 @@ class TestThreeServers(unittest.TestCase):
         while time.time() - start_time < 3:
             try:
                 status = client1.get_status()
-                break
+                if status.data['leader']:
+                    break
+                time.sleep(0.5)
             except:
                 time.sleep(0.5)
                 status = None

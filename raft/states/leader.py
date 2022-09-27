@@ -5,12 +5,15 @@ import logging
 from .base_state import State
 from .log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
+from ..messages.command import ClientCommandResultMessage
 from .timer import Timer
 
 
 # Raft leader. Currently does not support step down -> leader will stay forever until terminated
 class Leader(State):
 
+    _type = "leader"
+    
     def __init__(self, heartbeat_timeout=0.5):
         self._nextIndexes = defaultdict(int)
         self._matchIndex = defaultdict(int)
@@ -100,7 +103,8 @@ class Leader(State):
             for follower, matchIndex in self._matchIndex.items():
                 if matchIndex == log_tail.last_index:
                     majority_response_received += 1
-                    self.logger.debug("processing response from %s with "\
+                    if False:
+                        self.logger.debug("processing response from %s with "\
                                       "next_i %d, tail = %s tally is now %d",
                                       message.sender,
                                       self._nextIndexes[message.sender[1]],
@@ -111,18 +115,22 @@ class Leader(State):
                 and log_tail.last_index > 0
                 and log_tail.last_index == log_tail.commit_index +1):
 
-                client_addr = 'localhost', self._server.client_port
                 # committing next index
 
                 log.commit(log_tail.commit_index + 1)
                 last_log = log.read(log_tail.last_index)
                 response = last_log.user_data['response']
-                message = {
-                    'receiver': client_addr,
-                    'value': response
-                }
-                self.logger.debug("sending reply message %s", message)
-                asyncio.ensure_future(self._server.post_message(message))
+                reply_address = last_log.user_data['reply_address']
+                # make sure it is a tuple
+                reply_address = (reply_address[0], reply_address[1])
+                self.logger.debug("preparing reply for %s from %s",
+                                  response, reply_address)
+                reply = ClientCommandResultMessage(self._server.endpoint,
+                                                   reply_address,
+                                                   log_tail.term,
+                                                   response)
+                self.logger.debug("sending reply message %s", reply)
+                asyncio.ensure_future(self._server.post_message(reply))
 
         return self, None
 
@@ -147,20 +155,25 @@ class Leader(State):
     def on_client_command(self, message, client_port):
         log = self._server.get_log()
         log_tail =  log.get_tail()
-        self._server.client_port = client_port
+        target = client_port
+        if message.original_sender:
+            target = message.original_sender
+        self.logger.debug("saving address for reply %s",
+                          self._server.client_port)
         response, balance = self.execute_command(message)
         if response == "Invalid command":
             return False
         entries = [{
             "term": self._server._currentTerm,
-            "command": message,
+            "command": message.data,
             "balance": balance,
-            "response": response
+            "response": response,
+            "reply_address": target
         }]
         log = self._server.get_log()
         log.append([LogRec(user_data=entries[0]),], self._server._currentTerm)
 
-        message = AppendEntriesMessage(
+        update_message = AppendEntriesMessage(
             self._server.endpoint,
             None,
             self._server._currentTerm,
@@ -174,12 +187,12 @@ class Leader(State):
             }
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
-                          self._server._currentTerm, message.data)
-        self._server.broadcast(message)
+                          self._server._currentTerm, update_message.data)
+        self._server.broadcast(update_message)
         return True
 
-    def execute_command(self, command):
-        command = command.split()
+    def execute_command(self, message):
+        command = message.data.split()
         log = self._server.get_log()
         log_tail = log.get_tail()
         log_rec = log.read(log_tail.last_index)

@@ -1,6 +1,7 @@
 import sys
 import socket
 from raft.messages.status import StatusQueryMessage
+from raft.messages.command import ClientCommandMessage
 from raft.messages.serializer import Serializer
 
 
@@ -27,10 +28,9 @@ class UDPBankTellerClient:
             data = self._sock.recv(1024)
         except OSError:
             raise RuntimeError("message reply timeout")
-        try:
-            result = data.decode('utf-8')
-        except UnicodeDecodeError:
-            result = Serializer.deserialize(data)
+        result = Serializer.deserialize(data)
+        if result.is_type("command_result"):
+            return result.data
         return result
 
     def get_status(self):
@@ -40,15 +40,24 @@ class UDPBankTellerClient:
         return self.get_result()
         
     def do_query(self):
-        self._sock.sendto("query".encode('utf-8'), self._server_addr)
+        qm = ClientCommandMessage(self._addr, self._server_addr,
+                                  None, "query")
+        data = Serializer.serialize(qm)
+        self._sock.sendto(data, self._server_addr)
         return self.get_result()
 
     def do_credit(self, amount):
-        self._sock.sendto(f"credit {amount}".encode('utf-8'), self._server_addr)
+        cm = ClientCommandMessage(self._addr, self._server_addr,
+                                  None, f"credit {amount}")
+        data = Serializer.serialize(cm)
+        self._sock.sendto(data, self._server_addr)
         return self.get_result()
 
     def do_debit(self, amount):
-        self._sock.sendto(f"debit {amount}".encode('utf-8'), self._server_addr)
+        dm = ClientCommandMessage(self._addr, self._server_addr,
+                                  None, f"dedit {amount}")
+        data = Serializer.serialize(dm)
+        self._sock.sendto(data, self._server_addr)
         return self.get_result()
         
                           
