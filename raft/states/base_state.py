@@ -85,14 +85,17 @@ class State(metaclass=abc.ABCMeta):
 
     def on_status_query(self, message):
         """Called when there is a status query"""
-        state_type = self._server._state.get_type()
+        state_type = self.get_type()
         if state_type == "leader":
             leader_addr = self._server.endpoint
         elif state_type == "candidate":
-            leader_addr = (-1,-1)
+            leader_addr = None
         else:
-            leader_addr = self._server._state.get_leader_addr()
-        status_data = dict(state=state_type, leader=leader_addr)
+            leader_addr = self.get_leader_addr()
+        log_tail = self._server.get_log().get_tail()
+        status_data = dict(state=state_type,
+                           leader=leader_addr,
+                           term=log_tail.term)
         status_response = StatusQueryResponseMessage(
             self._server.endpoint,
             message.sender,

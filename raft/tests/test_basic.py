@@ -118,13 +118,14 @@ class TestThreeServers(unittest.TestCase):
         logger.info("starting test_non_leader_stop")
         client1 =  UDPBankTellerClient("localhost", 5000)
         start_time = time.time()
+        status = None
         while time.time() - start_time < 3:
-            try:
-                client1.do_credit(10)
+            time.sleep(0.25)
+            status = client1.get_status()
+            if status and status.data['leader']:
                 break
-            except:
-                time.sleep(0.5)
-        status = client1.get_status()
+        self.assertIsNotNone(status)
+        self.assertIsNotNone(status.data['leader'])
         leader_addr = status.data['leader']
         leader = None
         first_follower = None
@@ -140,6 +141,7 @@ class TestThreeServers(unittest.TestCase):
                     second_follower = sdef
                 sdef['role'] = "follower"
 
+        client1.do_credit(10)
         balance = client1.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
         logger.info("calls to 5000 worked")
@@ -150,10 +152,11 @@ class TestThreeServers(unittest.TestCase):
         self.assertEqual(balance, "Your current account balance is: 10")
         logger.info("call to 5001 worked")
 
+        status = client1.get_status()
         logger.info("stopping non-leader server %s", second_follower)
         stop_server(second_follower)
         logger.info("server %s stopped", second_follower)
-            
+
         # make sure that calls to both running servers work
         balance = client1.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
@@ -169,15 +172,12 @@ class TestThreeServers(unittest.TestCase):
         logger.info("starting test_leader_stop")
         client1 =  UDPBankTellerClient("localhost", 5000)
         start_time = time.time()
+        status = None
         while time.time() - start_time < 3:
-            try:
-                status = client1.get_status()
-                if status.data['leader']:
-                    break
-                time.sleep(0.5)
-            except:
-                time.sleep(0.5)
-                status = None
+            time.sleep(0.25)
+            status = client1.get_status()
+            if status and status.data['leader']:
+                break
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.data['leader'])
         leader_addr = status.data['leader']
@@ -214,17 +214,17 @@ class TestThreeServers(unittest.TestCase):
             new_client = client2
         else:
             new_client = client1
-        # wait a second for election to happen
-        time.sleep(1)
+        # wait for election to happen
         start_time = time.time()
         while time.time() - start_time < 7:
-            status = new_client.get_status()
-            new_leader_addr = status.data['leader']
-            if (new_leader_addr
-                and new_leader_addr[0] != -1 &
-                new_leader_addr[1] != leader['port']):
-                break
             time.sleep(0.25)
+            status = new_client.get_status()
+            if status:
+                new_leader_addr = status.data['leader']
+                if (new_leader_addr
+                    and new_leader_addr[0] != -1 &
+                    new_leader_addr[1] != leader['port']):
+                    break
         self.assertNotEqual(new_leader_addr[0], -1,
                             msg="Leader election started but did not complete")
         self.assertNotEqual(new_leader_addr[1], leader['port'],

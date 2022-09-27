@@ -7,6 +7,7 @@ import logging
 import traceback
 
 from ..messages.serializer import Serializer
+from ..messages.command import ClientCommandResultMessage
 from ..comms.udp import UDPComms
 
 class Server:
@@ -17,12 +18,13 @@ class Server:
         self._log = log
         self.endpoint = endpoint
         self.other_nodes = other_nodes
+        self._total_nodes = len(self.other_nodes) + 1
         self._commitIndex = 0
         self._currentTerm = 0
         self.logger = logging.getLogger(__name__)
         self._state.set_server(self)
-        self.comms = UDPComms(self, endpoint, other_nodes)
-        self._total_nodes = len(self.other_nodes) + 1
+        self.comms = UDPComms()
+        asyncio.ensure_future(self.comms.start(self, self.endpoint))
         self.logger.info('Server with UDP on %s', self.endpoint)
 
     def get_log(self):
@@ -62,11 +64,15 @@ class Server:
                                      leader_addr, message)
                     asyncio.ensure_future(self.comms.post_message(message))
                 else:
-                    message._data = '{"error": "not available"}'
-                    message._sender = message._receiver
-                    message._receiver = addr
+                    response = '{"error": "not available"}'
+                    client_addr = (addr[0], addr[1])
+                    my_addr = (self.endpoint[0], self.endpoint[1])
+                    reply = ClientCommandResultMessage(my_addr,
+                                                       client_addr,
+                                                       None,
+                                                       response)
                     self.logger.info("Client getting 'unavailable', no leader")
-                    asyncio.ensure_future(self.comms.post_message(message))
+                    asyncio.ensure_future(self.comms.post_message(reply))
         else:
             message._receiver = message.receiver[0], message.receiver[1]
             message._sender = message.sender[0], message.sender[1]

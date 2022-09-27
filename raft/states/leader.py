@@ -68,7 +68,7 @@ class Leader(State):
                              next_i, message.sender)
                 return self, None
             
-            # send new log to client and wait for respond
+            # send new log to other and wait for respond
             append_entry = AppendEntriesMessage(
                 self._server.endpoint,
                 message.sender,
@@ -81,6 +81,8 @@ class Leader(State):
                     "entries": [current_rec.user_data,],
                     "leaderCommit": log_tail.commit_index,
                 })
+            self.logger.debug("sending log entry prev at %s term %s to %s",
+                              prevIndex, prev['term'], message.sender)
             asyncio.ensure_future(self._server.post_message(append_entry))
         else:
             # last append was good -> increase index
@@ -103,13 +105,13 @@ class Leader(State):
             for follower, matchIndex in self._matchIndex.items():
                 if matchIndex == log_tail.last_index:
                     majority_response_received += 1
-                    if False:
-                        self.logger.debug("processing response from %s with "\
-                                      "next_i %d, tail = %s tally is now %d",
-                                      message.sender,
-                                      self._nextIndexes[message.sender[1]],
-                                      log_tail,
-                                      majority_response_received)
+            self.logger.debug("processing response from %s with "\
+                              "next_i %d, tail = %s tally is now %d, msg_data= %s",
+                              message.sender,
+                              self._nextIndexes[message.sender[1]],
+                              log_tail,
+                              majority_response_received,
+                              message.data)
 
             if (majority_response_received >= (self._server._total_nodes - 1) / 2
                 and log_tail.last_index > 0
