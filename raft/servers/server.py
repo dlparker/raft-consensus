@@ -1,7 +1,5 @@
-from socket import *
 import copy
 import asyncio
-import threading
 import errno
 import logging
 import traceback

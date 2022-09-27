@@ -6,6 +6,7 @@ from .base_state import State
 from .log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
 from ..messages.command import ClientCommandResultMessage
+from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
 from .timer import Timer
 
 
@@ -41,6 +42,19 @@ class Leader(State):
     def _heartbeat_interval(self):
         return random.uniform(0, self._heartbeat_timeout)
 
+    def on_heartbeat_response(self, message):
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
+        self.logger.debug("heartbeat response from %s with "\
+                          "log tail = %s msg_data= %s",
+                          message.sender,
+                          log_tail,
+                          message.data)
+
+    def on_heartbeat(self, message):
+        self.logger.warning("Why am I getting hearbeat when I am leader?")
+        #self.on_heartbeat_common(self, message)
+        
     def on_response_received(self, message):
         # check if last append_entries good?
         log = self._server.get_log()
@@ -139,6 +153,7 @@ class Leader(State):
     def _send_heartbeat(self):
         log = self._server.get_log()
         log_tail =  log.get_tail()
+        #message = HeartbeatMessage(
         message = AppendEntriesMessage(
             self._server.endpoint,
             None,

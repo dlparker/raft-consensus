@@ -1,10 +1,13 @@
 import logging
 import asyncio
 import abc
+from dataclasses import asdict
+
 
 from ..messages.base_message import BaseMessage
 from ..messages.response import ResponseMessage
 from ..messages.status import StatusQueryResponseMessage
+from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
 
 
 # abstract class for all server states
@@ -45,10 +48,18 @@ class State(metaclass=abc.ABCMeta):
             return self, None
         if (_type == BaseMessage.AppendEntries):
             return self.on_append_entries(message)
+        elif (_type == BaseMessage.Heartbeat):
+            return self.on_heartbeat(message)
+        elif (_type == BaseMessage.HeartbeatResponse):
+            return self.on_heartbeat_response(message)
         elif (_type == BaseMessage.RequestVote):
-            return self.on_vote_request(message)
+            try:
+                return self.on_vote_request(message)
+            except NotImplementedError:
+                l = logging.getLogger(__name__)
+                l.error("can't do vote recieved %s, %s", message, message.data)
         elif (_type == BaseMessage.RequestVoteResponse):
-            return self.on_vote_received(message)
+                return self.on_vote_received(message)
         elif (_type == BaseMessage.Response):
             return self.on_response_received(message)
 
@@ -105,6 +116,19 @@ class State(metaclass=abc.ABCMeta):
         asyncio.ensure_future(self._server.post_message(status_response))
         return self, None
 
+    @abc.abstractmethod
+    def on_heartbeat(self, message):
+        raise NotImplementedError
+
+    def on_heartbeat_common(self, message):
+        log = self._server.get_log()
+        log_tail = log.get_tail()
+        reply = HeartbeatResponseMessage(message.receiver,
+                                         message.sender,
+                                         term=log_tail.term,
+                                         data=asdict(log_tail))
+        self._server.post_message(reply)
+        
     def _send_response_message(self, msg, votedYes=True):
         response = ResponseMessage(
             self._server.endpoint,

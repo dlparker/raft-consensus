@@ -1,4 +1,8 @@
 class BaseMessage(object):
+    TermStart = 'term_start'
+    TermStartResponse = 'term_start_response'
+    Heartbeat = 'heartbeat'
+    HeartbeatResponse = 'heartbeat_response'
     AppendEntries = 'append_entries'
     RequestVote = 'request_vote'
     RequestVoteResponse = 'request_vote_response'

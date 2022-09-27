@@ -47,6 +47,14 @@ class Follower(Voter):
         candidate.set_server(self._server)
         return candidate, None
 
+    def on_heartbeat(self, message):
+        # reset timeout
+        self.election_timer.reset()
+        data = message.data
+        self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
+        self.on_heartbeat_common(message)
+        #self.logger.debug("sent heartbeat reply")
+        
     def on_append_entries(self, message):
         # reset timeout
         self.election_timer.reset()
@@ -118,14 +126,18 @@ class Follower(Voter):
                     tail = log.commit(data['leaderCommit'])
                     self.logger.info("commit %s from %s", tail, message.data)
                     self._send_response_message(message)
+                    self.logger.info("Sent log saved on %s", message)
+                    return self, None
                 else:
                     #self.logger.debug("heartbeat")
                     self._send_response_message(message)
+                    return self, None
             # TODO: cleanup the logic in this code, this send
             # is needed but it is also redundant in depending on the
             # branching above
             if len(data["entries"]) > 0:
-                self.logger.debug("sending log update ack message")
+                self.logger.debug("sending log update ack message to %s",
+                                  message.receiver)
             self._send_response_message(message)
             return self, None
         else:

@@ -33,6 +33,12 @@ class Candidate(Voter):
         self.logger.info("candidate resigning because we got new entries")
         self._resign()
 
+    def on_heartbeat(self, message):
+        self.logger.info("candidate resigning because we got hearbeat from leader")
+        self._resign()
+        self.on_heartbeat_common(message)
+        self.logger.debug("sent heartbeat reply")
+
     def on_timer(self):
         self.logger.info("candidate resigning because timer ended")
         self._resign()

@@ -3,6 +3,8 @@ from .request_vote import *
 from .response import ResponseMessage
 from .status import StatusQueryMessage, StatusQueryResponseMessage
 from .command import ClientCommandMessage, ClientCommandResultMessage
+from .heartbeat import HeartbeatMessage, HeartbeatResponseMessage
+from .termstart import TermStartMessage, TermStartResponseMessage
 
 import msgpack
 
@@ -24,49 +26,35 @@ class Serializer:
     def deserialize(data):
         message = msgpack.unpackb(data, use_list=True, encoding='utf-8')
         mtype = message['type']
-        if mtype == 'append_entries':
-            return AppendEntriesMessage(message['sender'],
-                                        message['receiver'],
-                                        message['term'],
-                                        message['data'])
+        args = [message['sender'],
+                message['receiver'],
+                message['term'],
+                message['data']]
+        if mtype == 'heartbeat':
+            return HeartbeatMessage(*args)
+        elif mtype == 'heartbeat_response':
+            return HeartbeatReponseMessage(*args)
+        elif mtype == 'term_start':
+            return TermStartMessage(*args)
+        elif mtype == 'term_start_response':
+            return TermStartReponseMessage(*args)
+        elif mtype == 'append_entries':
+            return AppendEntriesMessage(*args)
         elif mtype == 'request_vote':
-            return RequestVoteMessage(message['sender'],
-                                      message['receiver'],
-                                      message['term'],
-                                      message['data'])
+            return RequestVoteMessage(*args)
         elif mtype == 'request_vote_response':
-            return RequestVoteResponseMessage(message['sender'],
-                                      message['receiver'],
-                                      message['term'],
-                                      message['data'])
+            return RequestVoteResponseMessage(*args)
         elif mtype == 'response':
-            return ResponseMessage(message['sender'],
-                                      message['receiver'],
-                                      message['term'],
-                                      message['data'])
+            return ResponseMessage(*args)
         elif mtype == 'status_query':
-            return StatusQueryMessage(message['sender'],
-                                      message['receiver'],
-                                      message['term'],
-                                      message['data'])
+            return StatusQueryMessage(*args)
         elif mtype == 'status_query_response':
-            return StatusQueryResponseMessage(message['sender'],
-                                      message['receiver'],
-                                      message['term'],
-                                      message['data'])
-
+            return StatusQueryResponseMessage(*args)
         elif mtype == 'command':
-            return ClientCommandMessage(message['sender'],
-                                        message['receiver'],
-                                        message['term'],
-                                        message['data'],
-                                        message['original_sender'])
+            args.append(message['original_sender'])
+            return ClientCommandMessage(*args)
         elif mtype == 'command_result':
-            return ClientCommandResultMessage(message['sender'],
-                                      message['receiver'],
-                                      message['term'],
-                                      message['data'])
-
+            return ClientCommandResultMessage(*args)
         raise Exception(f"No code for provided message type {mtype}")
 
     @staticmethod
