@@ -27,8 +27,9 @@ class TestUtils(unittest.TestCase):
         # mess up the type of the vote message
         msg._type = "foo"
         bad_data = Serializer.serialize(msg)
-        new_msg = Serializer.deserialize(bad_data)
-        self.assertIsNone(new_msg)
+        with self.assertRaises(Exception) as context:
+            new_msg = Serializer.deserialize(bad_data)
+
 
         from raft.states.timer import Timer
         def my_interval():
@@ -217,14 +218,13 @@ class TestThreeServers(unittest.TestCase):
         time.sleep(1)
         start_time = time.time()
         while time.time() - start_time < 7:
-            try:
-                status = new_client.get_status()
-                new_leader_addr = status.data['leader']
-                if (new_leader_addr[0] != -1 &
-                    new_leader_addr[1] != leader['port']):
-                    break
-            except:
-                time.sleep(0.5)
+            status = new_client.get_status()
+            new_leader_addr = status.data['leader']
+            if (new_leader_addr
+                and new_leader_addr[0] != -1 &
+                new_leader_addr[1] != leader['port']):
+                break
+            time.sleep(0.25)
         self.assertNotEqual(new_leader_addr[0], -1,
                             msg="Leader election started but did not complete")
         self.assertNotEqual(new_leader_addr[1], leader['port'],

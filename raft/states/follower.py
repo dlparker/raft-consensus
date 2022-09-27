@@ -125,7 +125,7 @@ class Follower(Voter):
             # is needed but it is also redundant in depending on the
             # branching above
             if len(data["entries"]) > 0:
-                self.logger.debug("sending trailing message")
+                self.logger.debug("sending log update ack message")
             self._send_response_message(message)
             return self, None
         else:

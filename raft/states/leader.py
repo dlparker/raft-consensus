@@ -159,7 +159,7 @@ class Leader(State):
         if message.original_sender:
             target = message.original_sender
         self.logger.debug("saving address for reply %s",
-                          self._server.client_port)
+                          target)
         response, balance = self.execute_command(message)
         if response == "Invalid command":
             return False
