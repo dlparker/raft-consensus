@@ -59,7 +59,7 @@ class UDPBankTellerServer:
         logger.info('creating server')
         server = raft.create_server(name='raft', state=state,
                                     log=data_log, other_nodes=self._others,
-                                    endpoint=(self._host, self._port), loop=loop)
+                                    endpoint=(self._host, self._port))
         logger.info('created server')
         print(f"{self._name} started server on endpoint {(self._host, self._port)} with others at {self._others}", flush=True)
 
