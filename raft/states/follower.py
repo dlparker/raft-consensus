@@ -50,10 +50,99 @@ class Follower(Voter):
     def on_heartbeat(self, message):
         # reset timeout
         self.election_timer.reset()
+        self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
-        self.on_heartbeat_common(message)
-        #self.logger.debug("sent heartbeat reply")
+        if self._do_sync_action(message):
+            self.on_heartbeat_common(message)
+            self.heartbeat_logger.debug("heartbeat reply send")
+
+    def _do_sync_action(self, message):
+        data = message.data
+        # If the sender is still claiming an earlier
+        # term, then we reject the state claim. Not sure
+        # if this is actually possible, unless maybe there
+        # is an old message in a queue somewhere that gets
+        # sent after an election completes.
+        if message.term < self._server._currentTerm:
+            self._send_response_message(message, votedYes=False)
+            self.logger.info("rejecting out of date state claim from  %s",
+                             message.sender)
+            return False
+        log = self._server.get_log()
+        log_tail = log.get_tail()
+
+        # If the leader has committed something newer than our
+        # latest commit record, then we want to catch up as much
+        # as we can. That means that our most recent record should
+        # be committed unless it is more recent than the leader's
+        # commit index. In that case we should commit up to the
+        # leader's index.
+        # verbose for clarity
+        commit_reason = None
+        commit_index = None
+        leader_commit = data['leaderCommit']
+        self.heartbeat_logger.debug("leader data %s", data)
+        self.heartbeat_logger.debug("log data %s", log_tail)
+        if leader_commit != log_tail.commit_index:
+            if leader_commit > log_tail.last_index:
+                commit_reason = "partial"
+                commit_index = log_tail.last_index
+            else:
+                commit_reason = "full"
+                commit_index = leader_commit
+            self.logger.info("commiting up to %d as %s catch up with leader",
+                             commit_index, commit_reason)
+            log.commit(commit_index)
+            if commit_reason == "partial":
+                # ask for more log records
+                self._send_response_message(message, votedYes=False)
+                self.logger.info("asking leader for more log records")
+            return False
+        leader_last_rec_index = data["prevLogIndex"]
+        if log_tail.last_index < leader_last_rec_index:
+            # tell the leader we need more log records, the
+            # leader has more than we do.
+            self._send_response_message(message, votedYes=False)
+            self.logger.info("asking leader for more log records")
+            return False
+        if log_tail.last_index == 0:
+            # TODO: need to eliminate this branch by improving
+            # the log api so that we don't have to do the current
+            # hacky business of inserting a dummy record when the
+            # log is created. 
+            pass
+        else:
+            # Look at the leader's provided data for most recent
+            # log record, make sure that ours is not more recent.
+            # Not sure that this can happen, seems to violate
+            # promise of protocol. TODO: see if this can be forced
+            # in testing, or if it is dead code
+            last_matching_log_rec = log.read(leader_last_rec_index)
+            leader_log_term = data['prevLogTerm']
+            if last_matching_log_rec.term > leader_log_term:
+                target_index = min(log_tail.last_index,
+                                   leader_last_rec_index)
+                self.logger.warning("leader commit is behind follower commit")
+                self.logger.warning("leader commit term is %d, follower is %d",
+                                    leader_log_term,
+                                    last_matching_log_rec.term)
+                log.trim_after(leader_last_rec_index)
+                log.commit(leader_commit)
+                self._send_response_message(message, votedYes=False)
+                return False
+        if len(data["entries"]) > 0:
+            self.logger.debug("updating log with %d entries",
+                              len(data["entries"]))
+            for ent in data["entries"]:
+                log.append([LogRec(user_data=ent),],
+                           ent['term'])
+            tail = log.commit(leader_commit)
+            self._send_response_message(message)
+            self.logger.info("Sent log update ack %s", message)
+            return False
+        self.heartbeat_logger.debug("no action needed on heartbeat")
+        return True
         
     def on_append_entries(self, message):
         # reset timeout
@@ -83,6 +172,8 @@ class Follower(Voter):
                             commit_index, data['leaderCommit'],
                             log_tail.commit_index,
                             log_tail.last_index)
+                self.heartbeat_logger.debug("leader data %s", data)
+                self.heartbeat_logger.debug("log data %s", log_tail)
                 log.commit(commit_index)
             # If log is smaller than prevLogIndex -> not up-to-date
             if log_tail.last_index < data["prevLogIndex"]:

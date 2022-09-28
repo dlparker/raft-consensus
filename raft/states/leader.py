@@ -30,7 +30,8 @@ class Leader(State):
         self.logger.info('Leader on %s in term %s', self._server.endpoint,
                     self._server._currentTerm)
         self._send_heartbeat()
-        self.heartbeat_timer = Timer(self._heartbeat_interval(), self._send_heartbeat)
+        self.heartbeat_timer = Timer(self._heartbeat_interval(),
+                                     self._send_heartbeat)
         self.heartbeat_timer.start()
 
         log = self._server.get_log()

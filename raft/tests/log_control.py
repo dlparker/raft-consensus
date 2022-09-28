@@ -60,6 +60,7 @@ def config_logging(logfile_path, use_server=False, server_filepath=None):
     debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
     #log_loggers['raft.servers.server'] = debug_log
     log_loggers['raft.states.follower'] = debug_log
+    log_loggers['raft.states.follower:heartbeat'] = debug_log
     log_loggers['raft.states.leader'] = debug_log
     log_loggers['raft.states.memory_log'] = debug_log
     log_config = dict(version=1, disable_existing_loggers = True,
