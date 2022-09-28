@@ -7,8 +7,10 @@ import logging
 import traceback
 
 from ..messages.serializer import Serializer
+from .comms_api import CommsAPI
 
-class UDPComms:
+class UDPComms(CommsAPI):
+    
     _started = False
 
     async def start(self, server, endpoint):
@@ -48,12 +50,12 @@ class UDPComms:
                          message, message.receiver)
         await self._queue.put(message)
 
-    def on_message(self, data, addr):
+    async def on_message(self, data, addr):
         try:
-            messages = self.server.on_message(data, addr)
+            messages = await self.server.on_message(data, addr)
             if messages:
                 for message in messages:
-                    self.post_message(messages)
+                    await self.post_message(messages)
         except Exception as e:
             self.logger.error(traceback.format_exc())
             
@@ -90,10 +92,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data, addr):
         self._logger.debug("protocol got message from %s %s", addr, data[:30])
-        try:
-            self.message_handler(data, addr)
-        except Exception as e:
-            self._logger.error(traceback.format_exc())
+        asyncio.ensure_future(self.message_handler(data, addr))
 
     def error_received(self, exc):
         self._logger.error("got error %s", exc)

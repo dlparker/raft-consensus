@@ -3,8 +3,7 @@ import asyncio
 import time
 import logging
 
-from raft.tests.setup_utils import start_servers, stop_server
-from raft.tests.log_control import setup_logging_for_test, stop_logging_server
+from raft.tests.setup_utils import Cluster
 from raft.tests.bt_client import UDPBankTellerClient
 from raft.states.log_api import LogRec
 from raft.states.memory_log import MemoryLog
@@ -92,26 +91,25 @@ class TestMemoryLog(unittest.TestCase):
         self.assertEqual(trimmed_tail.commit_index, 0)
         
         
-        
 class TestThreeServers(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.log_config = setup_logging_for_test("TestTreeServersCase")
-
+        pass
+    
     @classmethod
     def tearDownClass(cls):
         pass
     
     def setUp(self):
-        self.start_res = start_servers(base_port=5000, num_servers=3,
-                                       log_config=self.log_config)
+        self.cluster = Cluster(server_count=3, use_processes=True,
+                               logging_type="devel", base_port=5000)
+        self.cluster.start_all_servers()
 
     def tearDown(self):
-        for name,sdef in self.start_res.items():
-            stop_server(sdef)
+        self.cluster.stop_all_servers()
         time.sleep(0.5)
-        stop_logging_server()
+        self.cluster.stop_logging_server()
 
     def test_non_leader_stop(self):
         logger = logging.getLogger()
@@ -130,7 +128,7 @@ class TestThreeServers(unittest.TestCase):
         leader = None
         first_follower = None
         second_follower = None
-        for name,sdef in self.start_res.items():
+        for name,sdef in self.cluster.server_recs.items():
             if sdef['port'] == leader_addr[1]:
                 sdef['role'] = "leader"
                 leader = sdef
@@ -154,7 +152,7 @@ class TestThreeServers(unittest.TestCase):
 
         status = client1.get_status()
         logger.info("stopping non-leader server %s", second_follower)
-        stop_server(second_follower)
+        self.cluster.stop_server(second_follower['name'])
         logger.info("server %s stopped", second_follower)
 
         # make sure that calls to both running servers work
@@ -184,7 +182,7 @@ class TestThreeServers(unittest.TestCase):
         leader = None
         first_follower = None
         second_follower = None
-        for name,sdef in self.start_res.items():
+        for name,sdef in self.cluster.server_recs.items():
             if sdef['port'] == leader_addr[1]:
                 sdef['role'] = "leader"
                 leader = sdef
@@ -207,7 +205,7 @@ class TestThreeServers(unittest.TestCase):
         logger.info("call to 5001 worked")
 
         logger.info("stopping leader server %s", leader)
-        stop_server(leader)
+        self.cluster.stop_server(leader['name'])
         logger.info("server %s stopped", leader)
 
         if leader['port'] == 5000:

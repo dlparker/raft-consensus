@@ -80,18 +80,19 @@ class Candidate(Voter):
 
     # start elections by increasing term, voting for itself and send out vote requests
     def _start_election(self):
-        self.candidate_timer.start()
-        self._server._currentTerm += 1
-
-        self.logger.info("candidate starting election term is %d",
-                    self._server._currentTerm)
         log = self._server.get_log()
         log_tail =  log.get_tail()
+        self.candidate_timer.start()
+        # CHANGE_TRACE: self._server._currentTerm += 1
+        log.incr_term()
+
+        self.logger.info("candidate starting election term is %d",
+                         log.get_term())
         
         election = RequestVoteMessage(
             self._server.endpoint,
             None,
-            self._server._currentTerm,
+            log.get_term(),
             {
                 "lastLogIndex": log_tail.last_index,
                 "lastLogTerm": log_tail.term,

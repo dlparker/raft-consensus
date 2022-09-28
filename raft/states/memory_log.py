@@ -10,14 +10,30 @@ class MemoryLog(Log):
     def __init__(self):
         self._entries = []
         self._tail = LogTail()
+        self._term = None
         self.logger = logging.getLogger(__name__)
+        
+    def get_term(self) -> Union[int, None]:
+        return self._term
+    
+    def set_term(self, value: int):
+        self._term = value
+
+    def incr_term(self):
+        if self._term is None:
+            self._term = 0
+        else:
+            self._term += 1
+        return self._term
         
     def get_tail(self) -> Union[LogTail, None]:
         return deepcopy(self._tail)
 
     def append(self, entries: List[LogRec], term) -> LogTail:
+        # TODO: remove the term param, it should
+        # be in the record, or it should be the ._term value
         if term is None:
-            raise Exception("term cannot be null")
+            term = self._term
         for newitem in entries:
             save_rec = LogRec(user_data=newitem.user_data)
             self._entries.append(save_rec)

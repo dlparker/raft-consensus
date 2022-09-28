@@ -64,14 +64,14 @@ class Follower(Voter):
         # if this is actually possible, unless maybe there
         # is an old message in a queue somewhere that gets
         # sent after an election completes.
-        if message.term < self._server._currentTerm:
+        log = self._server.get_log()
+        if message.term < log.get_term():
             self._send_response_message(message, votedYes=False)
             self.logger.info("rejecting out of date state claim from  %s",
                              message.sender)
             return False
-        log = self._server.get_log()
-        log_tail = log.get_tail()
 
+        log_tail = log.get_tail()
         # If the leader has committed something newer than our
         # latest commit record, then we want to catch up as much
         # as we can. That means that our most recent record should
@@ -94,11 +94,7 @@ class Follower(Voter):
             self.logger.info("commiting up to %d as %s catch up with leader",
                              commit_index, commit_reason)
             log.commit(commit_index)
-            if commit_reason == "partial":
-                # ask for more log records
-                self._send_response_message(message, votedYes=False)
-                self.logger.info("asking leader for more log records")
-            return False
+
         leader_last_rec_index = data["prevLogIndex"]
         if log_tail.last_index < leader_last_rec_index:
             # tell the leader we need more log records, the
@@ -147,6 +143,8 @@ class Follower(Voter):
     def on_append_entries(self, message):
         # reset timeout
         self.election_timer.reset()
+        log = self._server.get_log()
+        log_tail = log.get_tail()
 
         data = message.data
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
@@ -155,13 +153,11 @@ class Follower(Voter):
             self.logger.debug("on_append_entries message %s", message)
         else:
             self.heartbeat_logger.debug("heartbeat from %s", message.sender)
-        if message.term < self._server._currentTerm:
+        if message.term < log.get_term():
             self._send_response_message(message, votedYes=False)
             self.logger.info("rejecting message because sender term is less than mine %s", message)
             return self, None
         if message.data != {}:
-            log = self._server.get_log()
-            log_tail = log.get_tail()
 
             # Check if leader is too far ahead in log
             if data['leaderCommit'] != log_tail.commit_index:
@@ -243,8 +239,9 @@ class Follower(Voter):
         return True
 
     def on_vote_received(self, message):
+        log = self._server.get_log()
         self.logger.info("follower got vote: message.term = %d local_term = %d",
-                    message.term, self._server._currentTerm)
+                         message.term, log.get_term())
 
     def on_response_received(self, message):
         raise NotImplementedError

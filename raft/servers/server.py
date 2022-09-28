@@ -6,29 +6,26 @@ import traceback
 
 from ..messages.serializer import Serializer
 from ..messages.command import ClientCommandResultMessage
-from ..comms.udp import UDPComms
 
 class Server:
 
-    def __init__(self, name, state, log, other_nodes, endpoint):
+    def __init__(self, name, state, log, other_nodes, endpoint, comms):
         self._name = name
         self._state = state
         self._log = log
         self.endpoint = endpoint
         self.other_nodes = other_nodes
         self._total_nodes = len(self.other_nodes) + 1
-        self._commitIndex = 0
-        self._currentTerm = 0
         self.logger = logging.getLogger(__name__)
         self._state.set_server(self)
-        self.comms = UDPComms()
+        self.comms = comms 
         asyncio.ensure_future(self.comms.start(self, self.endpoint))
         self.logger.info('Server with UDP on %s', self.endpoint)
 
     def get_log(self):
         return self._log
     
-    def on_message(self, data, addr):
+    async def on_message(self, data, addr):
         try:
             self._on_message(data, addr)
         except Exception as e:

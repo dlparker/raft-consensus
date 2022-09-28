@@ -20,22 +20,23 @@ class Leader(State):
         self._matchIndex = defaultdict(int)
         self._heartbeat_timeout = heartbeat_timeout
         self.logger = logging.getLogger(__name__)
+        self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
 
     def __str__(self):
         return "leader"
     
     def set_server(self, server):
         self._server = server
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
         # send heartbeat immediately
         self.logger.info('Leader on %s in term %s', self._server.endpoint,
-                    self._server._currentTerm)
+                         log.get_term())
         self._send_heartbeat()
         self.heartbeat_timer = Timer(self._heartbeat_interval(),
                                      self._send_heartbeat)
         self.heartbeat_timer.start()
 
-        log = self._server.get_log()
-        log_tail =  log.get_tail()
         for other in self._server.other_nodes:
             self._nextIndexes[other[1]] = log_tail.last_index + 1
             self._matchIndex[other[1]] = 0
@@ -87,7 +88,7 @@ class Leader(State):
             append_entry = AppendEntriesMessage(
                 self._server.endpoint,
                 message.sender,
-                self._server._currentTerm,
+                log.get_term(),
                 {
                     "leaderId": self._server._name,
                     "leaderPort": self._server.endpoint,
@@ -158,7 +159,7 @@ class Leader(State):
         message = AppendEntriesMessage(
             self._server.endpoint,
             None,
-            self._server._currentTerm,
+            log.get_term(),
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
@@ -169,6 +170,7 @@ class Leader(State):
             }
         )
         self._server.broadcast(message)
+        self.heartbeat_logger.debug("sent heartbeat to all")
 
     def on_client_command(self, message, client_port):
         log = self._server.get_log()
@@ -182,19 +184,18 @@ class Leader(State):
         if response == "Invalid command":
             return False
         entries = [{
-            "term": self._server._currentTerm,
+            "term": log.get_term(),
             "command": message.data,
             "balance": balance,
             "response": response,
             "reply_address": target
         }]
-        log = self._server.get_log()
-        log.append([LogRec(user_data=entries[0]),], self._server._currentTerm)
+        log.append([LogRec(user_data=entries[0]),], log.get_term())
 
         update_message = AppendEntriesMessage(
             self._server.endpoint,
             None,
-            self._server._currentTerm,
+            log.get_term(),
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
@@ -205,7 +206,7 @@ class Leader(State):
             }
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
-                          self._server._currentTerm, update_message.data)
+                          log.get_term(), update_message.data)
         self._server.broadcast(update_message)
         return True
 
@@ -243,8 +244,9 @@ class Leader(State):
         return response, balance
 
     def on_vote_received(self, message):
+        log = self._server.get_log()
         self.logger.info("leader got vote: message.term = %d local_term = %d",
-                    message.term, self._server._currentTerm)
+                         message.term, log.get_term())
 
     def on_vote_request(self, message):
         raise NotImplementedError

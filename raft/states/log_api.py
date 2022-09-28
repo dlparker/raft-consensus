@@ -19,6 +19,18 @@ class LogRec:
 class Log(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
+    def get_term(self) -> Union[int, None]:
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def set_term(self, value: int):
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def incr_term(self) -> int:
+        raise NotImplementedError
+    
+    @abc.abstractmethod
     def get_tail(self) -> Union[LogTail, None]:
         raise NotImplementedError
 

@@ -38,12 +38,16 @@ class State(metaclass=abc.ABCMeta):
 
         _type = message.type
 
+        log = self._server.get_log()
         if _type == BaseMessage.StatusQuery:
             return self.on_status_query(message)
         # If the message.term < currentTerm -> tell the sender to update term
-        if (message.term > self._server._currentTerm):
-            self._server._currentTerm = message.term
-        elif (message.term < self._server._currentTerm):
+        if (message.term > log.get_term()):
+            logger = logging.getLogger(__name__)
+            logger.info("updating term from %d to %s", log.get_term(),
+                        message.term)
+            log.set_term(message.term)
+        elif (message.term < log.get_term()):
             self._send_response_message(message, votedYes=False)
             return self, None
         if (_type == BaseMessage.AppendEntries):
@@ -56,8 +60,9 @@ class State(metaclass=abc.ABCMeta):
             try:
                 return self.on_vote_request(message)
             except NotImplementedError:
-                l = logging.getLogger(__name__)
-                l.error("can't do vote recieved %s, %s", message, message.data)
+                logger = logging.getLogger(__name__)
+                logger.error("can't do vote recieved %s, %s",
+                             message, message.data)
         elif (_type == BaseMessage.RequestVoteResponse):
                 return self.on_vote_received(message)
         elif (_type == BaseMessage.Response):
@@ -103,14 +108,15 @@ class State(metaclass=abc.ABCMeta):
             leader_addr = None
         else:
             leader_addr = self.get_leader_addr()
-        log_tail = self._server.get_log().get_tail()
+        log = self._server.get_log()
+        log_tail = log.get_tail()
         status_data = dict(state=state_type,
                            leader=leader_addr,
                            term=log_tail.term)
         status_response = StatusQueryResponseMessage(
             self._server.endpoint,
             message.sender,
-            self._server._currentTerm,
+            log.get_term(),
             status_data
         )
         asyncio.ensure_future(self._server.post_message(status_response))
@@ -130,13 +136,14 @@ class State(metaclass=abc.ABCMeta):
         self._server.post_message(reply)
         
     def _send_response_message(self, msg, votedYes=True):
+        log = self._server.get_log()
         response = ResponseMessage(
             self._server.endpoint,
             msg.sender,
             msg.term,
             {
                 "response": votedYes,
-                "currentTerm": self._server._currentTerm,
+                "currentTerm": log.get_term(),
             }
         )
         self._server.send_message_response(response)

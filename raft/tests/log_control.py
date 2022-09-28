@@ -3,7 +3,6 @@ from logging.config import dictConfig
 from pathlib import Path
 
 from log_server import LogSocketServer
-from setup_utils import setup_base_dir
 
 have_logging_server = False
 
@@ -69,11 +68,10 @@ def config_logging(logfile_path, use_server=False, server_filepath=None):
                       loggers=log_loggers)
     return log_config, server_config
 
-def setup_logging_for_test(name, file_path="/tmp/raft_tests/test.log",
+def servers_as_procs_log_setup(file_path="/tmp/raft_tests/test.log",
                            use_server=True,
                            server_filepath="/tmp/raft_tests/combined.log",
                            extra_levels=None):
-    setup_base_dir()
     config,server_config = config_logging(file_path,  use_server=use_server,
                                          server_filepath=server_filepath)
     
@@ -97,7 +95,6 @@ def setup_logging_for_test(name, file_path="/tmp/raft_tests/test.log",
         LogSocketServer.start(port=9999, configDict=server_config)
         have_logging_server = True
     dictConfig(config)
-    logging.getLogger("test_control").info("starting test %s", name)
     return config
     
 def stop_logging_server():
@@ -115,7 +112,7 @@ if __name__=="__main__":
             x.unlink()
 
     levels = [dict(name="test", level="DEBUG", propagate=False),]
-    config = setup_logging_for_test("test1", lfile, True, sfile,
+    config = servers_as_procs_log_setup(lfile, True, sfile,
                                     extra_levels=levels)
     logger = logging.getLogger("test")
     for i in range(10):

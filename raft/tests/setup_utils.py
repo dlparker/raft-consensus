@@ -1,62 +1,109 @@
+import asyncio
 import shutil
 from pathlib import Path
 from multiprocessing import Process
+
 import raft
 
+from log_control import servers_as_procs_log_setup, stop_logging_server 
 from bt_server import UDPBankTellerServer
 
-def setup_base_dir(force_clear=False):
-    base_dir = Path("/tmp/raft_tests")
-    if base_dir.exists() and force_clear:
-        shutil.rmtree(base_dir)
-    if not base_dir.exists():
-       base_dir.mkdir()
-    return base_dir
-    
-def setup_test_dirs(num_servers):
-    base_dir = setup_base_dir()
-    if base_dir.exists():
-        shutil.rmtree(base_dir)
-    base_dir.mkdir()
-    sdirs = {}
-    for i in range(num_servers):
-        name = f"server_{i}"
-        sdir = Path(base_dir, name)
-        sdirs[name] = sdir
-        if sdir.exists():
-            shutil.rmtree(sdir)
-        sdir.mkdir()
-    return dict(base_dir=base_dir, server_dirs=sdirs)
 
-def start_servers(base_port, num_servers=3, reset_dirs=True, log_config=None):
-    test_dirs = setup_test_dirs(num_servers)
-    all_servers = [ ("localhost", base_port + port) for port in range(num_servers) ]
-    servers = {}
-    port_index = 0
-    for sname,sdir in test_dirs['server_dirs'].items():
-        others = []
-        for i in range(num_servers):
-            if i == port_index:
-                continue
-            others.append(all_servers[i])
+class Cluster:
+
+    def __init__(self, server_count, use_processes=True,
+                 logging_type=None, base_port=5000):
+        self.base_dir = Path("/tmp/raft_tests")
+        self.server_count = server_count
+        self.use_procs = use_processes
+        self.logging_type = logging_type
+        self.base_port = base_port
+        self.server_recs = {}
+        self.dirs_ready = False
+        self.setup_dirs()
+        if self.logging_type == "devel":
+            self.log_config = servers_as_procs_log_setup()
+        else:
+            self.log_config = None
+        
+    def setup_dirs(self):
+        if self.base_dir.exists():
+            shutil.rmtree(self.base_dir)
+        self.base_dir.mkdir()
+        wdirs = {}
+        for i in range(self.server_count):
+            name = f"server_{i}"
+            wdir = Path(self.base_dir, name)
+            wdirs[name] = wdir
+            if wdir.exists():
+                shutil.rmtree(wdir)
+            wdir.mkdir()
+            port = self.base_port + i
+            self.server_recs[name] = dict(name=name, working_dir=wdir,
+                                           addr=('localhost', port), 
+                                           port=port)
+        self.dirs_ready = True
+
+    def start_all_servers(self):
+        if not self.dirs_ready:
+            raise Exception('target dirs not clean, are servers running?')
+        all_servers = [ ("localhost", sdef['port']) for sdef in self.server_recs.values() ]
+        args_set = []
+        for name, srec in self.server_recs.items():
+            if self.use_procs and srec.get('proc'):
+                raise Exception(f"server {name} process already running")
+            elif srec.get('task'):
+                raise Exception(f"server {name} task already running")
+            others = []
+            for addr in all_servers:
+                if addr[1] != srec['port']:
+                    others.append(addr)
+            srec['run_args']= [srec['port'], srec['working_dir'],
+                             srec['name'], others, self.log_config]
+        for name, srec in self.server_recs.items():
+            if self.use_procs:
+                s_process = Process(target=UDPBankTellerServer.make_and_start,
+                                    args=srec['run_args'])
+                s_process.daemon = True
+                s_process.start()
+                srec['proc'] = s_process
+            else:
+                raise Exception('not done yet')
+        return 
+
+    def get_server_by_addr(self, addr):
+        for name, srec in self.server_recs.items():
+            if srec[addr] == addr:
+                return srec
+        return None
+        
+    def start_one_server(self, name):
+        if self.use_procs and srec.get('proc'):
+            raise Exception(f"server {name} process already running")
+        srec = self.server_recs[name]
         s_process = Process(target=UDPBankTellerServer.make_and_start,
-                                 args=[base_port + port_index, sdir,
-                                       sname, others, log_config])
+                            args=srec['run_args'])
         s_process.daemon = True
         s_process.start()
-        servers[sname] = dict(port=base_port + port_index,
-                              process=s_process, name=sname, working_dir=sdir)
-        port_index += 1
-    return servers
+        srec['proc'] = s_process
+        
+    def stop_server(self, name):
+        s_process = self.server_recs[name].get('proc', None)
+        if self.use_procs and s_process:
+            s_process.terminate()
+            s_process.join()
+            del self.server_recs[name]['proc']
 
-def start_one_server(name, working_dir):
-    s_process = Process(target=BankTeller.make_and_start,
-                        args=[working_dir, name])
-    result = dict(process=s_process, name=name, working_dir=working_dir)
-    return result
+    def stop_all_servers(self):
+        for name, srec in self.server_recs.items():
+            if self.use_procs:
+                s_process = srec.get('proc', None)
+                if s_process:
+                    s_process.terminate()
+                    s_process.join()
+                    del srec['proc']
 
-def stop_server(server_def):
-    s_process = server_def['process']
-    s_process.terminate()
-    s_process.join()
-    
+    def stop_logging_server(self):
+        if self.logging_type is None:
+            return
+        stop_logging_server()

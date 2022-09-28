@@ -5,6 +5,7 @@ import logging
 import raft
 from raft.states.memory_log import MemoryLog
 from raft.states.log_api import LogRec
+from raft.comms.udp import UDPComms
 
 class UDPBankTellerServer:
 
@@ -18,15 +19,16 @@ class UDPBankTellerServer:
         sys.stderr = sys.stdout
         import os
         os.chdir(working_dir)
-        from logging.config import dictConfig
-        logging.getLogger().handlers = []
-        from pprint import pprint
-        try:
-            dictConfig(log_config)
-            #pprint(log_config)
-        except:
-            pprint(log_config)
-            raise
+        if log_config:
+            from logging.config import dictConfig
+            logging.getLogger().handlers = []
+            from pprint import pprint
+            try:
+                dictConfig(log_config)
+                #pprint(log_config)
+            except:
+                pprint(log_config)
+                raise
         try:
             instance = cls(port, working_dir, name, others)
             instance.start()
@@ -41,7 +43,6 @@ class UDPBankTellerServer:
         self._working_dir = working_dir
         self._others = others
         
-
     async def _run(self):
         logger = logging.getLogger(__name__)
         logger.info("bank teller server starting")
@@ -59,7 +60,8 @@ class UDPBankTellerServer:
         logger.info('creating server')
         server = raft.create_server(name='raft', state=state,
                                     log=data_log, other_nodes=self._others,
-                                    endpoint=(self._host, self._port))
+                                    endpoint=(self._host, self._port),
+                                    comms=UDPComms())
         logger.info('created server')
         print(f"{self._name} started server on endpoint {(self._host, self._port)} with others at {self._others}", flush=True)
 
