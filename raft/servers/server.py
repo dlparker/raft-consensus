@@ -23,9 +23,12 @@ class Server:
         # this will only work if the state has this method,
         # currently only Follower does
         state.set_server(self)
-        asyncio.ensure_future(self.comms.start(self, self.endpoint))
+        self.comms_task = asyncio.create_task(self.comms.start(self, self.endpoint))
         self.logger.info('Server with UDP on %s', self.endpoint)
 
+    def stop(self):
+        self.comms_task.cancel()
+        
     def get_log(self):
         return self._log
 

@@ -44,13 +44,15 @@ class Leader(State):
         return random.uniform(0, self._heartbeat_timeout)
 
     def on_heartbeat_response(self, message):
-        log = self._server.get_log()
-        log_tail =  log.get_tail()
-        self.logger.debug("heartbeat response from %s with "\
-                          "log tail = %s msg_data= %s",
-                          message.sender,
-                          log_tail,
-                          message.data)
+        if False:
+            log = self._server.get_log()
+            log_tail =  log.get_tail()
+            self.logger.debug("heartbeat response from %s with "\
+                              "log tail = %s msg_data= %s",
+                              message.sender,
+                              log_tail,
+                              message.data)
+        return self.on_response_received(self, message)
 
     def on_heartbeat(self, message):
         self.logger.warning("Why am I getting hearbeat when I am leader?")
@@ -120,7 +122,7 @@ class Leader(State):
             for follower, matchIndex in self._matchIndex.items():
                 if matchIndex == log_tail.last_index:
                     majority_response_received += 1
-                    self.heartbeat_logger.debug("response from %s with "\
+                    self.logger.debug("response from %s with "\
                               "next_i %d, tail = %s tally=%d, msg_data= %s",
                               message.sender,
                               self._nextIndexes[message.sender[1]],
@@ -154,8 +156,7 @@ class Leader(State):
     def _send_heartbeat(self):
         log = self._server.get_log()
         log_tail =  log.get_tail()
-        #message = HeartbeatMessage(
-        message = AppendEntriesMessage(
+        message = HeartbeatMessage(
             self._server.endpoint,
             None,
             log.get_term(),

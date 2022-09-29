@@ -223,7 +223,7 @@ class Follower(Voter):
                     tail = log.commit(data['leaderCommit'])
                     self.logger.info("commit %s from %s", tail, message.data)
                     self._send_response_message(message)
-                    self.logger.info("Sent log saved on %s", message)
+                    self.logger.info("Sent log saved per in message %s", message)
                     return self, None
                 else:
                     #self.logger.debug("heartbeat")

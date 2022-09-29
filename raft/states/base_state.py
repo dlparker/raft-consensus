@@ -137,13 +137,17 @@ class State(metaclass=abc.ABCMeta):
         
     def _send_response_message(self, msg, votedYes=True):
         log = self._server.get_log()
+        data = {
+            "response": votedYes,
+            "currentTerm": log.get_term(),
+        }
         response = ResponseMessage(
             self._server.endpoint,
             msg.sender,
             msg.term,
-            {
-                "response": votedYes,
-                "currentTerm": log.get_term(),
-            }
+            data
         )
         self._server.send_message_response(response)
+        logger = logging.getLogger(__name__)
+        logger.info("sent response to %s term=%d %s",
+                        response.receiver, response.term, data)

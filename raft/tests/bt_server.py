@@ -98,6 +98,7 @@ class MemoryBankTellerServer:
 
     def stop(self):
         self.thread.keep_running = False
+        
 
 class ServerThread(threading.Thread):
 
@@ -132,13 +133,16 @@ class ServerThread(threading.Thread):
         data_log.append([init_record,], 0)
         data_log.commit()
         logger.info('creating server')
+        comms = MemoryComms(timer_class=ControlledTimer)
         self.server = raft.create_server(name='raft', state=state,
-                                    log=data_log, other_nodes=self.other_nodes,
-                                    endpoint=(self.host, self.port),
-                                    comms=MemoryComms(timer_class=ControlledTimer))
+                                         log=data_log, other_nodes=self.other_nodes,
+                                         endpoint=(self.host, self.port),
+                                         comms=comms)
         logger.info('created server')
         print(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}", flush=True)
         while self.keep_running:
             await asyncio.sleep(0.01)
+        await comms.stop()
+        self.server.stop()
 
         

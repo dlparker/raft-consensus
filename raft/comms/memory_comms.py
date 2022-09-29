@@ -41,6 +41,10 @@ class MemoryComms(CommsAPI):
         self.task = asyncio.create_task(self.listen())
         self.keep_running = True
 
+    async def stop(self):
+        self.keep_running = False
+        self.task.cancel()
+        
     async def post_message(self, message):
         global queues
         try:

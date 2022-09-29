@@ -64,6 +64,7 @@ def config_logging(logfile_path, use_server=False, server_filepath=None,
     log_loggers['raft.states.follower'] = debug_log
     #log_loggers['raft.states.follower:heartbeat'] = debug_log
     log_loggers['raft.states.leader'] = debug_log
+    #log_loggers['raft.states.leader:heartbeat'] = debug_log
     log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests.test_basic'] = debug_log
     #log_loggers['raft.comms.memory_comms'] = debug_log
