@@ -141,6 +141,7 @@ class State(metaclass=abc.ABCMeta):
             "response": votedYes,
             "currentTerm": log.get_term(),
         }
+        data.update(msg.data)
         response = ResponseMessage(
             self._server.endpoint,
             msg.sender,

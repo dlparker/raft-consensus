@@ -2,6 +2,8 @@ from collections import defaultdict
 import random
 import asyncio
 import logging
+from dataclasses import dataclass, field
+
 from .base_state import State
 from .log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
@@ -9,6 +11,11 @@ from ..messages.command import ClientCommandResultMessage
 from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
 from .timer import Timer
 
+@dataclass
+class FollowerCursor:
+    addr: str
+    next_index: int
+    last_index: int = field(default=0)
 
 # Raft leader. Currently does not support step down -> leader will stay forever until terminated
 class Leader(State):
@@ -25,9 +32,16 @@ class Leader(State):
         server.set_state(self)
         log = self._server.get_log()
         log_tail =  log.get_tail()
-        # send heartbeat immediately
         self.logger.info('Leader on %s in term %s', self._server.endpoint,
                          log.get_term())
+        self.followers = {}
+        for other in self._server.other_nodes:
+            # Assume follower is in sync, meaning we only send on new
+            # log entry. If they are not, they will tell us that on
+            # first heartbeat, and we will catch them up
+            self.followers[other] = FollowerCursor(other, log_tail.last_index + 1)
+        
+        # send heartbeat immediately
         self._send_heartbeat()
         self.heartbeat_timer = self._server.get_timer("leader-heartbeat",
                                                       self._heartbeat_interval(),
@@ -57,91 +71,102 @@ class Leader(State):
     def on_heartbeat(self, message):
         self.logger.warning("Why am I getting hearbeat when I am leader?")
         #self.on_heartbeat_common(self, message)
-        
-    def on_response_received(self, message):
-        # check if last append_entries good?
+
+    def on_log_pull(self, message):
+        # Follower is asking for log records
+        # for now we continue with the older walkback algo until
+        # we get this new logic working, then we'll fix the alqo
+        # so that the follower tells us were to start. This message
+        # comes in after a heartbeat or append entry when the
+        # follower examins the leader's log state, so the follower
+        # knows how far behind it is
         log = self._server.get_log()
         log_tail =  log.get_tail()
-        if not message.data["response"]:
-            # Other node has an out of date log. Back up
-            # one log record and send that one. This may
-            # continue for multiple passes until the other
-            # node says it is happy with the new record. 
-            # if not, back up log for this node. Once it
-            # does, we will keep sending until caught up.
-            self._nextIndexes[message.sender[1]] -= 1
-            # get next log entry to send to follower
-            prevIndex = max(0, self._nextIndexes[message.sender[1]] - 1)
-            prev_rec = log.read(prevIndex)
-            if not prev_rec:
-                self.logger.error("cannot find log message %d for other node %s",
-                             prevIndex, message.sender)
-                return self, None
-            prev = prev_rec.user_data
-            next_i = self._nextIndexes[message.sender[1]]
-            current_rec = log.read(next_i)
-            if not current_rec:
-                self.logger.error("cannot find log message %d for other node %s",
-                             next_i, message.sender)
-                return self, None
+        fc = self.followers[message.sender]
+        prev_index = max(0, fc.next_index - 1)
+        prev_rec = log.read(prev_index)
+        if not prev_rec:
+            self.logger.error("cannot find last log message %d for follower %s",
+                              prev_index, message.sender)
+            return self, None
+
+        # this helps the follower validate the log position
+        prev_term = prev_rec.user_data['term']
+        # get the next record that they don't have
+        current_rec = log.read(fc.next_index)
+        if not current_rec:
+            self.logger.error("follower %s thinks there are more log records "\
+                              "after %d, but we don't",
+                              message.sender, prev_index)
+            return self, None
             
-            # send new log to other and wait for respond
-            append_entry = AppendEntriesMessage(
-                self._server.endpoint,
-                message.sender,
-                log.get_term(),
-                {
-                    "leaderId": self._server._name,
-                    "leaderPort": self._server.endpoint,
-                    "prevLogIndex": prevIndex,
-                    "prevLogTerm": prev["term"],
-                    "entries": [current_rec.user_data,],
-                    "leaderCommit": log_tail.commit_index,
-                })
-            self.logger.debug("sending log entry prev at %s term %s to %s",
-                              prevIndex, prev['term'], message.sender)
-            asyncio.ensure_future(self._server.post_message(append_entry))
-        else:
-            # last append was good -> increase index
-            # TODO: fix the index logic for these bookkeeping lists,
-            # current logic is port number, which could be the same
-            # on different machines. Use the whole address tuple instead
-            self._nextIndexes[message.sender[1]] += 1
-            self._matchIndex[message.sender[1]] += 1
+        # send new log to other and wait for respond
+        append_entry = AppendEntriesMessage(
+            self._server.endpoint,
+            message.sender,
+            log.get_term(),
+            {
+                "leaderId": self._server._name,
+                "leaderPort": self._server.endpoint,
+                "prevLogIndex": prev_index,
+                "prevLogTerm": prev_term,
+                "entries": [current_rec.user_data,],
+                "leaderCommit": log_tail.commit_index,
+            })
+        self.logger.debug("sending log entry prev at %s term %s to %s",
+                          prev_index, prev_term, message.sender)
+        asyncio.ensure_future(self._server.post_message(append_entry))
+        
+    def on_append_response_received(self, message):
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
+        message_commit = message.data['leaderCommit']
+        if log_tail.commit_index != message_commit:
+            # this is a common occurance since we commit after a quorum
+            self.logger.debug("got append response message from %s but " \
+                                "all log messages already committed", message.sender)
+            self.logger.debug("message %s log_tail %s", message.data, log_tail)
+            return
+        sender_index = message.data['prevLogIndex']
+        if log_tail.last_index != sender_index + 1:
+            self.logger.error("got append response message from %s for index %s but " \
+                              "log index is up to %s, should be one less",
+                              message.sender, sender_index, log_tail.last_index)
+            return
+            
+        fc = self.followers[message.sender]
+        # Append response means that follower log agrees with ours on
+        # index, term, commit, etc. So their index is the same as
+        # the one we sent, record it.
+        fc.last_index = log_tail.last_index
+        # They have all the records we have.
+        # So, the next time they ask need a record will be the next time
+        # we insert one.
+        fc.next_index += 1
 
-            # check if caught up?
-            # this logic seems a bit strange, can next index for send be more
-            # than one higher than the last local log?
-            # TODO: see if we can clear this up
-            if self._nextIndexes[message.sender[1]] > log_tail.last_index:
-                self._nextIndexes[message.sender[1]] = log_tail.last_index + 1
-                self._matchIndex[message.sender[1]] = log_tail.last_index
-
-            majority_response_received = 0
-
-            for follower, matchIndex in self._matchIndex.items():
-                if matchIndex == log_tail.last_index:
-                    majority_response_received += 1
-                    self.logger.debug("response from %s with "\
-                              "next_i %d, tail = %s tally=%d, msg_data= %s",
-                              message.sender,
-                              self._nextIndexes[message.sender[1]],
-                              log_tail,
-                              majority_response_received,
-                              message.data)
-
-            if (majority_response_received >= (self._server._total_nodes - 1) / 2
-                and log_tail.last_index > 0
-                and log_tail.last_index == log_tail.commit_index +1):
-
-                # committing next index
-
-                log.commit(log_tail.commit_index + 1)
-                last_log = log.read(log_tail.last_index)
-                response = last_log.user_data['response']
-                reply_address = last_log.user_data['reply_address']
-                # make sure it is a tuple
+        # counting this node, so replies plus 1
+        expected_confirms = (self._server._total_nodes - 1) / 2
+        received_confirms = 0
+        for follower in self.followers.values():
+            if follower.last_index == log_tail.last_index:
+                received_confirms += 1
+        self.logger.debug("confirmation of log rec %d received from %s "\
+                          "brings total to %d out of %d",
+                          log_tail.last_index, message.sender,
+                          received_confirms, expected_confirms)
+                
+        if received_confirms >= expected_confirms:
+            self.logger.debug("commiting log rec %d", log_tail.last_index)
+            log_tail = log.commit(log_tail.commit_index + 1)
+            last_log = log.read(log_tail.commit_index)
+            reply_address = last_log.user_data.get('reply_address', None)
+            if reply_address:
+                # This log record was for data submitted by client,
+                # not an internal record such as term change.
+                # make sure provided address is formated as a tuple
+                # and use it to send reply to client
                 reply_address = (reply_address[0], reply_address[1])
+                response = last_log.user_data['response']
                 self.logger.debug("preparing reply for %s from %s",
                                   response, reply_address)
                 reply = ClientCommandResultMessage(self._server.endpoint,
@@ -150,6 +175,15 @@ class Leader(State):
                                                    response)
                 self.logger.debug("sending reply message %s", reply)
                 asyncio.ensure_future(self._server.post_message(reply))
+        
+    def on_response_received(self, message):
+        # check if last append_entries good?
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
+        if not message.data["response"]:
+            return self.on_log_pull(message)
+        else:
+            self.on_append_response_received(message)
 
         return self, None
 
