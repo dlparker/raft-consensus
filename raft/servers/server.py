@@ -6,24 +6,40 @@ import traceback
 
 from ..messages.serializer import Serializer
 from ..messages.command import ClientCommandResultMessage
+from ..states.timer import Timer
 
 class Server:
 
     def __init__(self, name, state, log, other_nodes, endpoint, comms):
         self._name = name
-        self._state = state
         self._log = log
         self.endpoint = endpoint
         self.other_nodes = other_nodes
         self._total_nodes = len(self.other_nodes) + 1
         self.logger = logging.getLogger(__name__)
-        self._state.set_server(self)
-        self.comms = comms 
+        self.comms = comms
+        self.timer_class = None
+        self._state = state
+        # this will only work if the state has this method,
+        # currently only Follower does
+        state.set_server(self)
         asyncio.ensure_future(self.comms.start(self, self.endpoint))
         self.logger.info('Server with UDP on %s', self.endpoint)
 
     def get_log(self):
         return self._log
+
+    def get_timer(self, name, interval, callback):
+        if not self.timer_class:
+            return Timer(interval, callback)
+        return self.timer_class(name, interval, callback)
+
+    def set_timer_class(self, cls):
+        self.timer_class = cls
+
+    def set_state(self, state):
+        if self._state != state:
+            self._state = state
     
     async def on_message(self, data, addr):
         try:

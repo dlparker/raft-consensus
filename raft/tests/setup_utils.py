@@ -6,8 +6,8 @@ from multiprocessing import Process
 import raft
 
 from log_control import servers_as_procs_log_setup, stop_logging_server 
-from bt_server import UDPBankTellerServer
-
+from log_control import one_proc_log_setup
+from bt_server import UDPBankTellerServer, MemoryBankTellerServer
 
 class Cluster:
 
@@ -21,8 +21,10 @@ class Cluster:
         self.server_recs = {}
         self.dirs_ready = False
         self.setup_dirs()
-        if self.logging_type == "devel":
+        if self.logging_type == "devel_mp":
             self.log_config = servers_as_procs_log_setup()
+        if self.logging_type == "devel_one_proc":
+            self.log_config = one_proc_log_setup()
         else:
             self.log_config = None
         
@@ -52,8 +54,8 @@ class Cluster:
         for name, srec in self.server_recs.items():
             if self.use_procs and srec.get('proc'):
                 raise Exception(f"server {name} process already running")
-            elif srec.get('task'):
-                raise Exception(f"server {name} task already running")
+            elif srec.get("tserver"):
+                raise Exception(f"server {name} tserver already running")
             others = []
             for addr in all_servers:
                 if addr[1] != srec['port']:
@@ -61,14 +63,7 @@ class Cluster:
             srec['run_args']= [srec['port'], srec['working_dir'],
                              srec['name'], others, self.log_config]
         for name, srec in self.server_recs.items():
-            if self.use_procs:
-                s_process = Process(target=UDPBankTellerServer.make_and_start,
-                                    args=srec['run_args'])
-                s_process.daemon = True
-                s_process.start()
-                srec['proc'] = s_process
-            else:
-                raise Exception('not done yet')
+            self.start_one_server(name)
         return 
 
     def get_server_by_addr(self, addr):
@@ -78,30 +73,40 @@ class Cluster:
         return None
         
     def start_one_server(self, name):
-        if self.use_procs and srec.get('proc'):
-            raise Exception(f"server {name} process already running")
         srec = self.server_recs[name]
-        s_process = Process(target=UDPBankTellerServer.make_and_start,
-                            args=srec['run_args'])
-        s_process.daemon = True
-        s_process.start()
-        srec['proc'] = s_process
-        
+        if self.use_procs:
+            if srec.get('proc'):
+                raise Exception(f"server {name} process already running")
+            srec = self.server_recs[name]
+            s_process = Process(target=UDPBankTellerServer.make_and_start,
+                                args=srec['run_args'])
+            s_process.daemon = True
+            s_process.start()
+            srec['proc'] = s_process
+        else:
+            if srec.get('tserver'):
+                raise Exception(f"server {name} tserver already running")
+            tserver = MemoryBankTellerServer(*srec['run_args'])
+            tserver.start()
+            srec['tserver'] = tserver
+            
     def stop_server(self, name):
-        s_process = self.server_recs[name].get('proc', None)
-        if self.use_procs and s_process:
-            s_process.terminate()
-            s_process.join()
-            del self.server_recs[name]['proc']
+        srec = self.server_recs[name]
+        if self.use_procs:
+            s_process = srec.get('proc', None)
+            if s_process:
+                s_process.terminate()
+                s_process.join()
+                del srec['proc']
+        else:
+            tserver = srec.get('tserver', None)
+            if tserver:
+                tserver.stop()
+                del srec['tserver']
 
     def stop_all_servers(self):
         for name, srec in self.server_recs.items():
-            if self.use_procs:
-                s_process = srec.get('proc', None)
-                if s_process:
-                    s_process.terminate()
-                    s_process.join()
-                    del srec['proc']
+            self.stop_server(name)
 
     def stop_logging_server(self):
         if self.logging_type is None:

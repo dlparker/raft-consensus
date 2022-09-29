@@ -14,7 +14,7 @@ class Follower(Voter):
 
     _type = "follower"
     
-    def __init__(self, timeout=0.75, vote_at_start=False):
+    def __init__(self, timeout=0.75, server=None, vote_at_start=False):
         Voter.__init__(self)
         self._timeout = timeout
         self._leader_addr = None
@@ -22,7 +22,10 @@ class Follower(Voter):
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        
+        self._server = None
+        if server:
+            self.set_server(server)
+
     def __str__(self):
         return "follower"
 
@@ -30,9 +33,15 @@ class Follower(Voter):
         return self._leader_addr
     
     def set_server(self, server):
+        if self._server:
+            return
         self._server = server
+        server.set_state(self)
+        self.logger.debug("called server set_state")
         interval = self.election_interval()
-        self.election_timer = Timer(interval, self._start_election)
+        self.election_timer = self._server.get_timer("follower-election",
+                                                     interval,
+                                                     self._start_election)
         self.election_timer.start()
         if self._vote_at_start:
             asyncio.get_event_loop().call_soon(self._start_election)
@@ -42,9 +51,7 @@ class Follower(Voter):
 
     def _start_election(self):
         self.election_timer.stop()
-        candidate = Candidate()
-        self._server._state = candidate
-        candidate.set_server(self._server)
+        candidate = Candidate(self._server)
         return candidate, None
 
     def on_heartbeat(self, message):

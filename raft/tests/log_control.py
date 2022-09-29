@@ -25,8 +25,11 @@ def config_server_logging(filepath):
                       loggers=log_loggers)
     return log_config
     
-def config_logging(logfile_path, use_server=False, server_filepath=None):
+def config_logging(logfile_path, use_server=False, server_filepath=None,
+                   format_string=None):
     lfstring = '%(process)s %(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    if format_string:
+        lfstring = format_string
     log_formaters = dict(standard=dict(format=lfstring))
     file_handler = dict(level="DEBUG",
                         formatter="standard",
@@ -57,11 +60,12 @@ def config_logging(logfile_path, use_server=False, server_filepath=None):
     info_log = dict(handlers=handler_names, level="INFO", propagate=False)
     log_loggers['raft'] = info_log
     debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
-    #log_loggers['raft.servers.server'] = debug_log
+    log_loggers['raft.servers.server'] = debug_log
     log_loggers['raft.states.follower'] = debug_log
     log_loggers['raft.states.follower:heartbeat'] = debug_log
     log_loggers['raft.states.leader'] = debug_log
     log_loggers['raft.states.memory_log'] = debug_log
+    #log_loggers['raft.comms.memory_comms'] = debug_log
     log_config = dict(version=1, disable_existing_loggers = True,
                       formatters=log_formaters,
                       handlers=log_handlers,
@@ -94,6 +98,21 @@ def servers_as_procs_log_setup(file_path="/tmp/raft_tests/test.log",
     if use_server and not have_logging_server:
         LogSocketServer.start(port=9999, configDict=server_config)
         have_logging_server = True
+    dictConfig(config)
+    return config
+
+def one_proc_log_setup(file_path="/tmp/raft_tests/test.log"):
+    lfstring = '%(threadName)s %(asctime)s'\
+        ' [%(levelname)s] %(name)s: %(message)s'
+    config,server_config = config_logging(file_path,  use_server=False,
+                                          format_string=lfstring)
+    
+    # apply the caller's modifications to the level specs
+    dictConfig(dict(version=1,
+                    disable_existing_loggers = True,
+                    formatters=[],
+                      handlers=[],
+                      loggers=[]))
     dictConfig(config)
     return config
     

@@ -2,9 +2,11 @@ import unittest
 import asyncio
 import time
 import logging
+import traceback
 
+from raft.tests.timer import get_timer_set
 from raft.tests.setup_utils import Cluster
-from raft.tests.bt_client import UDPBankTellerClient
+from raft.tests.bt_client import UDPBankTellerClient, MemoryBankTellerClient
 from raft.states.log_api import LogRec
 from raft.states.memory_log import MemoryLog
 
@@ -102,8 +104,8 @@ class TestThreeServers(unittest.TestCase):
         pass
     
     def setUp(self):
-        self.cluster = Cluster(server_count=3, use_processes=True,
-                               logging_type="devel", base_port=5000)
+        self.cluster = Cluster(server_count=3, use_processes=False,
+                               logging_type="devel_one_proc", base_port=5000)
         self.cluster.start_all_servers()
 
     def tearDown(self):
@@ -114,16 +116,35 @@ class TestThreeServers(unittest.TestCase):
     def test_non_leader_stop(self):
         logger = logging.getLogger()
         logger.info("starting test_non_leader_stop")
-        client1 =  UDPBankTellerClient("localhost", 5000)
+        async def do_wait(seconds):
+            start_time = time.time()
+            while time.time() - start_time < seconds:
+                asyncio.sleep(0.01)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        client1 =  MemoryBankTellerClient("localhost", 5000)
         start_time = time.time()
         status = None
-        while time.time() - start_time < 3:
-            time.sleep(0.25)
-            status = client1.get_status()
-            if status and status.data['leader']:
-                break
+        status_exc = None
+        while time.time() - start_time < 4:
+            loop.run_until_complete(do_wait(0.25))
+            try:
+                status = client1.get_status()
+                if status and status.data['leader']:
+                    break
+            except Exception as e:
+                status_exc = e
+                
+        if not status_exc:
+            traceback.print_exc(status_exc)
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.data['leader'])
+        timer_set = get_timer_set()
+        timer_set.pause_all()
         leader_addr = status.data['leader']
         leader = None
         first_follower = None
@@ -144,8 +165,8 @@ class TestThreeServers(unittest.TestCase):
         self.assertEqual(balance, "Your current account balance is: 10")
         logger.info("calls to 5000 worked")
         # get a client for the first follower
-        client2 =  UDPBankTellerClient("localhost",
-                                       first_follower['port'])
+        client2 =  MemoryBankTellerClient("localhost", first_follower['port'])
+
         balance = client2.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
         logger.info("call to 5001 worked")

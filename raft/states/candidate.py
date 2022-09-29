@@ -1,4 +1,5 @@
 import random
+import traceback
 import logging
 
 from .voter import Voter
@@ -12,20 +13,21 @@ class Candidate(Voter):
 
     _type = "candidate"
     
-    def __init__(self, timeout=0.5):
+    def __init__(self, server, timeout=0.5):
         Voter.__init__(self)
         self._timeout = timeout
         self.logger = logging.getLogger(__name__)
-
+        self._server = server
+        server.set_state(self)
+        self._votes = {}
+        self.candidate_timer = self._server.get_timer("candidate-interval",
+                                                     self.candidate_interval(),
+                                                     self.on_timer)
+        self._start_election()
+                            
     def __str__(self):
         return "candidate"
     
-    def set_server(self, server):
-        self._server = server
-        self._votes = {}
-        self.candidate_timer = Timer(self.candidate_interval(), self.on_timer)
-        self._start_election()
-
     def candidate_interval(self):
         return random.uniform(0, self._timeout)
 
@@ -65,9 +67,7 @@ class Candidate(Voter):
             # with one dead.
             if len(self._votes.keys()) + 1 > self._server._total_nodes / 2:
                 self.candidate_timer.stop()
-                leader = Leader()
-                self._server._state = leader
-                leader.set_server(self._server)
+                leader = Leader(self._server)
                 self.logger.info("changing to leader")
                 return leader, None
 
@@ -106,7 +106,7 @@ class Candidate(Voter):
         self.candidate_timer.stop()
 
         from .follower import Follower
-        follower = Follower()
+        follower = Follower(server=self._server)
         self._server._state = follower
         follower.set_server(self._server)
         self.logger.info("candidate resigned")

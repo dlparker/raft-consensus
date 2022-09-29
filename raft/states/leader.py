@@ -15,32 +15,31 @@ class Leader(State):
 
     _type = "leader"
     
-    def __init__(self, heartbeat_timeout=0.5):
+    def __init__(self, server, heartbeat_timeout=0.5):
         self._nextIndexes = defaultdict(int)
         self._matchIndex = defaultdict(int)
         self._heartbeat_timeout = heartbeat_timeout
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-
-    def __str__(self):
-        return "leader"
-    
-    def set_server(self, server):
         self._server = server
+        server.set_state(self)
         log = self._server.get_log()
         log_tail =  log.get_tail()
         # send heartbeat immediately
         self.logger.info('Leader on %s in term %s', self._server.endpoint,
                          log.get_term())
         self._send_heartbeat()
-        self.heartbeat_timer = Timer(self._heartbeat_interval(),
-                                     self._send_heartbeat)
+        self.heartbeat_timer = self._server.get_timer("leader-heartbeat",
+                                                      self._heartbeat_interval(),
+                                                      self._send_heartbeat)
         self.heartbeat_timer.start()
-
         for other in self._server.other_nodes:
             self._nextIndexes[other[1]] = log_tail.last_index + 1
             self._matchIndex[other[1]] = 0
 
+    def __str__(self):
+        return "leader"
+    
     def _heartbeat_interval(self):
         return random.uniform(0, self._heartbeat_timeout)
 
