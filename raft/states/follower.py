@@ -22,6 +22,7 @@ class Follower(Voter):
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
+        self.election_timer = None
         self._server = None
         if server:
             self.set_server(server)
@@ -149,6 +150,8 @@ class Follower(Voter):
         
     def on_append_entries(self, message):
         # reset timeout
+        if self.election_timer is None:
+            breakpoint()
         self.election_timer.reset()
         log = self._server.get_log()
         log_tail = log.get_tail()

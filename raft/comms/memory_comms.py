@@ -14,7 +14,6 @@ queues = {}
 class Wrapper:
     data: bytes = field(repr=False)
     addr: tuple
-        
 
 class MemoryComms(CommsAPI):
     """ For testing, to allow multiple servers to run in the 

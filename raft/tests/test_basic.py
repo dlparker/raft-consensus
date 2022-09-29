@@ -114,7 +114,7 @@ class TestThreeServers(unittest.TestCase):
         self.cluster.stop_logging_server()
 
     def test_non_leader_stop(self):
-        logger = logging.getLogger()
+        logger = logging.getLogger(__name__)
         logger.info("starting test_non_leader_stop")
         async def do_wait(seconds):
             start_time = time.time()
@@ -187,11 +187,13 @@ class TestThreeServers(unittest.TestCase):
         logger.info("all operations working with one non-leader server down")
 
     def test_leader_stop(self):
-        logger = logging.getLogger()
+        logger = logging.getLogger(__name__)
         logger.info("starting test_leader_stop")
         client1 =  UDPBankTellerClient("localhost", 5000)
-        start_time = time.time()
+        client1 =  MemoryBankTellerClient("localhost", 5000)
         status = None
+        logger.info("waiting for election results")
+        start_time = time.time()
         while time.time() - start_time < 3:
             time.sleep(0.25)
             status = client1.get_status()
@@ -213,20 +215,21 @@ class TestThreeServers(unittest.TestCase):
                 else:
                     second_follower = sdef
                 sdef['role'] = "follower"
+        logger.info("found leader %s", leader_addr)
 
         client1.do_credit(10)
         balance = client1.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
-        logger.info("calls to 5000 worked")
+        logger.info("initial callse to 5000 worked")
         # get a client for the first follower
-        client2 =  UDPBankTellerClient("localhost",
+        client2 =  MemoryBankTellerClient("localhost",
                                        first_follower['port'])
         balance = client2.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
         logger.info("call to 5001 worked")
 
         logger.info("stopping leader server %s", leader)
-        self.cluster.stop_server(leader['name'])
+        self.cluster.stop_server(leader['name']) 
         logger.info("server %s stopped", leader)
 
         if leader['port'] == 5000:
@@ -234,6 +237,7 @@ class TestThreeServers(unittest.TestCase):
         else:
             new_client = client1
         # wait for election to happen
+        logger.info("waiting for election results")
         start_time = time.time()
         while time.time() - start_time < 7:
             time.sleep(0.25)
@@ -248,6 +252,7 @@ class TestThreeServers(unittest.TestCase):
                             msg="Leader election started but did not complete")
         self.assertNotEqual(new_leader_addr[1], leader['port'],
                             msg="Leader election never happend")
+        logger.info("new leader found %s", new_leader_addr)
         balance = new_client.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
         new_client.do_credit(10)
@@ -256,3 +261,10 @@ class TestThreeServers(unittest.TestCase):
         logger.info("all operations working after election")
 
 
+        if False:
+            start_time = time.time()
+            while time.time() - start_time < 2:
+                time.sleep(0.25)
+            timer_set = get_timer_set()
+            timer_set.pause_all()
+            breakpoint()

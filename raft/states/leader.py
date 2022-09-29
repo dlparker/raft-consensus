@@ -120,8 +120,8 @@ class Leader(State):
             for follower, matchIndex in self._matchIndex.items():
                 if matchIndex == log_tail.last_index:
                     majority_response_received += 1
-            self.logger.debug("processing response from %s with "\
-                              "next_i %d, tail = %s tally is now %d, msg_data= %s",
+                    self.heartbeat_logger.debug("response from %s with "\
+                              "next_i %d, tail = %s tally=%d, msg_data= %s",
                               message.sender,
                               self._nextIndexes[message.sender[1]],
                               log_tail,

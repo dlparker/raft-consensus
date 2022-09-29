@@ -116,7 +116,7 @@ class Server:
                 #    self._state = state
             except Exception as e:
                 self.logger.error(traceback.format_exc())
-                self.logger.error("State %s got exception %e on message %s",
+                self.logger.error("State %s got exception %s on message %s",
                                   self._state, e, message)
 
     async def post_message(self, message):
