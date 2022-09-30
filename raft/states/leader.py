@@ -176,6 +176,17 @@ class Leader(State):
                 self.logger.debug("sending reply message %s", reply)
                 asyncio.ensure_future(self._server.post_message(reply))
         
+    def on_append_response(self, message):
+        # check if last append_entries good?
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
+        if not message.data["response"]:
+            return self.on_log_pull(message)
+        else:
+            self.on_append_response_received(message)
+
+        return self, None
+    
     def on_response_received(self, message):
         # check if last append_entries good?
         log = self._server.get_log()

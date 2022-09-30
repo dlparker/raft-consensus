@@ -1,6 +1,5 @@
-from .append_entries import AppendEntriesMessage
+from .append_entries import AppendEntriesMessage, AppendResponseMessage
 from .request_vote import *
-from .response import ResponseMessage
 from .status import StatusQueryMessage, StatusQueryResponseMessage
 from .command import ClientCommandMessage, ClientCommandResultMessage
 from .heartbeat import HeartbeatMessage, HeartbeatResponseMessage
@@ -30,6 +29,14 @@ class Serializer:
                 message['receiver'],
                 message['term'],
                 message['data']]
+
+        # TODO: these matches should be done against the type
+        # string in the class defs, not literals. Prolly should
+        # have a dispatch table method in the BaseMessage class
+        # that does this automatically, initialized by some
+        # register function. Currently you have to know and remember
+        # to edit serveral locations to keep things in sync when adding
+        # or changing.
         if mtype == 'heartbeat':
             return HeartbeatMessage(*args)
         elif mtype == 'heartbeat_response':
@@ -40,12 +47,12 @@ class Serializer:
             return TermStartReponseMessage(*args)
         elif mtype == 'append_entries':
             return AppendEntriesMessage(*args)
+        elif mtype == 'append_response':
+            return AppendResponseMessage(*args)
         elif mtype == 'request_vote':
             return RequestVoteMessage(*args)
         elif mtype == 'request_vote_response':
             return RequestVoteResponseMessage(*args)
-        elif mtype == 'response':
-            return ResponseMessage(*args)
         elif mtype == 'status_query':
             return StatusQueryMessage(*args)
         elif mtype == 'status_query_response':

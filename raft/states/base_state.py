@@ -5,7 +5,7 @@ from dataclasses import asdict
 
 
 from ..messages.base_message import BaseMessage
-from ..messages.response import ResponseMessage
+from ..messages.append_entries import AppendResponseMessage
 from ..messages.status import StatusQueryResponseMessage
 from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
 
@@ -21,6 +21,8 @@ class State(metaclass=abc.ABCMeta):
                 callable(subclass.on_vote_received) and
                 hasattr(subclass, 'on_append_entries') and 
                 callable(subclass.on_append_entries) and
+                hasattr(subclass, 'on_append_response') and 
+                callable(subclass.on_append_response) and
                 hasattr(subclass, 'on_response_received') and 
                 callable(subclass.on_response_received) and
                 hasattr(subclass, 'on_client_command') and 
@@ -35,6 +37,13 @@ class State(metaclass=abc.ABCMeta):
         Called when receiving a message, then
         calls the corresponding methods based on states
         """
+
+        # TODO: these matches should be done by a 
+        # a dispatch table method in the BaseMessage class
+        # that does this automatically, initialized by some
+        # register function. Currently you have to know and remember
+        # to edit serveral locations to keep things in sync when adding
+        # or changing.
 
         _type = message.type
 
@@ -52,17 +61,14 @@ class State(metaclass=abc.ABCMeta):
             return self, None
         if (_type == BaseMessage.AppendEntries):
             return self.on_append_entries(message)
+        if (_type == BaseMessage.AppendResponse):
+            return self.on_append_response(message)
         elif (_type == BaseMessage.Heartbeat):
             return self.on_heartbeat(message)
         elif (_type == BaseMessage.HeartbeatResponse):
             return self.on_heartbeat_response(message)
         elif (_type == BaseMessage.RequestVote):
-            try:
-                return self.on_vote_request(message)
-            except NotImplementedError:
-                logger = logging.getLogger(__name__)
-                logger.error("can't do vote recieved %s, %s",
-                             message, message.data)
+            return self.on_vote_request(message)
         elif (_type == BaseMessage.RequestVoteResponse):
                 return self.on_vote_received(message)
         elif (_type == BaseMessage.Response):
@@ -135,20 +141,3 @@ class State(metaclass=abc.ABCMeta):
                                          data=asdict(log_tail))
         self._server.post_message(reply)
         
-    def _send_response_message(self, msg, votedYes=True):
-        log = self._server.get_log()
-        data = {
-            "response": votedYes,
-            "currentTerm": log.get_term(),
-        }
-        data.update(msg.data)
-        response = ResponseMessage(
-            self._server.endpoint,
-            msg.sender,
-            msg.term,
-            data
-        )
-        self._server.send_message_response(response)
-        logger = logging.getLogger(__name__)
-        logger.info("sent response to %s term=%d %s",
-                        response.receiver, response.term, data)

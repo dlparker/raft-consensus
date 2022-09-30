@@ -118,3 +118,5 @@ class Candidate(Voter):
     def on_response_received(self, message):
         raise NotImplementedError
     
+    def on_append_response(self, message):
+        raise NotImplementedError

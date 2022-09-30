@@ -7,6 +7,8 @@ from .log_api import LogRec
 from .voter import Voter
 from .timer import Timer
 from .candidate import Candidate
+from ..messages.append_entries import AppendResponseMessage
+
 
 
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
@@ -74,7 +76,7 @@ class Follower(Voter):
         # sent after an election completes.
         log = self._server.get_log()
         if message.term < log.get_term():
-            self._send_response_message(message, votedYes=False)
+            self.send_response_message(message, votedYes=False)
             self.logger.info("rejecting out of date state claim from  %s",
                              message.sender)
             return False
@@ -107,7 +109,7 @@ class Follower(Voter):
         if log_tail.last_index < leader_last_rec_index:
             # tell the leader we need more log records, the
             # leader has more than we do.
-            self._send_response_message(message, votedYes=False)
+            self.send_response_message(message, votedYes=False)
             self.logger.info("asking leader for more log records")
             return False
         if log_tail.last_index == 0:
@@ -133,7 +135,7 @@ class Follower(Voter):
                                     last_matching_log_rec.term)
                 log.trim_after(leader_last_rec_index)
                 log.commit(leader_commit)
-                self._send_response_message(message, votedYes=False)
+                self.send_response_message(message, votedYes=False)
                 return False
         if len(data["entries"]) > 0:
             self.logger.debug("updating log with %d entries",
@@ -142,7 +144,7 @@ class Follower(Voter):
                 log.append([LogRec(user_data=ent),],
                            ent['term'])
             tail = log.commit(leader_commit)
-            self._send_response_message(message)
+            self.send_response_message(message)
             self.logger.info("Sent log update ack %s", message)
             return False
         self.heartbeat_logger.debug("no action needed on heartbeat")
@@ -158,18 +160,32 @@ class Follower(Voter):
 
         self.logger.debug("on_append_entries message %s", message)
         if message.term < log.get_term():
-            self._send_response_message(message, votedYes=False)
+            self.send_response_message(message, votedYes=False)
             self.logger.info("rejecting message because sender term is less than mine %s", message)
             return 
         self._do_sync_action(message)
         
     def on_client_command(self, command, client_port):
-        message = {
-            'command': command,
-            'client_port': client_port,
-        }
-        asyncio.ensure_future(self._server.post_message(message))
+        self.logger.info("follower got client command %s, discarding", command)
         return True
+    
+    def send_response_message(self, msg, votedYes=True):
+        log = self._server.get_log()
+        data = {
+            "response": votedYes,
+            "currentTerm": log.get_term(),
+        }
+        data.update(msg.data)
+        response = AppendResponseMessage(
+            self._server.endpoint,
+            msg.sender,
+            msg.term,
+            data
+        )
+        self._server.send_message_response(response)
+        logger = logging.getLogger(__name__)
+        logger.info("sent response to %s term=%d %s",
+                        response.receiver, response.term, data)
 
     def on_vote_received(self, message):
         log = self._server.get_log()
@@ -177,6 +193,9 @@ class Follower(Voter):
                          message.term, log.get_term())
 
     def on_response_received(self, message):
+        raise NotImplementedError
+
+    def on_append_response(self, message):
         raise NotImplementedError
     
     
