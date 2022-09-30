@@ -23,8 +23,6 @@ class UDPComms(CommsAPI):
         self._sock.bind(self.endpoint)
         self._logger = logging.getLogger(__name__)
         await self._start()
-        thread = UDP_Server(self._sock, self)
-        thread.start()
         self._logger.info('UDP Listening on %s', self.endpoint)
         self._started = True
 
@@ -100,19 +98,3 @@ class UDP_Protocol(asyncio.DatagramProtocol):
     def connection_lost(self, exc):
         self._logger.info("connection lost %s", exc)
 
-# thread to wait for message from user client
-class UDP_Server(threading.Thread):
-    def __init__(self, sock, server, daemon=True):
-        threading.Thread.__init__(self, daemon=daemon)
-        self._sock = sock
-        self._server = server
-
-    def run(self):
-        while True:
-            try:
-                data, addr = self._sock.recvfrom(1024)
-                asyncio.call_soon_threadsafe(self._server.on_message,
-                                             data, addr)
-            except IOError as exc:
-                if exc.errno == errno.EWOULDBLOCK:
-                    pass

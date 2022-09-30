@@ -59,15 +59,7 @@ class Leader(State):
         return random.uniform(0, self._heartbeat_timeout)
 
     def on_heartbeat_response(self, message):
-        if False:
-            log = self._server.get_log()
-            log_tail =  log.get_tail()
-            self.logger.debug("heartbeat response from %s with "\
-                              "log tail = %s msg_data= %s",
-                              message.sender,
-                              log_tail,
-                              message.data)
-        return self.on_response_received(self, message)
+        self.heartbeat_logger.debug("got heartbeat response from %s", message.sender)
 
     def on_heartbeat(self, message):
         self.logger.warning("Why am I getting hearbeat when I am leader?")
@@ -304,10 +296,10 @@ class Leader(State):
                          message.term, log.get_term())
 
     def on_vote_request(self, message):
-        raise NotImplementedError
+        self.logger.warn("got unexpected vote request from %s", message.sender)
     
     def on_append_entries(self, message):
-        raise NotImplementedError
+        self.logger.warn("got unexpected vote request from %s", message.sender)
     
     def on_term_start(self, message):
         self.logger.warn("leader got term start message from %s, makes no sense!",

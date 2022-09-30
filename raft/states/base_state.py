@@ -117,5 +117,5 @@ class State(metaclass=abc.ABCMeta):
                                          message.sender,
                                          term=log_tail.term,
                                          data=asdict(log_tail))
-        self._server.post_message(reply)
+        asyncio.ensure_future(self._server.post_message(reply))
         

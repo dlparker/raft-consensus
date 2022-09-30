@@ -197,6 +197,7 @@ class Follower(Voter):
         log = self._server.get_log()
         self.logger.info("follower got term start: message.term = %d local_term = %d",
                          message.term, log.get_term())
+        log.set_term(message.term)
         data = message.data
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 

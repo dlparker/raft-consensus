@@ -58,7 +58,7 @@ class UDPBankTellerClient:
 
     def do_debit(self, amount):
         dm = ClientCommandMessage(self._addr, self._server_addr,
-                                  None, f"dedit {amount}")
+                                  None, f"debit {amount}")
         data = Serializer.serialize(dm)
         self._sock.sendto(data, self._server_addr)
         return self.get_result()
@@ -167,7 +167,7 @@ class MemoryBankTellerClient:
 
     async def _do_debit(self, amount):
         dm = ClientCommandMessage(self._addr, self._server_addr,
-                                  None, f"dedit {amount}")
+                                  None, f"debit {amount}")
         data = Serializer.serialize(dm)
         w = Wrapper(data, self._addr)
         await self.get_channel().put(w)
