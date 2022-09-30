@@ -192,9 +192,6 @@ class Follower(Voter):
         self.logger.info("follower got vote: message.term = %d local_term = %d",
                          message.term, log.get_term())
 
-    def on_response_received(self, message):
-        raise NotImplementedError
-
     def on_append_response(self, message):
         raise NotImplementedError
     

@@ -187,17 +187,6 @@ class Leader(State):
 
         return self, None
     
-    def on_response_received(self, message):
-        # check if last append_entries good?
-        log = self._server.get_log()
-        log_tail =  log.get_tail()
-        if not message.data["response"]:
-            return self.on_log_pull(message)
-        else:
-            self.on_append_response_received(message)
-
-        return self, None
-
     def _send_heartbeat(self):
         log = self._server.get_log()
         log_tail =  log.get_tail()

@@ -1,17 +1,7 @@
+from typing import Type
+
 class BaseMessage(object):
-    TermStart = 'term_start'
-    TermStartResponse = 'term_start_response'
-    Heartbeat = 'heartbeat'
-    HeartbeatResponse = 'heartbeat_response'
-    AppendEntries = 'append_entries'
-    AppendResponse = 'append_response'
-    RequestVote = 'request_vote'
-    RequestVoteResponse = 'request_vote_response'
-    StatusQuery = 'status_query'
-    StatusQueryResponse = 'status_query_response'
-    ClientCommand = 'command'
-    ClientCommandResponse = 'command_result'
-    
+
     def __init__(self, sender, receiver, term, data, original_sender=None):
         self._sender = sender
         self._receiver = receiver
@@ -20,18 +10,26 @@ class BaseMessage(object):
         self._original_sender = original_sender
 
     def __str__(self):
-        return f"{self._type} from {self._sender} to {self._receiver} term {self._term}"
+        return f"{self._code} from {self._sender} to {self._receiver} term {self._term}"
 
+    @classmethod
+    def get_code(cls):
+        return cls._code
+    
     def is_type(self, type_val):
-        return self._type == type_val
+        return self._code == type_val
 
     def props_as_dict(self):
-        return dict(_type=self._type,
+        return dict(code=self._code,
                     sender=self._sender,
                     receiver=self._receiver,
                     term=self._term,
                     data=self._data)                      
 
+    @property
+    def code(self):
+        return self._code
+    
     @property
     def receiver(self):
         return self._receiver
@@ -49,10 +47,5 @@ class BaseMessage(object):
         return self._term
 
     @property
-    def type(self):
-        return self._type
-
-    @property
     def original_sender(self):
         return self._original_sender
-    

@@ -3,7 +3,7 @@ from .base_message import BaseMessage
 
 class StatusQueryMessage(BaseMessage):
 
-    _type = BaseMessage.StatusQuery
+    _code = "status_query"
 
     def __init__(self, sender, receiver, term, data):
         BaseMessage.__init__(self, sender, receiver, term, data)
@@ -11,7 +11,7 @@ class StatusQueryMessage(BaseMessage):
 
 class StatusQueryResponseMessage(BaseMessage):
 
-    _type = BaseMessage.StatusQueryResponse
+    _code = "status_query_response"
 
     def __init__(self, sender, receiver, term, data):
         BaseMessage.__init__(self, sender, receiver, term, data)

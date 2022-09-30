@@ -9,10 +9,48 @@ from raft.tests.setup_utils import Cluster
 from raft.tests.bt_client import UDPBankTellerClient, MemoryBankTellerClient
 from raft.states.log_api import LogRec
 from raft.states.memory_log import MemoryLog
-
+from raft.states.follower import Follower
+from raft.messages.regy import get_message_registry
 
 class TestUtils(unittest.TestCase):
 
+    def test_messages(self):
+        regy = get_message_registry()
+        hb_c = regy.get_message_class("heartbeat")
+        self.assertIsNotNone(hb_c)
+        msg = hb_c('1', '2', 0, "{'x':1}")
+        fo = Follower()
+        mh = regy.get_handler(msg, fo)
+        self.assertIsNotNone(mh)
+        expected_codes = ['heartbeat', 'heartbeat_response', 
+                 'status_query', 'status_query_response', 
+                 ]
+        
+        codes = regy.get_message_codes()
+        for code in expected_codes:
+            self.assertTrue(code in codes)
+        
+        sqr_c = regy.get_message_class("status_query_response")
+        self.assertIsNotNone(sqr_c)
+        msg = sqr_c('1', '2', 0, "{'x':1}")
+        sqr_h = regy.get_handler(msg, fo)
+        self.assertIsNone(sqr_h)
+        all_classes = regy.get_message_classes()
+        from raft.messages.heartbeat import HeartbeatMessage
+        self.assertTrue(HeartbeatMessage in all_classes)
+        from raft.messages.heartbeat import HeartbeatResponseMessage
+        from raft.messages.base_message import BaseMessage
+        # this should be legal, a re-register
+        regy.register_message_class(HeartbeatMessage, "on_heartbeat_response")
+        # this should not, conflicting values
+        class Dummy(BaseMessage):
+            _code = "heartbeat"
+            def __init__(self, sender, receiver, term, data):
+                BaseMessage.__init__(self, sender, receiver, term, data)
+        with self.assertRaises(Exception) as context:
+            regy.register_message_class(Dummy, "on_heartbeat")
+        
+        
     def test_utils(self):
         # this just tests some utility functions that may not be called
         # otherwise, such as __str__ functions that are only used in
@@ -26,7 +64,7 @@ class TestUtils(unittest.TestCase):
 
         from raft.messages.serializer import Serializer
         # mess up the type of the vote message
-        msg._type = "foo"
+        msg._code = "foo"
         bad_data = Serializer.serialize(msg)
         with self.assertRaises(Exception) as context:
             new_msg = Serializer.deserialize(bad_data)

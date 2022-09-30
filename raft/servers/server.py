@@ -60,6 +60,10 @@ class Server:
                               data[:30])
             return
         if message.is_type("command"):
+            # TODO: this needs to be moved to usual state message
+            # handling, though it will be a bit different since
+            # it needs to connect to some sort of App object that
+            # we don't have yet.
             # client does not set sender field, so set it
             message._sender = addr
             self.logger.info("command '%s' from %s", message, addr)

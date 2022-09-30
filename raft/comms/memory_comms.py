@@ -63,7 +63,7 @@ class MemoryComms(CommsAPI):
             data = Serializer.serialize(message)
             w = Wrapper(data, self.endpoint)
             self.logger.debug("%s posted %s to %s",
-                              self.endpoint, message._type, target)
+                              self.endpoint, message.code, target)
             await queue.put(w)
         except Exception:
             self.logger.error(traceback.format_exc())
@@ -77,7 +77,7 @@ class MemoryComms(CommsAPI):
                 data = w.data
                 message = Serializer.deserialize(data)
                 self.logger.debug("%s got %s from %s",
-                                  self.endpoint, message._type, addr)
+                                  self.endpoint, message.code, addr)
                 messages = await self.server.on_message(data, addr)
                 if messages:
                     for message in messages:

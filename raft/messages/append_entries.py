@@ -3,7 +3,7 @@ from .base_message import BaseMessage
 
 class AppendEntriesMessage(BaseMessage):
 
-    _type = BaseMessage.AppendEntries
+    _code = "append_entries"
 
     def __init__(self, sender, receiver, term, data):
         BaseMessage.__init__(self, sender, receiver, term, data)
@@ -11,7 +11,7 @@ class AppendEntriesMessage(BaseMessage):
 
 class AppendResponseMessage(BaseMessage):
 
-    _type = BaseMessage.AppendResponse
+    _code = "append_response"
 
     def __init__(self, sender, receiver, term, data):
         BaseMessage.__init__(self, sender, receiver, term, data)

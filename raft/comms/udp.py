@@ -79,7 +79,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             try:
                 data = Serializer.serialize(message)
                 self._logger.debug("sending dequed message %s (%s) to %s",
-                                  message, message._type, message.receiver)
+                                  message, message.code, message.receiver)
             except Exception as e:
                 self._logger.error(traceback.format_exc())
                 self._logger.error("error serializing queued message %s", e)

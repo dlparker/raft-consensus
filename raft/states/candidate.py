@@ -115,8 +115,5 @@ class Candidate(Voter):
     def on_client_command(self, command, client_port):
         raise NotImplementedError
 
-    def on_response_received(self, message):
-        raise NotImplementedError
-    
     def on_append_response(self, message):
         raise NotImplementedError

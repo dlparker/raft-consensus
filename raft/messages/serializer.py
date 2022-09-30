@@ -12,7 +12,7 @@ class Serializer:
     @staticmethod
     def serialize(message):
         data = {
-            'type': message._type,
+            'type': message.code,
             'sender': message.sender,
             'receiver': message.receiver,
             'data': message.data,
