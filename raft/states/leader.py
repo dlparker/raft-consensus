@@ -150,8 +150,11 @@ class Leader(State):
                 
         if received_confirms >= expected_confirms:
             self.logger.debug("commiting log rec %d", log_tail.last_index)
-            log_tail = log.commit(log_tail.commit_index + 1)
+            log_tail = log.commit(log_tail.last_index)
             last_log = log.read(log_tail.commit_index)
+            self.logger.debug("after commit, commit_index = %s", log_tail.commit_index)
+            self.logger.debug("after commit, last_log = %s", last_log)
+            self.logger.debug("after commit, last_log.data = %s", last_log.user_data)
             reply_address = last_log.user_data.get('reply_address', None)
             if reply_address:
                 # This log record was for data submitted by client,
@@ -232,6 +235,7 @@ class Leader(State):
             return False
         entries = [{
             "term": log.get_term(),
+            "log_index": log_tail.last_index + 1,
             "command": message.data,
             "balance": balance,
             "response": response,

@@ -19,7 +19,7 @@ class UDPBankTellerClient:
     
     def __init__(self, server_host, server_port):
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.settimeout(1)
+        self._sock.settimeout(2)
         self._sock.bind(("", 0))
         port = self._sock.getsockname()[1]
         addr = get_internal_ip()

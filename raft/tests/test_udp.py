@@ -107,6 +107,16 @@ class TestThreeServers(unittest.TestCase):
         logger.info("all operations working with one non-leader server down")
 
     def test_leader_stop(self):
+        async def do_wait(seconds):
+            start_time = time.time()
+            while time.time() - start_time < seconds:
+                asyncio.sleep(0.01)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
         logger = logging.getLogger(__name__)
         logger.info("starting test_leader_stop")
         client1 =  UDPBankTellerClient("localhost", 5000)
@@ -114,7 +124,7 @@ class TestThreeServers(unittest.TestCase):
         logger.info("waiting for election results")
         start_time = time.time()
         while time.time() - start_time < 3:
-            time.sleep(0.25)
+            loop.run_until_complete(do_wait(0.25))
             status = client1.get_status()
             if status and status.data['leader']:
                 break
@@ -159,7 +169,7 @@ class TestThreeServers(unittest.TestCase):
         logger.info("waiting for election results")
         start_time = time.time()
         while time.time() - start_time < 7:
-            time.sleep(0.25)
+            loop.run_until_complete(do_wait(0.25))
             status = new_client.get_status()
             if status:
                 new_leader_addr = status.data['leader']
@@ -172,18 +182,12 @@ class TestThreeServers(unittest.TestCase):
         self.assertNotEqual(new_leader_addr[1], leader['port'],
                             msg="Leader election never happend")
         logger.info("new leader found %s", new_leader_addr)
+
+        #loop.run_until_complete(do_wait(1))
         balance = new_client.do_query()
         self.assertEqual(balance, "Your current account balance is: 10")
-        new_client.do_credit(10)
+        res = new_client.do_credit(10)
         balance = new_client.do_query()
         self.assertEqual(balance, "Your current account balance is: 20")
         logger.info("all operations working after election")
 
-
-        if False:
-            start_time = time.time()
-            while time.time() - start_time < 2:
-                time.sleep(0.25)
-            timer_set = get_timer_set()
-            timer_set.pause_all()
-            breakpoint()

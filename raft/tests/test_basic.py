@@ -298,11 +298,3 @@ class TestThreeServers(unittest.TestCase):
         self.assertEqual(balance, "Your current account balance is: 20")
         logger.info("all operations working after election")
 
-
-        if False:
-            start_time = time.time()
-            while time.time() - start_time < 2:
-                time.sleep(0.25)
-            timer_set = get_timer_set()
-            timer_set.pause_all()
-            breakpoint()
