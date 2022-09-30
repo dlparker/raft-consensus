@@ -18,6 +18,8 @@ class State(metaclass=abc.ABCMeta):
     def __subclasshook__(cls, subclass):
         return (hasattr(subclass, 'on_vote_request') and 
                 callable(subclass.on_vote_request) and
+                hasattr(subclass, 'on_term_start') and 
+                callable(subclass.on_term_start) and
                 hasattr(subclass, 'on_vote_received') and 
                 callable(subclass.on_vote_received) and
                 hasattr(subclass, 'on_append_entries') and 
@@ -44,7 +46,8 @@ class State(metaclass=abc.ABCMeta):
         # find the handler for the message type and call it
         regy = get_message_registry()
         handler = regy.get_handler(message, self)
-        return handler(message)
+        if handler:
+            return handler(message)
         
     def do_heartbeat(self, message):
         return self.on_heartbeat(message)
@@ -63,6 +66,11 @@ class State(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def on_vote_received(self, message):
         """Called when this node receives a vote"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_term_start(self, message):
+        """Called when this node receives a term start notice from leader"""
         raise NotImplementedError
 
     @abc.abstractmethod

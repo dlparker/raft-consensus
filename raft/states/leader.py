@@ -9,6 +9,7 @@ from .log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
 from ..messages.command import ClientCommandResultMessage
 from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
+from ..messages.termstart import TermStartMessage
 from .timer import Timer
 
 @dataclass
@@ -41,11 +42,11 @@ class Leader(State):
             # first heartbeat, and we will catch them up
             self.followers[other] = FollowerCursor(other, log_tail.last_index + 1)
         
-        # send heartbeat immediately
-        self._send_heartbeat()
+        # Notify others of term start, just to make it official
+        self.send_term_start()
         self.heartbeat_timer = self._server.get_timer("leader-heartbeat",
                                                       self._heartbeat_interval(),
-                                                      self._send_heartbeat)
+                                                      self.send_heartbeat)
         self.heartbeat_timer.start()
         for other in self._server.other_nodes:
             self._nextIndexes[other[1]] = log_tail.last_index + 1
@@ -187,7 +188,7 @@ class Leader(State):
 
         return self, None
     
-    def _send_heartbeat(self):
+    def send_heartbeat(self):
         log = self._server.get_log()
         log_tail =  log.get_tail()
         message = HeartbeatMessage(
@@ -205,6 +206,26 @@ class Leader(State):
         )
         self._server.broadcast(message)
         self.heartbeat_logger.debug("sent heartbeat to all")
+
+    def send_term_start(self):
+        log = self._server.get_log()
+        log_tail =  log.get_tail()
+        data = {
+            "leaderId": self._server._name,
+            "leaderPort": self._server.endpoint,
+            "prevLogIndex": log_tail.last_index,
+            "prevLogTerm": log_tail.term,
+            "entries": [],
+            "leaderCommit": log_tail.commit_index,
+        }
+        message = TermStartMessage(
+            self._server.endpoint,
+            None,
+            log.get_term(),
+            data
+        )
+        self._server.broadcast(message)
+        self.logger.info("sent term start message to all %s", data)
 
     def on_client_command(self, message, client_port):
         log = self._server.get_log()
@@ -288,3 +309,6 @@ class Leader(State):
     def on_append_entries(self, message):
         raise NotImplementedError
     
+    def on_term_start(self, message):
+        self.logger.warn("leader got term start message from %s, makes no sense!",
+                         message.sender) 

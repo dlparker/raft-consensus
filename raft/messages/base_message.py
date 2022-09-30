@@ -1,6 +1,19 @@
+"""
+How to add a new message type:
+
+Extend the BaseMessage class, giving your new class a unique string value 
+for the class variable "_code". Then add a couple of lines to the message registry 
+"build_registry" module method. One to import your class, and another to 
+register it, following the pattern there. Note that, if you supply the name of
+a handler method, then you'll have to update the raft.states.base_state abstract
+class to add the method, and fill in the relevant logic either there or in the
+derived class for the state that can do something with the message. 
+
+
+"""
 from typing import Type
 
-class BaseMessage(object):
+class BaseMessage:
 
     def __init__(self, sender, receiver, term, data, original_sender=None):
         self._sender = sender

@@ -31,6 +31,10 @@ class Candidate(Voter):
     def candidate_interval(self):
         return random.uniform(0, self._timeout)
 
+    def on_term_start(self, message):
+        self.logger.info("candidate resigning because we got a term start message")
+        self._resign()
+        
     def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
         self._resign()
