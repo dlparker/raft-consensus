@@ -15,7 +15,7 @@ from ..messages.regy import get_message_registry
 class State(metaclass=abc.ABCMeta):
     _type = "base"
     @classmethod
-    def __subclasshook__(cls, subclass):
+    def __subclasshook__(cls, subclass):  # pragma: no cover abstract
         return (hasattr(subclass, 'on_vote_request') and 
                 callable(subclass.on_vote_request) and
                 hasattr(subclass, 'on_term_start') and 
@@ -59,27 +59,27 @@ class State(metaclass=abc.ABCMeta):
         return None
     
     @abc.abstractmethod
-    def on_vote_request(self, message):
+    def on_vote_request(self, message):  # pragma: no cover abstract
         """Called when there is a vote request"""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_vote_received(self, message):
+    def on_vote_received(self, message):  # pragma: no cover abstract
         """Called when this node receives a vote"""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_term_start(self, message):
+    def on_term_start(self, message):  # pragma: no cover abstract
         """Called when this node receives a term start notice from leader"""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_append_entries(self, message):
+    def on_append_entries(self, message):  # pragma: no cover abstract
         """Called when there is a request for this node to append entries"""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def on_client_command(self, message, client_port):
+    def on_client_command(self, message, client_port):  # pragma: no cover abstract
         """Called when there is a client request"""
         raise NotImplementedError
 
@@ -107,7 +107,7 @@ class State(metaclass=abc.ABCMeta):
         return self, None
 
     @abc.abstractmethod
-    def on_heartbeat(self, message):
+    def on_heartbeat(self, message): # pragma: no cover abstract
         raise NotImplementedError
 
     def on_heartbeat_common(self, message):

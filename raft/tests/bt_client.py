@@ -133,7 +133,7 @@ class MemoryBankTellerClient:
             if not self.queue.empty():
                 w = await self.queue.get()
                 break
-            asyncio.sleep(0.01)
+            await asyncio.sleep(0.01)
         if not w:
             raise Exception("timeout")
         data = w.data

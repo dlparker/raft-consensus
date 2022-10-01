@@ -14,7 +14,7 @@ class UDPComms(CommsAPI):
     _started = False
 
     async def start(self, server, endpoint):
-        if self._started:
+        if self._started:   # pragma: no cover error
             raise Exception("can call start only once")
         self.server = server
         self.endpoint = endpoint
@@ -38,7 +38,7 @@ class UDPComms(CommsAPI):
             self.transport, _ = await loop.create_datagram_endpoint(udp,
                                                               sock=self._sock)
             self._logger.debug("udp setup done")
-        except Exception as e:
+        except Exception as e: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             raise
 
@@ -50,11 +50,8 @@ class UDPComms(CommsAPI):
 
     async def on_message(self, data, addr):
         try:
-            messages = await self.server.on_message(data, addr)
-            if messages:
-                for message in messages:
-                    await self.post_message(messages)
-        except Exception as e:
+            await self.server.on_message(data, addr)
+        except Exception as e: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             
 
@@ -78,7 +75,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
                 data = Serializer.serialize(message)
                 self._logger.debug("sending dequed message %s (%s) to %s",
                                   message, message.code, message.receiver)
-            except Exception as e:
+            except Exception as e:  # pragma: no cover error
                 self._logger.error(traceback.format_exc())
                 self._logger.error("error serializing queued message %s", e)
             self.transport.sendto(data, message.receiver)
@@ -92,9 +89,9 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         self._logger.debug("protocol got message from %s %s", addr, data[:30])
         asyncio.ensure_future(self.message_handler(data, addr))
 
-    def error_received(self, exc):
+    def error_received(self, exc):  # pragma: no cover error
         self._logger.error("got error %s", exc)
 
-    def connection_lost(self, exc):
+    def connection_lost(self, exc):   # pragma: no cover error
         self._logger.info("connection lost %s", exc)
 

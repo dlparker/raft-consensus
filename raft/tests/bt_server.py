@@ -3,6 +3,7 @@ from pathlib import Path
 import traceback
 import logging
 import threading
+from logging.config import dictConfig
 
 import raft
 from raft.states.memory_log import MemoryLog
@@ -23,9 +24,8 @@ class UDPBankTellerServer:
         sys.stderr = sys.stdout
         import os
         os.chdir(working_dir)
+        logging.getLogger().handlers = []
         if log_config:
-            from logging.config import dictConfig
-            logging.getLogger().handlers = []
             from pprint import pprint
             try:
                 dictConfig(log_config)
@@ -66,8 +66,7 @@ class UDPBankTellerServer:
                                     log=data_log, other_nodes=self._others,
                                     endpoint=(self._host, self._port),
                                     comms=UDPComms())
-        logger.info('created server')
-        print(f"{self._name} started server on endpoint {(self._host, self._port)} with others at {self._others}", flush=True)
+        logger.info(f"{self._name} started server on endpoint {(self._host, self._port)} with others at {self._others}")
 
     def start(self):
         try:
@@ -121,7 +120,6 @@ class ServerThread(threading.Thread):
     async def _run(self):
         logger = logging.getLogger(__name__)
         logger.info("memory comms bank teller server starting")
-        print("memory comms bank teller server starting")
         state = raft.state_follower(vote_at_start=True)
         data_log = MemoryLog()
         init_data = {
@@ -138,8 +136,7 @@ class ServerThread(threading.Thread):
                                          log=data_log, other_nodes=self.other_nodes,
                                          endpoint=(self.host, self.port),
                                          comms=comms)
-        logger.info('created server')
-        print(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}", flush=True)
+        logger.info(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}")
         while self.keep_running:
             await asyncio.sleep(0.01)
         await comms.stop()

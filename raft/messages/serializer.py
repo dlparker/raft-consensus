@@ -33,15 +33,3 @@ class Serializer:
         cls =  regy.get_message_class(mcode)
         return cls(*args)
     
-    @staticmethod
-    def serialize_client(message, client_port):
-        data = {
-            'command': message,
-            'client_port': client_port,
-        }
-        return msgpack.packb(data, use_bin_type=True)
-
-    @staticmethod
-    def deserialize_client(data):
-        message = msgpack.unpackb(data, use_list=True, encoding='utf8')
-        return message

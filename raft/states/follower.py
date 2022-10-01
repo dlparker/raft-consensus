@@ -202,6 +202,8 @@ class Follower(Voter):
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 
     def on_append_response(self, message):
-        raise NotImplementedError
+        self.logger.warning("follower unexpectedly got append response from %s",
+                            message.sender)
+
     
     

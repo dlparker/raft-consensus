@@ -2,12 +2,13 @@ import asyncio
 import shutil
 from pathlib import Path
 from multiprocessing import Process
-
+import logging
 import raft
 
 from log_control import servers_as_procs_log_setup, stop_logging_server 
 from log_control import one_proc_log_setup
 from bt_server import UDPBankTellerServer, MemoryBankTellerServer
+
 
 class Cluster:
 
@@ -21,12 +22,18 @@ class Cluster:
         self.server_recs = {}
         self.dirs_ready = False
         self.setup_dirs()
+        #logging_type = "devel_one_proc" when using Mem comms and thread based servers
+        #logging_type = "devel_mp" when using UDP comms and MP process based servers
+        #logging_type = "silent" for no log at all
         if self.logging_type == "devel_mp":
             self.log_config = servers_as_procs_log_setup()
-        if self.logging_type == "devel_one_proc":
+        elif self.logging_type == "devel_one_proc":
             self.log_config = one_proc_log_setup()
-        else:
+        elif self.logging_type == "silent":
+            logging.getLogger().handlers = []
             self.log_config = None
+        else:
+            raise Exception(f"invalid logging type {logging_type}")
         
     def setup_dirs(self):
         if self.base_dir.exists():

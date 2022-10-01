@@ -3,6 +3,7 @@ import asyncio
 import time
 import logging
 import traceback
+import os
 
 from raft.tests.timer import get_timer_set
 from raft.tests.setup_utils import Cluster
@@ -12,9 +13,39 @@ from raft.states.memory_log import MemoryLog
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
 
+#LOGGING_TYPE = "devel_one_proc" when using Mem comms and thread based servers
+#LOGGING_TYPE = "devel_mp" when using UDP comms and MP process based servers
+#LOGGING_TYPE = "silent" for no log at all
+LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
+
+if LOGGING_TYPE != "silent":
+    LOGGING_TYPE = "devel_one_proc" 
+    
+
 class TestUtils(unittest.TestCase):
 
     def test_messages(self):
+
+        from raft.messages.base_message import BaseMessage
+        from raft.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
+        b_msg = BaseMessage('1', '2', 0, "{'x':1}", '3')
+        str_version = str(b_msg)
+        dict_version = b_msg.props_as_dict()
+        for key,value in dict_version.items():
+            if key in ['data', 'original_sender']:
+                continue
+            self.assertTrue(str(value) in str_version)
+        # these two have the data in the string rep
+        rv_msg = RequestVoteMessage('1', '2', 0, "{'x':1}")
+        rvr_msg = RequestVoteResponseMessage('1', '2', 0, "{'x':1}")
+        for t_msg in [rv_msg, rvr_msg]:
+            str_version = str(t_msg)
+            dict_version = t_msg.props_as_dict()
+            for key,value in dict_version.items():
+                if key in ['original_sender']:
+                    continue
+                self.assertTrue(str(value) in str_version)
+        
         regy = get_message_registry()
         hb_c = regy.get_message_class("heartbeat")
         self.assertIsNotNone(hb_c)
@@ -39,7 +70,6 @@ class TestUtils(unittest.TestCase):
         from raft.messages.heartbeat import HeartbeatMessage
         self.assertTrue(HeartbeatMessage in all_classes)
         from raft.messages.heartbeat import HeartbeatResponseMessage
-        from raft.messages.base_message import BaseMessage
         # this should be legal, a re-register
         regy.register_message_class(HeartbeatMessage, "on_heartbeat_response")
         # this should not, conflicting values
@@ -49,7 +79,7 @@ class TestUtils(unittest.TestCase):
                 BaseMessage.__init__(self, sender, receiver, term, data)
         with self.assertRaises(Exception) as context:
             regy.register_message_class(Dummy, "on_heartbeat")
-        
+
         
     def test_utils(self):
         # this just tests some utility functions that may not be called
@@ -73,11 +103,19 @@ class TestUtils(unittest.TestCase):
         from raft.states.timer import Timer
         def my_interval():
             return 10
-        t1 = Timer(my_interval, None)
-        self.assertEqual(t1.get_interval(), 10)
-        t2 = Timer(20, None)
-        self.assertEqual(t2.get_interval(), 20)
+        async def runner():
+            t1 = Timer(my_interval, None)
+            self.assertEqual(t1.get_interval(), 10)
+            t2 = Timer(20, None)
+            self.assertEqual(t2.get_interval(), 20)
 
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.run_until_complete(runner())
+            
 
 class TestMemoryLog(unittest.TestCase):
 
@@ -143,7 +181,7 @@ class TestThreeServers(unittest.TestCase):
     
     def setUp(self):
         self.cluster = Cluster(server_count=3, use_processes=False,
-                               logging_type="devel_one_proc", base_port=5000)
+                               logging_type=LOGGING_TYPE, base_port=5000)
         self.cluster.start_all_servers()
 
     def tearDown(self):
@@ -157,7 +195,7 @@ class TestThreeServers(unittest.TestCase):
         async def do_wait(seconds):
             start_time = time.time()
             while time.time() - start_time < seconds:
-                asyncio.sleep(0.01)
+                await asyncio.sleep(0.01)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -177,8 +215,8 @@ class TestThreeServers(unittest.TestCase):
             except Exception as e:
                 status_exc = e
                 
-        if not status_exc:
-            traceback.print_exc(status_exc)
+        if status_exc:
+            logger.error("last status call got %s",  traceback.format_exc(status_exc))
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.data['leader'])
         timer_set = get_timer_set()

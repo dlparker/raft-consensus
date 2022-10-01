@@ -15,6 +15,8 @@ from typing import Type
 
 class BaseMessage:
 
+    _code = "invalid"
+    
     def __init__(self, sender, receiver, term, data, original_sender=None):
         self._sender = sender
         self._receiver = receiver
@@ -33,11 +35,14 @@ class BaseMessage:
         return self._code == type_val
 
     def props_as_dict(self):
-        return dict(code=self._code,
-                    sender=self._sender,
-                    receiver=self._receiver,
-                    term=self._term,
-                    data=self._data)                      
+        res = dict(code=self._code,
+                   sender=self._sender,
+                   receiver=self._receiver,
+                   term=self._term,
+                   data=self._data)
+        if self._original_sender:
+            res['original_sender'] = self._original_sender
+        return res
 
     @property
     def code(self):

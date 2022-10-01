@@ -24,7 +24,7 @@ class Server:
         # currently only Follower does
         state.set_server(self)
         self.comms_task = asyncio.create_task(self.comms.start(self, self.endpoint))
-        self.logger.info('Server with UDP on %s', self.endpoint)
+        self.logger.info('Server on %s', self.endpoint)
 
     def stop(self):
         self.comms_task.cancel()
@@ -47,14 +47,14 @@ class Server:
     async def on_message(self, data, addr):
         try:
             self._on_message(data, addr)
-        except Exception as e:
+        except Exception as e: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             
     def _on_message(self, data, addr):
         message = None
         try:
             message = Serializer.deserialize(data)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("cannot deserialze incoming data '%s...'",
                               data[:30])
@@ -97,31 +97,11 @@ class Server:
             self.logger.debug("state %s message %s", self._state, message)
             try:
                 pre_state = self._state
-                # TODO:
-                # The code used to set the state here from the
-                # response, but it never changes, as the only
-                # on_message function that does this is in
-                # the candidate state, and it makes the change
-                # directly.
-                # Probably need to clean this code up, and
-                # the message dispatch code, get rid of the
-                # return values as they just confuse things
-                #
-                # old code:
-                #
-                # state_res = self._state.on_message(message)
-                
                 self._state.on_message(message)
                 if pre_state != self._state:
                     self.logger.info("changed state from %s to %s",
                                      pre_state, self._state)
-                #
-                # old code:
-                #
-                # else:
-                #    state, response = state_res
-                #    self._state = state
-            except Exception as e:
+            except Exception as e:  # pragma: no cover error
                 self.logger.error(traceback.format_exc())
                 self.logger.error("State %s got exception %s on message %s",
                                   self._state, e, message)

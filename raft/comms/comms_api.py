@@ -7,7 +7,8 @@ import traceback
 class CommsAPI(metaclass=abc.ABCMeta):
 
     @classmethod
-    def __subclasshook__(cls, subclass):
+    def __subclasshook__(cls, subclass): # pragma: no cover abstract
+        
         return (hasattr(subclass, 'start') and 
                 callable(subclass.start) and
                 hasattr(subclass, 'post_message') and 
@@ -15,11 +16,11 @@ class CommsAPI(metaclass=abc.ABCMeta):
                 NotImplemented)
 
     @abc.abstractmethod
-    async def start(self, server, endpoint):
+    async def start(self, server, endpoint): # pragma: no cover abstract
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def post_message(self, message):
+    async def post_message(self, message): # pragma: no cover abstract
         raise NotImplementedError
 
 

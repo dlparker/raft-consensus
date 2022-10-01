@@ -52,10 +52,10 @@ class MemoryComms(CommsAPI):
             if target not in queues:
                 start_time = time.time()
                 while time.time() - start_time < 0.25:
-                    asyncio.sleep(0.001)
+                    await asyncio.sleep(0.001)
                     if target in queues:
                         break
-                if target not in queues:
+                if target not in queues: # pragma: no cover error
                     self.logger.debug("%s not connected to %s",
                                       self.endpoint, target)
                     return
@@ -65,7 +65,7 @@ class MemoryComms(CommsAPI):
             self.logger.debug("%s posted %s to %s",
                               self.endpoint, message.code, target)
             await queue.put(w)
-        except Exception:
+        except Exception: # pragma: no cover error
             self.logger.error(traceback.format_exc())
 
     async def listen(self):
@@ -78,11 +78,8 @@ class MemoryComms(CommsAPI):
                 message = Serializer.deserialize(data)
                 self.logger.debug("%s got %s from %s",
                                   self.endpoint, message.code, addr)
-                messages = await self.server.on_message(data, addr)
-                if messages:
-                    for message in messages:
-                        await self.post_message(messages)
-            except Exception as e:
+                await self.server.on_message(data, addr)
+            except Exception as e: # pragma: no cover error
                 self.logger.error(traceback.format_exc())
 
 

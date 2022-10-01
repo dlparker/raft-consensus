@@ -117,7 +117,9 @@ class Candidate(Voter):
         return follower, None
 
     def on_client_command(self, command, client_port):
-        raise NotImplementedError
+        self.logger.warning("candidate unexpectedly got client command from %s", client_port)
 
     def on_append_response(self, message):
-        raise NotImplementedError
+        self.logger.warning("candidate unexpectedly got append response from %s",
+                            message.sender)
+

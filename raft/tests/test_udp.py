@@ -1,3 +1,4 @@
+import os
 import unittest
 import asyncio
 import time
@@ -12,6 +13,13 @@ from raft.states.memory_log import MemoryLog
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
 
+#LOGGING_TYPE = "devel_one_proc" when using Mem comms and thread based servers
+#LOGGING_TYPE = "devel_mp" when using UDP comms and MP process based servers
+#LOGGING_TYPE = "silent" for no log at all
+LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
+
+if LOGGING_TYPE != "silent":
+    LOGGING_TYPE = "devel_mp" 
         
 class TestThreeServers(unittest.TestCase):
 
@@ -25,7 +33,7 @@ class TestThreeServers(unittest.TestCase):
     
     def setUp(self):
         self.cluster = Cluster(server_count=3, use_processes=True,
-                               logging_type="devel_mp", base_port=5000)
+                               logging_type=LOGGING_TYPE, base_port=5000)
         self.cluster.start_all_servers()
 
     def tearDown(self):
@@ -39,7 +47,7 @@ class TestThreeServers(unittest.TestCase):
         async def do_wait(seconds):
             start_time = time.time()
             while time.time() - start_time < seconds:
-                asyncio.sleep(0.01)
+                await asyncio.sleep(0.01)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -59,7 +67,7 @@ class TestThreeServers(unittest.TestCase):
             except Exception as e:
                 status_exc = e
                 
-        if not status_exc:
+        if status_exc:
             logger.error("last status call got %s",  traceback.format_exc(status_exc))
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.data['leader'])
@@ -110,7 +118,7 @@ class TestThreeServers(unittest.TestCase):
         async def do_wait(seconds):
             start_time = time.time()
             while time.time() - start_time < seconds:
-                asyncio.sleep(0.01)
+                await asyncio.sleep(0.01)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

@@ -300,11 +300,11 @@ class Leader(State):
                          message.term, log.get_term())
 
     def on_vote_request(self, message):
-        self.logger.warn("got unexpected vote request from %s", message.sender)
+        self.logger.warning("got unexpected vote request from %s", message.sender)
     
     def on_append_entries(self, message):
-        self.logger.warn("got unexpected vote request from %s", message.sender)
+        self.logger.warning("got unexpected vote request from %s", message.sender)
     
     def on_term_start(self, message):
-        self.logger.warn("leader got term start message from %s, makes no sense!",
+        self.logger.warning("leader got term start message from %s, makes no sense!",
                          message.sender) 

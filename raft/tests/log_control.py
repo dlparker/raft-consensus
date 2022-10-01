@@ -1,12 +1,31 @@
 import logging
 from logging.config import dictConfig
 from pathlib import Path
+import copy
 
 from log_server import LogSocketServer
 
 have_logging_server = False
+logging_set_once = False
 
-def config_server_logging(filepath):
+def set_levels(handler_names):
+    log_loggers = dict()
+    root_log = dict(handlers=handler_names, level="INFO", propagate=True)
+    log_loggers[''] = root_log
+    info_log = dict(handlers=handler_names, level="INFO", propagate=False)
+    log_loggers['raft'] = info_log
+    debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
+    #log_loggers['raft.servers.server'] = debug_log
+    log_loggers['raft.states.follower'] = debug_log
+    #log_loggers['raft.states.follower:heartbeat'] = debug_log
+    log_loggers['raft.states.leader'] = debug_log
+    #log_loggers['raft.states.leader:heartbeat'] = debug_log
+    log_loggers['raft.states.memory_log'] = debug_log
+    log_loggers['raft.tests.test_basic'] = debug_log
+    #log_loggers['raft.comms.memory_comms'] = debug_log
+    return log_loggers
+    
+def config_server_logging(main_config, filepath):
     lfstring = '%(process)s %(asctime)s [%(levelname)s] %(name)s: %(message)s'
     log_formaters = dict(standard=dict(format=lfstring))
     file_handler = dict(level="DEBUG",
@@ -15,14 +34,12 @@ def config_server_logging(filepath):
                         mode='w',
                         filename=str(filepath))
     file_handler['class'] = "logging.FileHandler"
-    log_handlers = dict(file=file_handler)
-    the_log = dict(handlers=['file'], level="DEBUG", propagate=True)
-    log_loggers = dict()
-    log_loggers[''] = the_log
+    log_handlers = copy.deepcopy(main_config['handlers'])
+    log_handlers['file'] = file_handler
     log_config = dict(version=1, disable_existing_loggers = True,
                       formatters=log_formaters,
                       handlers=log_handlers,
-                      loggers=log_loggers)
+                      loggers=copy.deepcopy(main_config['loggers']))
     return log_config
     
 def config_logging(logfile_path, use_server=False, server_filepath=None,
@@ -45,6 +62,7 @@ def config_logging(logfile_path, use_server=False, server_filepath=None,
     #    socket_handler = logging.handlers.SocketHandler('localhost', 9999)
     log_handlers = dict(file=file_handler, stdout=stdout_handler)
     handler_names = ['file', 'stdout']
+    log_loggers = set_levels(handler_names)
     server_config = None
     if use_server:
         socket_handler  = dict(level="DEBUG",
@@ -53,25 +71,12 @@ def config_logging(logfile_path, use_server=False, server_filepath=None,
         socket_handler['class'] = "logging.handlers.SocketHandler"
         log_handlers['sock'] = socket_handler
         handler_names.append("sock")
-        server_config = config_server_logging(server_filepath)
-    root_log = dict(handlers=handler_names, level="INFO", propagate=True)
-    log_loggers = dict()
-    log_loggers[''] = root_log
-    info_log = dict(handlers=handler_names, level="INFO", propagate=False)
-    log_loggers['raft'] = info_log
-    debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
-    #log_loggers['raft.servers.server'] = debug_log
-    log_loggers['raft.states.follower'] = debug_log
-    #log_loggers['raft.states.follower:heartbeat'] = debug_log
-    log_loggers['raft.states.leader'] = debug_log
-    #log_loggers['raft.states.leader:heartbeat'] = debug_log
-    log_loggers['raft.states.memory_log'] = debug_log
-    log_loggers['raft.tests.test_basic'] = debug_log
-    #log_loggers['raft.comms.memory_comms'] = debug_log
-    log_config = dict(version=1, disable_existing_loggers = True,
+    log_config = dict(version=1, disable_existing_loggers=False,
                       formatters=log_formaters,
                       handlers=log_handlers,
                       loggers=log_loggers)
+    if use_server:
+        server_config = config_server_logging(log_config, server_filepath)
     return log_config, server_config
 
 def servers_as_procs_log_setup(file_path="/tmp/raft_tests/test.log",
@@ -91,14 +96,10 @@ def servers_as_procs_log_setup(file_path="/tmp/raft_tests/test.log",
             spec['level'] = inspec['level']
             spec['propagate'] = inspec.get("propagate", False)
             config['loggers'][inspec['name']] = spec
-    dictConfig(dict(version=1,
-                    disable_existing_loggers = True,
-                    formatters=[],
-                      handlers=[],
-                      loggers=[]))
     global have_logging_server
     if use_server and not have_logging_server:
         LogSocketServer.start(port=9999, configDict=server_config)
+        print("startted logging server")
         have_logging_server = True
     dictConfig(config)
     return config
@@ -110,11 +111,6 @@ def one_proc_log_setup(file_path="/tmp/raft_tests/test.log"):
                                           format_string=lfstring)
     
     # apply the caller's modifications to the level specs
-    dictConfig(dict(version=1,
-                    disable_existing_loggers = True,
-                    formatters=[],
-                      handlers=[],
-                      loggers=[]))
     dictConfig(config)
     return config
     
