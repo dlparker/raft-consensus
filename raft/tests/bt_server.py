@@ -58,7 +58,7 @@ class UDPBankTellerServer:
             'balance': None
         }
         init_record = LogRec(user_data=init_data)
-        data_log.append([init_record,], 0)
+        data_log.append([init_record,])
         data_log.commit()
         loop = asyncio.get_running_loop()
         logger.info('creating server')
@@ -128,7 +128,7 @@ class ServerThread(threading.Thread):
             'balance': None
         }
         init_record = LogRec(user_data=init_data)
-        data_log.append([init_record,], 0)
+        data_log.append([init_record,])
         data_log.commit()
         logger.info('creating server')
         comms = MemoryComms(timer_class=ControlledTimer)

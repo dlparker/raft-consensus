@@ -19,6 +19,16 @@ class MemoryLog(Log):
     def set_term(self, value: int):
         self._term = value
 
+    def get_index_context(self, index=None):
+        if len(self._entries) == 0:
+            return dict(term=None, index=None)
+        if index is None:
+            index = len(self._entries)
+        elif index < 0:
+            return dict(term=None, index=None)
+        rec = self._entries[-1]
+        return dict(term=rec.term, index=rec.index)
+    
     def incr_term(self):
         if self._term is None:
             self._term = 0
@@ -29,20 +39,13 @@ class MemoryLog(Log):
     def get_tail(self) -> Union[LogTail, None]:
         return deepcopy(self._tail)
 
-    def append(self, entries: List[LogRec], term) -> LogTail:
-        # TODO: remove the term param, it should
-        # be in the record, or it should be the ._term value
-        if term is None:
-            term = self._term
+    def append(self, entries: List[LogRec]) -> LogTail:
         for newitem in entries:
             save_rec = LogRec(user_data=newitem.user_data)
             self._entries.append(save_rec)
             save_rec.index = len(self._entries) - 1
-            save_rec.term = term
-            save_rec.last_term = self._tail.term
-        if not self._tail.term or term > self._tail.term:
-             self._tail.term = term
-        self._tail.last_index = len(self._entries) - 1
+            if save_rec.term is None and self._term:
+                save_rec.term = self._term
         self._tail.last_index = len(self._entries) - 1
         self.logger.debug("new log record %s", self._tail)
         return deepcopy(self._tail)

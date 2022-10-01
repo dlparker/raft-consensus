@@ -4,16 +4,15 @@ from typing import Union, List, Optional
 
 @dataclass
 class LogTail:
-    last_index: int  = field(default = -1)
+    last_index: int  = field(default = None)
     term: int  = field(default = None)
-    commit_index: int  = field(default = -1)
+    commit_index: int  = field(default = None)
 
 @dataclass
 class LogRec:
     user_data: list =  field(default=None, repr=False)
-    index: int = field(default = -1)
+    index: int = field(default = None)
     term: int = field(default = None)
-    last_term: int = field(default = -1)
 
 # abstract class for all states
 class Log(metaclass=abc.ABCMeta):
@@ -39,7 +38,7 @@ class Log(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def append(self, entries: List[LogRec], term) -> LogTail:
+    def append(self, entries: List[LogRec]) -> LogTail:
         raise NotImplementedError
 
     @abc.abstractmethod

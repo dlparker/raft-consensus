@@ -111,6 +111,13 @@ class Follower(Voter):
             # leader has more than we do.
             self.send_response_message(message, votedYes=False)
             self.logger.info("asking leader for more log records")
+
+
+            self.logger.error("here!")
+            import time
+            while True:
+                time.sleep(0.01)
+                
             return False
         if log_tail.last_index == 0:
             # TODO: need to eliminate this branch by improving
@@ -141,8 +148,7 @@ class Follower(Voter):
             self.logger.debug("updating log with %d entries",
                               len(data["entries"]))
             for ent in data["entries"]:
-                log.append([LogRec(user_data=ent),],
-                           ent['term'])
+                log.append([LogRec(term=ent['term'], user_data=ent),])
             tail = log.commit(leader_commit)
             self.send_response_message(message)
             self.logger.info("Sent log update ack %s", message)
