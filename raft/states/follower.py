@@ -10,7 +10,6 @@ from .candidate import Candidate
 from ..messages.append_entries import AppendResponseMessage
 
 
-
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
 
@@ -81,7 +80,7 @@ class Follower(Voter):
                              message.sender)
             return False
 
-        log_tail = log.get_tail()
+        last_rec = log.read()
         # If the leader has committed something newer than our
         # latest commit record, then we want to catch up as much
         # as we can. That means that our most recent record should
@@ -93,11 +92,11 @@ class Follower(Voter):
         commit_index = None
         leader_commit = data['leaderCommit']
         self.heartbeat_logger.debug("leader data %s", data)
-        self.heartbeat_logger.debug("log data %s", log_tail)
-        if leader_commit != log_tail.commit_index:
-            if leader_commit > log_tail.last_index:
+        self.heartbeat_logger.debug("log data %s", last_rec)
+        if leader_commit != log.get_commit_index():
+            if leader_commit > last_rec.index:
                 commit_reason = "partial"
-                commit_index = log_tail.last_index
+                commit_index = last_rec.index
             else:
                 commit_reason = "full"
                 commit_index = leader_commit
@@ -106,7 +105,7 @@ class Follower(Voter):
             log.commit(commit_index)
 
         leader_last_rec_index = data["prevLogIndex"]
-        if log_tail.last_index < leader_last_rec_index:
+        if last_rec.index < leader_last_rec_index:
             # tell the leader we need more log records, the
             # leader has more than we do.
             self.send_response_message(message, votedYes=False)
@@ -119,7 +118,7 @@ class Follower(Voter):
                 time.sleep(0.01)
                 
             return False
-        if log_tail.last_index == 0:
+        if last_rec.index == 0:
             # TODO: need to eliminate this branch by improving
             # the log api so that we don't have to do the current
             # hacky business of inserting a dummy record when the
@@ -134,7 +133,7 @@ class Follower(Voter):
             last_matching_log_rec = log.read(leader_last_rec_index)
             leader_log_term = data['prevLogTerm']
             if last_matching_log_rec.term > leader_log_term:
-                target_index = min(log_tail.last_index,
+                target_index = min(last_rec.index,
                                    leader_last_rec_index)
                 self.logger.warning("leader commit is behind follower commit")
                 self.logger.warning("leader commit term is %d, follower is %d",
@@ -159,8 +158,7 @@ class Follower(Voter):
     def on_append_entries(self, message):
         self.election_timer.reset()
         log = self._server.get_log()
-        log_tail = log.get_tail()
-
+        last_rec = log.read()
         data = message.data
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 

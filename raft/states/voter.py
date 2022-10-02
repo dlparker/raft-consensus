@@ -9,12 +9,24 @@ class Voter(State):
         self._last_vote = None
 
     def on_vote_request(self, message):
-        # if node has not voted and lastLogIndex from message > node's lastLogIndex --> vote Yes
+        # If this node has not voted,
+        # and if lastLogIndex in message
+        # is not earlier than our local log index
+        # then we agree that the sender's claim
+        # to be leader can stand, so we vote yes.
+        # If we have not voted, but the sender's claim
+        # is earlier than ours, then we vote no. If no
+        # claim ever arrives with an up to date log
+        # index, then we will eventually ask for votes
+        # for ourselves, and will eventually win because
+        # our last log record index is max.
+        # If we have already voted, then we say no. Election
+        # will resolve or restart.
         log = self._server.get_log()
-        log_tail =  log.get_tail()
-
+        # get the last record in the log
+        last_rec = log.read()
         if (self._last_vote is None
-            and message.data["lastLogIndex"] >= log_tail.last_index):
+            and message.data["lastLogIndex"] >= last_rec.index):
             self._last_vote = message.sender
             self._send_vote_response_message(message)
         else:

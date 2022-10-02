@@ -93,10 +93,9 @@ class State(metaclass=abc.ABCMeta):
         else:
             leader_addr = self.get_leader_addr()
         log = self._server.get_log()
-        log_tail = log.get_tail()
         status_data = dict(state=state_type,
                            leader=leader_addr,
-                           term=log_tail.term)
+                           term=log.get_term())
         status_response = StatusQueryResponseMessage(
             self._server.endpoint,
             message.sender,
@@ -112,10 +111,10 @@ class State(metaclass=abc.ABCMeta):
 
     def on_heartbeat_common(self, message):
         log = self._server.get_log()
-        log_tail = log.get_tail()
+        last_rec = log.read()
         reply = HeartbeatResponseMessage(message.receiver,
                                          message.sender,
-                                         term=log_tail.term,
-                                         data=asdict(log_tail))
+                                         term=log.get_term(),
+                                         data=last_rec.index)
         asyncio.ensure_future(self._server.post_message(reply))
         

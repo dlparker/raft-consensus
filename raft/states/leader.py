@@ -32,7 +32,7 @@ class Leader(State):
         self._server = server
         server.set_state(self)
         log = self._server.get_log()
-        log_tail =  log.get_tail()
+        last_rec = log.read()
         self.logger.info('Leader on %s in term %s', self._server.endpoint,
                          log.get_term())
         self.followers = {}
@@ -40,7 +40,7 @@ class Leader(State):
             # Assume follower is in sync, meaning we only send on new
             # log entry. If they are not, they will tell us that on
             # first heartbeat, and we will catch them up
-            self.followers[other] = FollowerCursor(other, log_tail.last_index + 1)
+            self.followers[other] = FollowerCursor(other, last_rec.index + 1)
         
         # Notify others of term start, just to make it official
         self.send_term_start()
@@ -49,7 +49,7 @@ class Leader(State):
                                                       self.send_heartbeat)
         self.heartbeat_timer.start()
         for other in self._server.other_nodes:
-            self._nextIndexes[other[1]] = log_tail.last_index + 1
+            self._nextIndexes[other[1]] = last_rec.index + 1
             self._matchIndex[other[1]] = 0
 
     def __str__(self):
@@ -74,7 +74,7 @@ class Leader(State):
         # follower examins the leader's log state, so the follower
         # knows how far behind it is
         log = self._server.get_log()
-        log_tail =  log.get_tail()
+        last_rec = log.read()
         fc = self.followers[message.sender]
         prev_index = max(0, fc.next_index - 1)
         prev_rec = log.read(prev_index)
@@ -95,7 +95,7 @@ class Leader(State):
 
         # Tell the follower which log record should proceed the one we are sending
         # so the follower can check to see if they have it.
-        last_props = log.get_index_context(current_rec.index - 1)
+        last_rec = log.read(current_rec.index - 1)
         append_entry = AppendEntriesMessage(
             self._server.endpoint,
             message.sender,
@@ -103,10 +103,10 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": last_props['index'],
-                "prevLogTerm": last_props['term'],
+                "prevLogIndex": last_rec.index,
+                "prevLogTerm": last_rec.term,
                 "entries": [current_rec.user_data,],
-                "leaderCommit": log_tail.commit_index,
+                "leaderCommit": log.get_commit_index(),
             })
         self.logger.debug("sending log entry prev at %s term %s to %s",
                           prev_index, prev_term, message.sender)
@@ -114,26 +114,26 @@ class Leader(State):
         
     def on_append_response_received(self, message):
         log = self._server.get_log()
-        log_tail =  log.get_tail()
+        last_rec = log.read()
         message_commit = message.data['leaderCommit']
-        if log_tail.commit_index != message_commit:
+        if log.get_commit_index() != message_commit:
             # this is a common occurance since we commit after a quorum
             self.logger.debug("got append response message from %s but " \
                                 "all log messages already committed", message.sender)
-            self.logger.debug("message %s log_tail %s", message.data, log_tail)
+            self.logger.debug("message %s last_rec %s", message.data, last_rec)
             return
         sender_index = message.data['prevLogIndex']
-        if log_tail.last_index != sender_index + 1:
+        if last_rec.index != sender_index + 1:
             self.logger.error("got append response message from %s for index %s but " \
                               "log index is up to %s, should be one less",
-                              message.sender, sender_index, log_tail.last_index)
+                              message.sender, sender_index, last_rec.index)
             return
             
         fc = self.followers[message.sender]
         # Append response means that follower log agrees with ours on
         # index, term, commit, etc. So their index is the same as
         # the one we sent, record it.
-        fc.last_index = log_tail.last_index
+        fc.last_index = last_rec.index
         # They have all the records we have.
         # So, the next time they ask need a record will be the next time
         # we insert one.
@@ -143,33 +143,32 @@ class Leader(State):
         expected_confirms = (self._server._total_nodes - 1) / 2
         received_confirms = 0
         for follower in self.followers.values():
-            if follower.last_index == log_tail.last_index:
+            if follower.last_index == last_rec.index:
                 received_confirms += 1
         self.logger.debug("confirmation of log rec %d received from %s "\
                           "brings total to %d out of %d",
-                          log_tail.last_index, message.sender,
+                          last_rec.index, message.sender,
                           received_confirms, expected_confirms)
                 
         if received_confirms >= expected_confirms:
-            self.logger.debug("commiting log rec %d", log_tail.last_index)
-            log_tail = log.commit(log_tail.last_index)
-            last_log = log.read(log_tail.commit_index)
-            self.logger.debug("after commit, commit_index = %s", log_tail.commit_index)
-            self.logger.debug("after commit, last_log = %s", last_log)
-            self.logger.debug("after commit, last_log.data = %s", last_log.user_data)
-            reply_address = last_log.user_data.get('reply_address', None)
+            self.logger.debug("commiting log rec %d", last_rec.index)
+            log.commit(last_rec.index)
+            self.logger.debug("after commit, commit_index = %s", log.get_commit_index())
+            #self.logger.debug("after commit, last_rec = %s", last_rec)
+            #self.logger.debug("after commit, last_rec.data = %s", last_rec.user_data)
+            reply_address = last_rec.user_data.get('reply_address', None)
             if reply_address:
                 # This log record was for data submitted by client,
                 # not an internal record such as term change.
                 # make sure provided address is formated as a tuple
                 # and use it to send reply to client
                 reply_address = (reply_address[0], reply_address[1])
-                response = last_log.user_data['response']
+                response = last_rec.user_data['response']
                 self.logger.debug("preparing reply for %s from %s",
                                   response, reply_address)
                 reply = ClientCommandResultMessage(self._server.endpoint,
                                                    reply_address,
-                                                   log_tail.term,
+                                                   last_rec.term,
                                                    response)
                 self.logger.debug("sending reply message %s", reply)
                 asyncio.ensure_future(self._server.post_message(reply))
@@ -177,7 +176,7 @@ class Leader(State):
     def on_append_response(self, message):
         # check if last append_entries good?
         log = self._server.get_log()
-        log_tail =  log.get_tail()
+        last_rec = log.read()
         if not message.data["response"]:
             return self.on_log_pull(message)
         else:
@@ -187,8 +186,7 @@ class Leader(State):
     
     def send_heartbeat(self):
         log = self._server.get_log()
-        log_tail =  log.get_tail()
-        last_props = log.get_index_context()
+        last_rec = log.read()
         message = HeartbeatMessage(
             self._server.endpoint,
             None,
@@ -196,10 +194,10 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": last_props['index'],
-                "prevLogTerm": last_props['term'],
+                "prevLogIndex": last_rec.index,
+                "prevLogTerm": last_rec.term,
                 "entries": [],
-                "leaderCommit": log_tail.commit_index,
+                "leaderCommit": log.get_commit_index(),
             }
         )
         self._server.broadcast(message)
@@ -207,15 +205,14 @@ class Leader(State):
 
     def send_term_start(self):
         log = self._server.get_log()
-        log_tail =  log.get_tail()
-        last_props = log.get_index_context()
+        last_rec = log.read()
         data = {
             "leaderId": self._server._name,
             "leaderPort": self._server.endpoint,
-            "prevLogIndex": last_props['index'],
-            "prevLogTerm": last_props['term'],
+            "prevLogIndex": last_rec.index,
+            "prevLogTerm": last_rec.term,
             "entries": [],
-            "leaderCommit": log_tail.commit_index,
+            "leaderCommit": log.get_commit_index(),
         }
         message = TermStartMessage(
             self._server.endpoint,
@@ -228,7 +225,7 @@ class Leader(State):
 
     def on_client_command(self, message, client_port):
         log = self._server.get_log()
-        log_tail =  log.get_tail()
+        last_rec = log.read()
         target = client_port
         if message.original_sender:
             target = message.original_sender
@@ -239,7 +236,7 @@ class Leader(State):
             return False
         entries = [{
             "term": log.get_term(),
-            "log_index": log_tail.last_index + 1,
+            "log_index": last_rec.index + 1,
             "command": message.data,
             "balance": balance,
             "response": response,
@@ -248,7 +245,7 @@ class Leader(State):
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
-        last_props = log.get_index_context()
+        last_rec = log.read()
         log.append([LogRec(term=log.get_term(), user_data=entries[0]),])
         update_message = AppendEntriesMessage(
             self._server.endpoint,
@@ -257,10 +254,10 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": last_props['index'],
-                "prevLogTerm": last_props['term'],
+                "prevLogIndex": last_rec.index,
+                "prevLogTerm": last_rec.term,
                 "entries": entries,
-                "leaderCommit": log_tail.commit_index,
+                "leaderCommit": log.get_commit_index(),
             }
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
@@ -271,8 +268,7 @@ class Leader(State):
     def execute_command(self, message):
         command = message.data.split()
         log = self._server.get_log()
-        log_tail = log.get_tail()
-        log_rec = log.read(log_tail.last_index)
+        log_rec = log.read()
         balance = log_rec.user_data['balance'] or 0
         if len(command) == 0:
             response = "Invalid command"

@@ -38,6 +38,10 @@ class Log(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
+    def get_commit_index(self) -> Union[int, None]:
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def append(self, entries: List[LogRec]) -> LogTail:
         raise NotImplementedError
 
@@ -46,7 +50,7 @@ class Log(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def read(self, index: int) -> Union[LogRec, None]:
+    def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:
         raise NotImplementedError
         
 

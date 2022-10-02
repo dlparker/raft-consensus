@@ -85,7 +85,7 @@ class Candidate(Voter):
     # start elections by increasing term, voting for itself and send out vote requests
     def _start_election(self):
         log = self._server.get_log()
-        log_tail =  log.get_tail()
+        last_rec = log.read()
         self.candidate_timer.start()
         # CHANGE_TRACE: self._server._currentTerm += 1
         log.incr_term()
@@ -98,8 +98,8 @@ class Candidate(Voter):
             None,
             log.get_term(),
             {
-                "lastLogIndex": log_tail.last_index,
-                "lastLogTerm": log_tail.term,
+                "lastLogIndex": last_rec.index,
+                "lastLogTerm": last_rec.term,
             }
         )
         self._server.broadcast(election)

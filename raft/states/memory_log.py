@@ -19,16 +19,6 @@ class MemoryLog(Log):
     def set_term(self, value: int):
         self._term = value
 
-    def get_index_context(self, index=None):
-        if len(self._entries) == 0:
-            return dict(term=None, index=None)
-        if index is None:
-            index = len(self._entries)
-        elif index < 0:
-            return dict(term=None, index=None)
-        rec = self._entries[-1]
-        return dict(term=rec.term, index=rec.index)
-    
     def incr_term(self):
         if self._term is None:
             self._term = 0
@@ -38,6 +28,9 @@ class MemoryLog(Log):
         
     def get_tail(self) -> Union[LogTail, None]:
         return deepcopy(self._tail)
+
+    def get_commit_index(self) -> Union[LogTail, None]:
+        return self._tail.commit_index
 
     def append(self, entries: List[LogRec]) -> LogTail:
         for newitem in entries:
@@ -67,8 +60,10 @@ class MemoryLog(Log):
         self.logger.debug("committed log at %s", self._tail)
         return deepcopy(self._tail)
 
-    def read(self, index: int) -> Union[LogRec, None]:
-        if index > len(self._entries) - 1 or index < 0:
+    def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:
+        if index is None:
+            index = len(self._entries) - 1 
+        elif index > len(self._entries) - 1 or index < 0:
             return None
         return deepcopy(self._entries[index])
 
