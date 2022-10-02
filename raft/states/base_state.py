@@ -37,7 +37,12 @@ class State(metaclass=abc.ABCMeta):
         
         # If the message.term < currentTerm -> tell the sender to update term
         log = self._server.get_log()
-        if (message.term and message.term > log.get_term()):
+        set_term = False
+        if not log.get_term():
+            if message.term:
+                # empty log locally
+                set_term = True
+        elif message.term and message.term > log.get_term():
             logger = logging.getLogger(__name__)
             logger.info("updating term from %d to %s", log.get_term(),
                         message.term)

@@ -46,9 +46,9 @@ class MemoryLog(Log):
         self.logger.debug("trimmed log to %s", last_rec.index)
         
     def commit(self, index: Optional[int] = None) -> None:
-        if not index:
+        if index is None:
             index = len(self.entries) - 1
-        elif index > len(self.entries) - 1 or index < 0:
+        if index > len(self.entries) - 1 or index < 0:
             raise Exception(f"cannot commit index {index}, not in records")
         self.commit_index = index
         rec = self.entries[index]

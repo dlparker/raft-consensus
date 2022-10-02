@@ -86,14 +86,13 @@ class Cluster:
         # makes testing go faster. Sometimes you want the
         # timeout to happen, so set to False
         srec = self.server_recs[name]
-        args = [ item for item in srec['run_args'][:-2] ]
+        # vote at start is last arg
+        args = [ item for item in srec['run_args'][:-1] ]
         args.append(vote_at_start)
         if self.use_procs:
             if srec.get('proc'):
                 raise Exception(f"server {name} process already running")
             srec = self.server_recs[name]
-            # vote at start is last arg
-            
             s_process = Process(target=UDPBankTellerServer.make_and_start,
                                 args=args)
             s_process.daemon = True

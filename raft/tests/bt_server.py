@@ -17,7 +17,7 @@ class UDPBankTellerServer:
 
     @classmethod
     def make_and_start(cls, port, working_dir, name, others,
-                       log_config, vote_at_start):
+                       log_config, vote_at_start=True):
         # vote_at_start True means that server starts with
         # a follower that does not wait for timeout, which
         # makes testing go faster. Sometimes you want the
@@ -81,7 +81,7 @@ class UDPBankTellerServer:
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        loop.run_until_complete(self.run())
+        loop.run_until_complete(self._run())
         loop.run_forever()
         loop.stop()
 
@@ -122,7 +122,6 @@ class ServerThread(threading.Thread):
         self.host = "localhost"
         self.port = port
         self.other_nodes = other_nodes
-        self.server = None
         self.keep_running = True
         self.vote_at_start = vote_at_start
 
@@ -132,7 +131,7 @@ class ServerThread(threading.Thread):
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        loop.run_until_complete(self.run())
+        loop.run_until_complete(self._run())
         
     async def _run(self):
         try:
@@ -144,16 +143,14 @@ class ServerThread(threading.Thread):
             comms = MemoryComms(timer_class=ControlledTimer)
             endpoint = (self.host, self.port)
             server = Server(name=f"{endpoint}", state=state,
-                            log=data_log, other_nodes=self.others,
+                            log=data_log, other_nodes=self.other_nodes,
                             endpoint=endpoint,
                             comms=comms)
             logger.info(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}")
             while self.keep_running:
                 await asyncio.sleep(0.01)
             await comms.stop()
-            self.server.stop()
         except:
-            logger.error(traceback.format_exc())
+            print("\n\n!!!!!!Server thread failed!!!!")
             traceback.print_exc()
-
         

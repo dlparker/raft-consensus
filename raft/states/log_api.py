@@ -8,7 +8,7 @@ class LogRec:
     user_data: list =  field(default=None, repr=False)
     index: int = field(default = None)
     term: int = field(default = None)
-    committed: bool = field(default = None)
+    committed: bool = field(default = False)
 
 # abstract class for all states
 class Log(metaclass=abc.ABCMeta):

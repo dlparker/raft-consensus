@@ -262,6 +262,7 @@ class BaseCase:
             self.cluster.start_one_server(second_follower['name'],
                                           vote_at_start=False)
 
+            logger.info("\n\n      !!!!restarted non-leader server!!!! \n\n\n")
             status_exc = None
             start_time = time.time()
             while time.time() - start_time < 4:

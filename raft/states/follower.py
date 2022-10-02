@@ -2,6 +2,7 @@ import random
 import asyncio
 from dataclasses import asdict
 import logging
+import traceback
 
 from .log_api import LogRec
 from .voter import Voter
@@ -74,7 +75,7 @@ class Follower(Voter):
         # is an old message in a queue somewhere that gets
         # sent after an election completes.
         log = self._server.get_log()
-        if message.term < log.get_term():
+        if log.get_term() and message.term < log.get_term():
             self.send_response_message(message, votedYes=False)
             self.logger.info("rejecting out of date state claim from  %s",
                              message.sender)
@@ -99,17 +100,29 @@ class Follower(Voter):
         leader_commit = data['leaderCommit']
         self.heartbeat_logger.debug("leader data %s", data)
         self.heartbeat_logger.debug("log data %s", last_rec)
-        if leader_commit != log.get_commit_index():
-            if leader_commit > last_index:
-                commit_reason = "partial"
-                commit_index = last_index
-            else:
-                commit_reason = "full"
-                commit_index = leader_commit
+        do_commit = False
+        if leader_commit is not None:
+            if (log.get_commit_index() is None
+                or leader_commit != log.get_commit_index()):
+                if last_index is not None:
+                    if last_index < leader_commit:
+                        commit_reason = "partial"
+                        commit_index = last_index
+                        do_commit = True
+                    else:
+                        commit_reason = "full"
+                        commit_index = leader_commit
+                        do_commit = True
+        if do_commit:
             self.logger.info("commiting up to %d as %s catch up with leader",
                              commit_index, commit_reason)
-            log.commit(commit_index)
-
+            try:
+                log.commit(commit_index)
+            except:
+                self.logger.error(traceback.format_exc())
+                self.logger.info("commiting up to %d as %s catch up with leader",
+                             commit_index, commit_reason)
+                return False
         leader_last_rec_index = data["prevLogIndex"]
         if last_index != leader_last_rec_index:
             # tell the leader we need more log records, the
@@ -134,7 +147,13 @@ class Follower(Voter):
                                     leader_log_term,
                                     last_matching_log_rec.term)
                 log.trim_after(leader_last_rec_index)
-                log.commit(leader_commit)
+                if leader_commit is None or leader_commit == -1:
+                    self.logger.error("Trying to commit invalid index %s at last_index %s leader last rec index %s",
+                                      commit_index, last_index, leader_last_rec_index)
+                try:
+                    log.commit(leader_commit)
+                except:
+                    self.logger.error(traceback.format_exc())
                 self.send_response_message(message, votedYes=False)
                 return False
         
@@ -142,8 +161,9 @@ class Follower(Voter):
             self.logger.debug("updating log with %d entries",
                               len(data["entries"]))
             for ent in data["entries"]:
-                log.append([LogRec(term=ent['term'], user_data=ent),])
-            tail = log.commit(leader_commit)
+                log.append([LogRec(term=ent['term'], user_data=ent['user_data']),])
+                if ent['committed']:
+                    log.commit(ent['index'])
             self.send_response_message(message)
             self.logger.info("Sent log update ack %s", message)
             return False
@@ -158,7 +178,7 @@ class Follower(Voter):
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 
         self.logger.debug("on_append_entries message %s", message)
-        if message.term < log.get_term():
+        if log.get_term() and message.term < log.get_term():
             self.send_response_message(message, votedYes=False)
             self.logger.info("rejecting message because sender term is less than mine %s", message)
             return 

@@ -22,7 +22,7 @@ LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_mp"
     
-class MemTestThreeServers(BaseCase.TestThreeServers):
+class UDPTestThreeServers(BaseCase.TestThreeServers):
 
     def get_logging_type(self):
         return LOGGING_TYPE

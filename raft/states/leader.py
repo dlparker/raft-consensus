@@ -2,7 +2,7 @@ from collections import defaultdict
 import random
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 from .base_state import State
 from .log_api import LogRec
@@ -75,27 +75,35 @@ class Leader(State):
         # knows how far behind it is
         log = self._server.get_log()
         last_rec = log.read()
-        fc = self.followers[message.sender]
-        prev_index = max(0, fc.next_index - 1)
-        prev_rec = log.read(prev_index)
-        if not prev_rec:
-            self.logger.error("cannot find last log message %d for follower %s",
-                              prev_index, message.sender)
+        if last_rec is None:
+            # special case, log is empty
+            self.logger.error("follower %s thinks there log records to pull but log is empty",
+                              message.sender, prev_index)
             return self, None
-
-        # this helps the follower validate the log position
-        prev_term = prev_rec.user_data['term']
+        fc = self.followers[message.sender]
+        if fc.next_index == 0:
+            # special case, first log record
+            prev_term = None
+            prev_index = None
+        else:
+            prev_index = fc.next_index - 1
+            prev_rec = log.read(prev_index)
+            if not prev_rec:
+                self.logger.error("cannot find last log message %d for follower %s",
+                                  prev_index, message.sender)
+                return self, None
+            # this helps the follower validate the log position
+            prev_term = prev_rec.user_data['term']
         # get the next record that they don't have
         current_rec = log.read(fc.next_index)
         if not current_rec:
             self.logger.error("follower %s thinks there are more log records "\
                               "after %d, but we don't",
-                              message.sender, prev_index)
+                              message.sender, fc.next_index - 1)
             return self, None
 
         # Tell the follower which log record should proceed the one we are sending
         # so the follower can check to see if they have it.
-        last_rec = log.read(current_rec.index - 1)
         append_entry = AppendEntriesMessage(
             self._server.endpoint,
             message.sender,
@@ -103,9 +111,9 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": last_rec.index,
-                "prevLogTerm": last_rec.term,
-                "entries": [current_rec.user_data,],
+                "prevLogIndex": prev_index,
+                "prevLogTerm": prev_term,
+                "entries": [asdict(current_rec),],
                 "leaderCommit": log.get_commit_index(),
             })
         self.logger.debug("sending log entry prev at %s term %s to %s",
@@ -115,6 +123,13 @@ class Leader(State):
     def on_append_response_received(self, message):
         log = self._server.get_log()
         last_rec = log.read()
+        if last_rec:
+            last_index = last_rec.index
+            last_term = last_rec.term
+        else:
+            # no log records yet
+            last_index = None
+            last_term = None
         message_commit = message.data['leaderCommit']
         if log.get_commit_index() != message_commit:
             # this is a common occurance since we commit after a quorum
@@ -123,17 +138,17 @@ class Leader(State):
             self.logger.debug("message %s last_rec %s", message.data, last_rec)
             return
         sender_index = message.data['prevLogIndex']
-        if sender_index and last_rec.index and last_rec.index != sender_index + 1:
+        if sender_index and last_index and last_index != sender_index + 1:
             self.logger.error("got append response message from %s for index %s but " \
                               "log index is up to %s, should be one less",
-                              message.sender, sender_index, last_rec.index)
+                              message.sender, sender_index, last_index)
             return
             
         fc = self.followers[message.sender]
         # Append response means that follower log agrees with ours on
         # index, term, commit, etc. So their index is the same as
         # the one we sent, record it.
-        fc.last_index = last_rec.index
+        fc.last_index = last_index
         # They have all the records we have.
         # So, the next time they ask need a record will be the next time
         # we insert one.
@@ -143,16 +158,16 @@ class Leader(State):
         expected_confirms = (self._server._total_nodes - 1) / 2
         received_confirms = 0
         for follower in self.followers.values():
-            if follower.last_index == last_rec.index:
+            if follower.last_index == last_index:
                 received_confirms += 1
         self.logger.debug("confirmation of log rec %d received from %s "\
                           "brings total to %d out of %d",
-                          last_rec.index, message.sender,
+                          last_index, message.sender,
                           received_confirms, expected_confirms)
                 
         if received_confirms >= expected_confirms:
-            self.logger.debug("commiting log rec %d", last_rec.index)
-            log.commit(last_rec.index)
+            self.logger.debug("commiting log rec %d", last_index)
+            log.commit(last_index)
             self.logger.debug("after commit, commit_index = %s", log.get_commit_index())
             #self.logger.debug("after commit, last_rec = %s", last_rec)
             #self.logger.debug("after commit, last_rec.data = %s", last_rec.user_data)
@@ -168,7 +183,7 @@ class Leader(State):
                                   response, reply_address)
                 reply = ClientCommandResultMessage(self._server.endpoint,
                                                    reply_address,
-                                                   last_rec.term,
+                                                   last_term,
                                                    response)
                 self.logger.debug("sending reply message %s", reply)
                 asyncio.ensure_future(self._server.post_message(reply))
@@ -257,19 +272,20 @@ class Leader(State):
             last_term = None
         if response == "Invalid command":
             return False
-        entries = [{
+        data = {
             "term": log.get_term(),
             "log_index": new_index,
             "command": message.data,
             "balance": balance,
             "response": response,
             "reply_address": target
-        }]
+        }
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
         last_rec = log.read()
-        log.append([LogRec(term=log.get_term(), user_data=entries[0]),])
+        log.append([LogRec(term=log.get_term(), user_data=data),])
+        new_rec = log.read()
         update_message = AppendEntriesMessage(
             self._server.endpoint,
             None,
@@ -279,7 +295,7 @@ class Leader(State):
                 "leaderPort": self._server.endpoint,
                 "prevLogIndex": last_index,
                 "prevLogTerm": last_term,
-                "entries": entries,
+                "entries": [asdict(new_rec),],
                 "leaderCommit": log.get_commit_index(),
             }
         )
