@@ -86,6 +86,13 @@ class Candidate(Voter):
     def _start_election(self):
         log = self._server.get_log()
         last_rec = log.read()
+        if last_rec:
+            last_index = last_rec.index
+            last_term = last_rec.term
+        else:
+            # no log records yet
+            last_index = None
+            last_term = None
         self.candidate_timer.start()
         # CHANGE_TRACE: self._server._currentTerm += 1
         log.incr_term()
@@ -98,8 +105,8 @@ class Candidate(Voter):
             None,
             log.get_term(),
             {
-                "lastLogIndex": last_rec.index,
-                "lastLogTerm": last_rec.term,
+                "lastLogIndex": last_index,
+                "lastLogTerm": last_term,
             }
         )
         self._server.broadcast(election)

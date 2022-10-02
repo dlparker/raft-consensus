@@ -79,8 +79,14 @@ class Follower(Voter):
             self.logger.info("rejecting out of date state claim from  %s",
                              message.sender)
             return False
-
         last_rec = log.read()
+        if last_rec:
+            last_index = last_rec.index
+            last_term = last_rec.term
+        else:
+            # no log records yet
+            last_index = None
+            last_term = None
         # If the leader has committed something newer than our
         # latest commit record, then we want to catch up as much
         # as we can. That means that our most recent record should
@@ -94,9 +100,9 @@ class Follower(Voter):
         self.heartbeat_logger.debug("leader data %s", data)
         self.heartbeat_logger.debug("log data %s", last_rec)
         if leader_commit != log.get_commit_index():
-            if leader_commit > last_rec.index:
+            if leader_commit > last_index:
                 commit_reason = "partial"
-                commit_index = last_rec.index
+                commit_index = last_index
             else:
                 commit_reason = "full"
                 commit_index = leader_commit
@@ -105,35 +111,23 @@ class Follower(Voter):
             log.commit(commit_index)
 
         leader_last_rec_index = data["prevLogIndex"]
-        if last_rec.index < leader_last_rec_index:
+        if last_index != leader_last_rec_index:
             # tell the leader we need more log records, the
             # leader has more than we do.
             self.send_response_message(message, votedYes=False)
             self.logger.info("asking leader for more log records")
-
-
-            self.logger.error("here!")
-            import time
-            while True:
-                time.sleep(0.01)
-                
             return False
-        if last_rec.index == 0:
-            # TODO: need to eliminate this branch by improving
-            # the log api so that we don't have to do the current
-            # hacky business of inserting a dummy record when the
-            # log is created. 
-            pass
-        else:
-            # Look at the leader's provided data for most recent
-            # log record, make sure that ours is not more recent.
-            # Not sure that this can happen, seems to violate
-            # promise of protocol. TODO: see if this can be forced
-            # in testing, or if it is dead code
+        # Look at the leader's provided data for most recent
+        # log record, make sure that ours is not more recent.
+        # Not sure that this can happen, seems to violate
+        # promise of protocol. TODO: see if this can be forced
+        # in testing, or if it is dead code
+        # First check to see that we don't have the empty logs situation
+        if leader_last_rec_index and last_index:
             last_matching_log_rec = log.read(leader_last_rec_index)
             leader_log_term = data['prevLogTerm']
             if last_matching_log_rec.term > leader_log_term:
-                target_index = min(last_rec.index,
+                target_index = min(last_index,
                                    leader_last_rec_index)
                 self.logger.warning("leader commit is behind follower commit")
                 self.logger.warning("leader commit term is %d, follower is %d",
@@ -143,6 +137,7 @@ class Follower(Voter):
                 log.commit(leader_commit)
                 self.send_response_message(message, votedYes=False)
                 return False
+        
         if len(data["entries"]) > 0:
             self.logger.debug("updating log with %d entries",
                               len(data["entries"]))

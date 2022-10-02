@@ -112,9 +112,15 @@ class State(metaclass=abc.ABCMeta):
     def on_heartbeat_common(self, message):
         log = self._server.get_log()
         last_rec = log.read()
+        if last_rec:
+            last_index = last_rec.index
+        else:
+            # no log records yet
+            last_index = None
+
         reply = HeartbeatResponseMessage(message.receiver,
                                          message.sender,
                                          term=log.get_term(),
-                                         data=last_rec.index)
+                                         data=last_index)
         asyncio.ensure_future(self._server.post_message(reply))
         

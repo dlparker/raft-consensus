@@ -24,8 +24,6 @@ class Leader(State):
     _type = "leader"
     
     def __init__(self, server, heartbeat_timeout=0.5):
-        self._nextIndexes = defaultdict(int)
-        self._matchIndex = defaultdict(int)
         self._heartbeat_timeout = heartbeat_timeout
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
@@ -33,6 +31,11 @@ class Leader(State):
         server.set_state(self)
         log = self._server.get_log()
         last_rec = log.read()
+        if last_rec:
+            last_index = last_rec.index + 1
+        else:
+            # no log records yet
+            last_index = -1
         self.logger.info('Leader on %s in term %s', self._server.endpoint,
                          log.get_term())
         self.followers = {}
@@ -40,7 +43,7 @@ class Leader(State):
             # Assume follower is in sync, meaning we only send on new
             # log entry. If they are not, they will tell us that on
             # first heartbeat, and we will catch them up
-            self.followers[other] = FollowerCursor(other, last_rec.index + 1)
+            self.followers[other] = FollowerCursor(other, last_index)
         
         # Notify others of term start, just to make it official
         self.send_term_start()
@@ -48,9 +51,6 @@ class Leader(State):
                                                       self._heartbeat_interval(),
                                                       self.send_heartbeat)
         self.heartbeat_timer.start()
-        for other in self._server.other_nodes:
-            self._nextIndexes[other[1]] = last_rec.index + 1
-            self._matchIndex[other[1]] = 0
 
     def __str__(self):
         return "leader"
@@ -123,7 +123,7 @@ class Leader(State):
             self.logger.debug("message %s last_rec %s", message.data, last_rec)
             return
         sender_index = message.data['prevLogIndex']
-        if last_rec.index != sender_index + 1:
+        if sender_index and last_rec.index and last_rec.index != sender_index + 1:
             self.logger.error("got append response message from %s for index %s but " \
                               "log index is up to %s, should be one less",
                               message.sender, sender_index, last_rec.index)
@@ -187,6 +187,13 @@ class Leader(State):
     def send_heartbeat(self):
         log = self._server.get_log()
         last_rec = log.read()
+        if last_rec:
+            last_index = last_rec.index
+            last_term = last_rec.term
+        else:
+            # no log records yet
+            last_index = None
+            last_term = None
         message = HeartbeatMessage(
             self._server.endpoint,
             None,
@@ -194,8 +201,8 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": last_rec.index,
-                "prevLogTerm": last_rec.term,
+                "prevLogIndex": last_index,
+                "prevLogTerm": last_term,
                 "entries": [],
                 "leaderCommit": log.get_commit_index(),
             }
@@ -206,11 +213,18 @@ class Leader(State):
     def send_term_start(self):
         log = self._server.get_log()
         last_rec = log.read()
+        if last_rec:
+            last_index = last_rec.index
+            last_term = last_rec.term
+        else:
+            # no log records yet
+            last_index = None
+            last_term = None
         data = {
             "leaderId": self._server._name,
             "leaderPort": self._server.endpoint,
-            "prevLogIndex": last_rec.index,
-            "prevLogTerm": last_rec.term,
+            "prevLogIndex": last_index,
+            "prevLogTerm": last_term,
             "entries": [],
             "leaderCommit": log.get_commit_index(),
         }
@@ -224,19 +238,28 @@ class Leader(State):
         self.logger.info("sent term start message to all %s %s", message, data)
 
     def on_client_command(self, message, client_port):
-        log = self._server.get_log()
-        last_rec = log.read()
         target = client_port
         if message.original_sender:
             target = message.original_sender
         self.logger.debug("saving address for reply %s",
                           target)
         response, balance = self.execute_command(message)
+        log = self._server.get_log()
+        last_rec = log.read()
+        if last_rec:
+            new_index = last_rec.index + 1
+            last_index = last_rec.index
+            last_term = last_rec.term
+        else:
+            new_index = 0
+            # no log records yet
+            last_index = None
+            last_term = None
         if response == "Invalid command":
             return False
         entries = [{
             "term": log.get_term(),
-            "log_index": last_rec.index + 1,
+            "log_index": new_index,
             "command": message.data,
             "balance": balance,
             "response": response,
@@ -254,8 +277,8 @@ class Leader(State):
             {
                 "leaderId": self._server._name,
                 "leaderPort": self._server.endpoint,
-                "prevLogIndex": last_rec.index,
-                "prevLogTerm": last_rec.term,
+                "prevLogIndex": last_index,
+                "prevLogTerm": last_term,
                 "entries": entries,
                 "leaderCommit": log.get_commit_index(),
             }
@@ -268,8 +291,11 @@ class Leader(State):
     def execute_command(self, message):
         command = message.data.split()
         log = self._server.get_log()
-        log_rec = log.read()
-        balance = log_rec.user_data['balance'] or 0
+        last_rec = log.read()
+        if last_rec:
+            balance = last_rec.user_data['balance'] or 0
+        else:
+            balance = 0
         if len(command) == 0:
             response = "Invalid command"
         elif len(command) == 1 and command[0] == 'query':

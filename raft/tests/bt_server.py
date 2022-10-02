@@ -52,14 +52,6 @@ class UDPBankTellerServer:
         logger.info("bank teller server starting")
         state = raft.state_follower(vote_at_start=True)
         data_log = MemoryLog()
-        init_data = {
-            'term': None,
-            'command': None,
-            'balance': None
-        }
-        init_record = LogRec(user_data=init_data)
-        data_log.append([init_record,])
-        data_log.commit()
         loop = asyncio.get_running_loop()
         logger.info('creating server')
         server = raft.create_server(name='raft', state=state,
@@ -122,14 +114,6 @@ class ServerThread(threading.Thread):
         logger.info("memory comms bank teller server starting")
         state = raft.state_follower(vote_at_start=True)
         data_log = MemoryLog()
-        init_data = {
-            'term': None,
-            'command': None,
-            'balance': None
-        }
-        init_record = LogRec(user_data=init_data)
-        data_log.append([init_record,])
-        data_log.commit()
         logger.info('creating server')
         comms = MemoryComms(timer_class=ControlledTimer)
         self.server = raft.create_server(name='raft', state=state,

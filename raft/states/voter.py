@@ -25,8 +25,20 @@ class Voter(State):
         log = self._server.get_log()
         # get the last record in the log
         last_rec = log.read()
-        if (self._last_vote is None
+        if last_rec:
+            last_index = last_rec.index
+            last_term = last_rec.term
+        else:
+            # no log records yet
+            last_index = None
+            last_term = None
+        vote = False
+        if self._last_vote is None and last_index is None:
+            vote = True
+        elif (self._last_vote is None 
             and message.data["lastLogIndex"] >= last_rec.index):
+            vote = True
+        if vote:
             self._last_vote = message.sender
             self._send_vote_response_message(message)
         else:
