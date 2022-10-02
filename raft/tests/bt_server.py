@@ -6,6 +6,7 @@ import threading
 from logging.config import dictConfig
 
 import raft
+from raft.servers.server import Server
 from raft.states.memory_log import MemoryLog
 from raft.states.log_api import LogRec
 from raft.comms.udp import UDPComms
@@ -15,7 +16,12 @@ from raft.tests.timer import ControlledTimer
 class UDPBankTellerServer:
 
     @classmethod
-    def make_and_start(cls, port, working_dir, name, others, log_config):
+    def make_and_start(cls, port, working_dir, name, others,
+                       log_config, vote_at_start):
+        # vote_at_start True means that server starts with
+        # a follower that does not wait for timeout, which
+        # makes testing go faster. Sometimes you want the
+        # timeout to happen, so set to False
         from pytest_cov.embed import cleanup_on_sigterm
         cleanup_on_sigterm()
         import sys
@@ -34,31 +40,40 @@ class UDPBankTellerServer:
                 pprint(log_config)
                 raise
         try:
-            instance = cls(port, working_dir, name, others)
+            instance = cls(port, working_dir, name, others, vote_at_start)
             instance.start()
         except Exception as e:
             traceback.print_exc()
             raise
 
-    def __init__(self, port, working_dir, name, others):
-        self._host = "localhost"
-        self._port = port
-        self._name = name
-        self._working_dir = working_dir
-        self._others = others
+    def __init__(self, port, working_dir, name, others, vote_at_start):
+        # vote_at_start True means that server starts with
+        # a follower that does not wait for timeout, which
+        # makes testing go faster. Sometimes you want the
+        # timeout to happen, so set to False
+        self.host = "localhost"
+        self.port = port
+        self.name = name
+        self.working_dir = working_dir
+        self.others = others
+        self.vote_at_start = vote_at_start
         
     async def _run(self):
-        logger = logging.getLogger(__name__)
-        logger.info("bank teller server starting")
-        state = raft.state_follower(vote_at_start=True)
-        data_log = MemoryLog()
-        loop = asyncio.get_running_loop()
-        logger.info('creating server')
-        server = raft.create_server(name='raft', state=state,
-                                    log=data_log, other_nodes=self._others,
-                                    endpoint=(self._host, self._port),
-                                    comms=UDPComms())
-        logger.info(f"{self._name} started server on endpoint {(self._host, self._port)} with others at {self._others}")
+        try:
+            logger = logging.getLogger(__name__)
+            logger.info("bank teller server starting")
+            state = raft.state_follower(vote_at_start=self.vote_at_start)
+            data_log = MemoryLog()
+            loop = asyncio.get_running_loop()
+            logger.info('creating server')
+            endpoint = (self.host, self.port)
+            server = Server(name=f"{endpoint}", state=state,
+                            log=data_log, other_nodes=self.others,
+                            endpoint=endpoint,
+                            comms=UDPComms())
+            logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
+        except:
+            logger.error(traceback.exc())
 
     def start(self):
         try:
@@ -66,23 +81,28 @@ class UDPBankTellerServer:
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        loop.run_until_complete(self._run())
+        loop.run_until_complete(self.run())
         loop.run_forever()
         loop.stop()
 
 
 class MemoryBankTellerServer:
 
-    def __init__(self, port, working_dir, name, others, log_config=None):
+    def __init__(self, port, working_dir, name, others,
+                 log_config=None, vote_at_start=True):
+        # vote_at_start True means that server starts with
+        # a follower that does not wait for timeout, which
+        # makes testing go faster. Sometimes you want the
+        # timeout to happen, so set to False
         # log_config is ignored, kept just to match process launching
         # versions to make control code cleaner
-        self._host = "localhost"
-        self._port = port
-        self._name = name
-        self._working_dir = working_dir
-        self._others = others
-        self.thread = ServerThread(port, others)
-        self.thread.name = f"{self._port}"
+        self.host = "localhost"
+        self.port = port
+        self.name = name
+        self.working_dir = working_dir
+        self.others = others
+        self.thread = ServerThread(port, others, vote_at_start)
+        self.thread.name = f"{self.port}"
 
     def start(self):
         self.thread.start()
@@ -93,13 +113,18 @@ class MemoryBankTellerServer:
 
 class ServerThread(threading.Thread):
 
-    def __init__(self, port, other_nodes):
+    def __init__(self, port, other_nodes, vote_at_start):
+        # vote_at_start True means that server starts with
+        # a follower that does not wait for timeout, which
+        # makes testing go faster. Sometimes you want the
+        # timeout to happen, so set to False
         threading.Thread.__init__(self)
         self.host = "localhost"
         self.port = port
         self.other_nodes = other_nodes
-        self._server = None
+        self.server = None
         self.keep_running = True
+        self.vote_at_start = vote_at_start
 
     def run(self):
         try:
@@ -107,23 +132,28 @@ class ServerThread(threading.Thread):
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        loop.run_until_complete(self._run())
+        loop.run_until_complete(self.run())
         
     async def _run(self):
-        logger = logging.getLogger(__name__)
-        logger.info("memory comms bank teller server starting")
-        state = raft.state_follower(vote_at_start=True)
-        data_log = MemoryLog()
-        logger.info('creating server')
-        comms = MemoryComms(timer_class=ControlledTimer)
-        self.server = raft.create_server(name='raft', state=state,
-                                         log=data_log, other_nodes=self.other_nodes,
-                                         endpoint=(self.host, self.port),
-                                         comms=comms)
-        logger.info(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}")
-        while self.keep_running:
-            await asyncio.sleep(0.01)
-        await comms.stop()
-        self.server.stop()
+        try:
+            logger = logging.getLogger(__name__)
+            logger.info("memory comms bank teller server starting")
+            state = raft.state_follower(vote_at_start=self.vote_at_start)
+            data_log = MemoryLog()
+            logger.info('creating server')
+            comms = MemoryComms(timer_class=ControlledTimer)
+            endpoint = (self.host, self.port)
+            server = Server(name=f"{endpoint}", state=state,
+                            log=data_log, other_nodes=self.others,
+                            endpoint=endpoint,
+                            comms=comms)
+            logger.info(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}")
+            while self.keep_running:
+                await asyncio.sleep(0.01)
+            await comms.stop()
+            self.server.stop()
+        except:
+            logger.error(traceback.format_exc())
+            traceback.print_exc()
 
         

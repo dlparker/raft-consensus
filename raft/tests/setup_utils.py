@@ -68,7 +68,8 @@ class Cluster:
                 if addr[1] != srec['port']:
                     others.append(addr)
             srec['run_args']= [srec['port'], srec['working_dir'],
-                             srec['name'], others, self.log_config]
+                               srec['name'], others, self.log_config,
+                               False]
         for name, srec in self.server_recs.items():
             self.start_one_server(name)
         return 
@@ -79,21 +80,29 @@ class Cluster:
                 return srec
         return None
         
-    def start_one_server(self, name):
+    def start_one_server(self, name, vote_at_start=True):
+        # vote_at_start True means that server starts with
+        # a follower that does not wait for timeout, which
+        # makes testing go faster. Sometimes you want the
+        # timeout to happen, so set to False
         srec = self.server_recs[name]
+        args = [ item for item in srec['run_args'][:-2] ]
+        args.append(vote_at_start)
         if self.use_procs:
             if srec.get('proc'):
                 raise Exception(f"server {name} process already running")
             srec = self.server_recs[name]
+            # vote at start is last arg
+            
             s_process = Process(target=UDPBankTellerServer.make_and_start,
-                                args=srec['run_args'])
+                                args=args)
             s_process.daemon = True
             s_process.start()
             srec['proc'] = s_process
         else:
             if srec.get('tserver'):
                 raise Exception(f"server {name} tserver already running")
-            tserver = MemoryBankTellerServer(*srec['run_args'])
+            tserver = MemoryBankTellerServer(*args)
             tserver.start()
             srec['tserver'] = tserver
             
