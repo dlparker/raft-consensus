@@ -4,7 +4,7 @@ from dataclasses import asdict
 import logging
 import traceback
 
-from .log_api import LogRec
+from ..log.log_api import LogRec
 from .voter import Voter
 from .timer import Timer
 from .candidate import Candidate
@@ -20,12 +20,12 @@ class Follower(Voter):
     def __init__(self, timeout=0.75, server=None, vote_at_start=False):
         Voter.__init__(self)
         self._timeout = timeout
-        self._leader_addr = None
         self._vote_at_start = vote_at_start
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         self.election_timer = None
+        self._leader_addr = None
         self._server = None
         if server:
             self.set_server(server)
@@ -261,6 +261,9 @@ class Follower(Voter):
         data = message.data
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 
+    def on_client_command(self, message):
+        self.dispose_client_command(message, self._server)
+
     def on_append_response(self, message): # pragma: no cover error
         self.logger.warning("follower unexpectedly got append response from %s",
                             message.sender)
@@ -270,6 +273,3 @@ class Follower(Voter):
         self.logger.info("follower unexpectedly got vote: message.term = %d local_term = %d",
                          message.term, log.get_term())
 
-    def on_client_command(self, command, client_port): # pragma: no cover error
-        self.logger.info("follower unexpectedly got client command %s, discarding", command)
-        return True

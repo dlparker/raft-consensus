@@ -6,8 +6,8 @@ import traceback
 import os
 
 from raft.tests.timer import get_timer_set
-from raft.states.log_api import LogRec
-from raft.states.memory_log import MemoryLog
+from raft.log.log_api import LogRec
+from raft.log.memory_log import MemoryLog
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
 

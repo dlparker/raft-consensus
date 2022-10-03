@@ -7,10 +7,11 @@ import traceback
 from ..messages.serializer import Serializer
 from ..messages.command import ClientCommandResultMessage
 from ..states.timer import Timer
+from ..app_api.app import App
 
 class Server:
 
-    def __init__(self, name, state, log, other_nodes, endpoint, comms):
+    def __init__(self, name, state, log, other_nodes, endpoint, comms, app):
         self._name = name
         self._log = log
         self.endpoint = endpoint
@@ -22,7 +23,9 @@ class Server:
         self._state = state
         # this will only work if the state has this method,
         # currently only Follower does
-        state.set_server(self)
+        self._state.set_server(self)
+        self._app = app
+        self._app.set_server(self)
         self.comms_task = asyncio.create_task(self.comms.start(self, self.endpoint))
         self.logger.info('Server on %s', self.endpoint)
 
@@ -32,6 +35,12 @@ class Server:
     def get_log(self):
         return self._log
 
+    def get_app(self):
+        return self._app
+
+    def get_endpoint(self):
+        return self.endpoint
+    
     def get_timer(self, name, interval, callback):
         if not self.timer_class:
             return Timer(interval, callback)
@@ -59,7 +68,7 @@ class Server:
             self.logger.error("cannot deserialze incoming data '%s...'",
                               data[:30])
             return
-        if message.is_type("command"):
+        if message.is_type("aaacommand"):
             # TODO: this needs to be moved to usual state message
             # handling, though it will be a bit different since
             # it needs to connect to some sort of App object that

@@ -6,13 +6,8 @@ import traceback
 import os
 from dataclasses import dataclass
 
-from raft.tests.timer import get_timer_set
 from raft.tests.setup_utils import Cluster
 from raft.tests.bt_client import UDPBankTellerClient, MemoryBankTellerClient
-from raft.states.log_api import LogRec
-from raft.states.memory_log import MemoryLog
-from raft.states.follower import Follower
-from raft.messages.regy import get_message_registry
 
 async def do_wait(seconds):
     start_time = time.time()
@@ -117,35 +112,35 @@ class BaseCase:
             self.logger.info("doing credit at %s", client1)
             client1.do_credit(10)
             self.logger.info("doing query of %s", client1)
-            balance = client1.do_query()
-            self.assertEqual(balance, "Your current account balance is: 10")
+            result = client1.do_query()
+            self.assertEqual(result['balance'], 10)
             self.logger.info("initial call via %s worked", client1)
             # get a client for the first follower
             self.logger.info("doing query of %s", client2)
-            balance = client2.do_query()
-            self.assertEqual(balance, "Your current account balance is: 10")
+            result = client2.do_query()
+            self.assertEqual(result['balance'], 10)
             self.logger.info("initial call via %s worked", client2)
             
         def do_op_seq_2(self, client):
             self.logger.info("doing query of %s", client)
-            balance = client.do_query()
-            self.assertEqual(balance, "Your current account balance is: 10")
+            result = client.do_query()
+            self.assertEqual(result['balance'], 10)
             self.logger.info("doing credit at %s", client)
             client.do_credit(10)
             self.logger.info("doing query of %s", client)
-            balance2 = client.do_query()
-            self.assertEqual(balance2, "Your current account balance is: 20")
+            result2 = client.do_query()
+            self.assertEqual(result2['balance'], 20)
             self.logger.info("all operations working pass 2")
             
         def do_op_seq_3(self, client):
             self.logger.info("doing query of %s", client)
-            balance = client.do_query()
-            self.assertEqual(balance, "Your current account balance is: 20")
+            result = client.do_query()
+            self.assertEqual(result['balance'], 20)
             self.logger.info("doing credit at %s", client)
             client.do_credit(10)
             self.logger.info("doing query of %s", client)
-            balance = client.do_query()
-            self.assertEqual(balance, "Your current account balance is: 30")
+            result = client.do_query()
+            self.assertEqual(result['balance'], 30)
             self.logger.info("all operations working pass 3")
             
         def do_restart(self, server_def):

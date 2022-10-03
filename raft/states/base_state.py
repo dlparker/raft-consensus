@@ -56,7 +56,9 @@ class State(metaclass=abc.ABCMeta):
         else:
             logger.debug("state %s has no handler for message %s",
                          self, message)
-        
+
+    # TODO: look at why this is here, think it is fossil of old
+    # protocol
     def do_heartbeat(self, message):
         return self.on_heartbeat(message)
         
@@ -66,31 +68,6 @@ class State(metaclass=abc.ABCMeta):
     def get_leader_addr(self):
         return None
     
-    @abc.abstractmethod
-    def on_vote_request(self, message):  # pragma: no cover abstract
-        """Called when there is a vote request"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_vote_received(self, message):  # pragma: no cover abstract
-        """Called when this node receives a vote"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_term_start(self, message):  # pragma: no cover abstract
-        """Called when this node receives a term start notice from leader"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_append_entries(self, message):  # pragma: no cover abstract
-        """Called when there is a request for this node to append entries"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def on_client_command(self, message, client_port):  # pragma: no cover abstract
-        """Called when there is a client request"""
-        raise NotImplementedError
-
     def on_status_query(self, message):
         """Called when there is a status query"""
         state_type = self.get_type()
@@ -113,10 +90,6 @@ class State(metaclass=abc.ABCMeta):
         asyncio.ensure_future(self._server.post_message(status_response))
         return self, None
 
-    @abc.abstractmethod
-    def on_heartbeat(self, message): # pragma: no cover abstract
-        raise NotImplementedError
-
     def on_heartbeat_common(self, message):
         log = self._server.get_log()
         last_rec = log.read()
@@ -131,4 +104,55 @@ class State(metaclass=abc.ABCMeta):
                                          term=log.get_term(),
                                          data=last_index)
         asyncio.ensure_future(self._server.post_message(reply))
+
+    def dispose_client_command(self, message, server):
+        # only the leader can execute, other states should
+        # call this on receipt of a client command message
+        message._original_sender = message.sender
+        leader_addr = self.get_leader_addr()
+        if leader_addr:
+            self.logger.info("%s redirecting client command %s, to leader",
+                         self, message)
+            message._receiver = leader_addr
+            self.logger.info("Redirecting client to %s on %s",
+                             leader_addr, message)
+            asyncio.ensure_future(server.post_message(message))
+        else:
+            response = '{"error": "not available"}'
+            reply = ClientCommandResultMessage(server.get_endpoint(),
+                                               message.sender,
+                                               None,
+                                               response)
+            self.logger.info("Client getting 'unavailable', no leader")
+            asyncio.ensure_future(server.post_message(reply))
+
         
+    @abc.abstractmethod
+    def on_vote_request(self, message):  # pragma: no cover abstract
+        """Called when there is a vote request"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_vote_received(self, message):  # pragma: no cover abstract
+        """Called when this node receives a vote"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_term_start(self, message):  # pragma: no cover abstract
+        """Called when this node receives a term start notice from leader"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_append_entries(self, message):  # pragma: no cover abstract
+        """Called when there is a request for this node to append entries"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_client_command(self, message):  # pragma: no cover abstract
+        """Called when there is a client request"""
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def on_heartbeat(self, message): # pragma: no cover abstract
+        raise NotImplementedError
+

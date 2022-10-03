@@ -7,11 +7,11 @@ from logging.config import dictConfig
 
 import raft
 from raft.servers.server import Server
-from raft.states.memory_log import MemoryLog
-from raft.states.log_api import LogRec
+from raft.log.memory_log import MemoryLog
 from raft.comms.udp import UDPComms
 from raft.comms.memory_comms import MemoryComms
 from raft.tests.timer import ControlledTimer
+from raft.app_api.bank_app import BankingApp
 
 class UDPBankTellerServer:
 
@@ -67,13 +67,15 @@ class UDPBankTellerServer:
             loop = asyncio.get_running_loop()
             logger.info('creating server')
             endpoint = (self.host, self.port)
+            app = BankingApp()
             server = Server(name=f"{endpoint}", state=state,
                             log=data_log, other_nodes=self.others,
                             endpoint=endpoint,
-                            comms=UDPComms())
+                            comms=UDPComms(),
+                            app=app)
             logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
         except:
-            logger.error(traceback.exc())
+            logger.error(traceback.print_exc())
 
     def start(self):
         try:
@@ -142,10 +144,12 @@ class ServerThread(threading.Thread):
             logger.info('creating server')
             comms = MemoryComms(timer_class=ControlledTimer)
             endpoint = (self.host, self.port)
+            app = BankingApp()
             server = Server(name=f"{endpoint}", state=state,
                             log=data_log, other_nodes=self.other_nodes,
                             endpoint=endpoint,
-                            comms=comms)
+                            comms=comms,
+                            app=app)
             logger.info(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}")
             while self.keep_running:
                 await asyncio.sleep(0.01)

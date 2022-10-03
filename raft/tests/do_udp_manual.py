@@ -16,13 +16,8 @@ import traceback
 
 from log_control import config_logging
 
-from raft.tests.timer import get_timer_set
 from raft.tests.setup_utils import Cluster
 from raft.tests.bt_client import UDPBankTellerClient
-from raft.states.log_api import LogRec
-from raft.states.memory_log import MemoryLog
-from raft.states.follower import Follower
-from raft.messages.regy import get_message_registry
 
 config,_ = config_logging("test.log")
 dictConfig(config)

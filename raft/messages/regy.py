@@ -85,7 +85,7 @@ def build_registry():
     #regy.register_message_class(FooResponseMessage, "on_foo_response")
 
     regy.register_message_class(TermStartMessage, "on_term_start")
-    regy.register_message_class(ClientCommandMessage, None)
+    regy.register_message_class(ClientCommandMessage, "on_client_command")
     regy.register_message_class(ClientCommandResultMessage, None)
     
 build_registry()

@@ -123,10 +123,10 @@ class Candidate(Voter):
         self.logger.info("candidate resigned")
         return follower, None
 
-    def on_client_command(self, command, client_port):
-        self.logger.warning("candidate unexpectedly got client command from %s", client_port)
+    def on_client_command(self, message):
+        self.dispose_client_command(message, self._server)
 
-    def on_append_response(self, message):
+    def on_append_response(self, message): # pragma: no cover error
         self.logger.warning("candidate unexpectedly got append response from %s",
                             message.sender)
 

@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 
 from .base_state import State
-from .log_api import LogRec
+from ..log.log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
 from ..messages.command import ClientCommandResultMessage
 from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
@@ -194,13 +194,12 @@ class Leader(State):
                 # make sure provided address is formated as a tuple
                 # and use it to send reply to client
                 reply_address = (reply_address[0], reply_address[1])
-                response = last_rec.user_data['response']
-                self.logger.debug("preparing reply for %s from %s",
-                                  response, reply_address)
+                self.logger.debug("preparing reply for %s",
+                                  reply_address)
                 reply = ClientCommandResultMessage(self._server.endpoint,
                                                    reply_address,
                                                    last_term,
-                                                   response)
+                                                   last_rec.user_data)
                 self.logger.debug("sending reply message %s", reply)
                 asyncio.ensure_future(self._server.post_message(reply))
 
@@ -333,13 +332,15 @@ class Leader(State):
         self._server.broadcast(message)
         self.logger.info("sent term start message to all %s %s", message, data)
 
-    def on_client_command(self, message, client_port):
-        target = client_port
+    def on_client_command(self, message):
+        target = message.sender
         if message.original_sender:
             target = message.original_sender
         self.logger.debug("saving address for reply %s",
                           target)
-        response, balance = self.execute_command(message)
+        data = self._server.get_app().execute_command(message.data)
+        if data is None:
+            return False
         log = self._server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -351,16 +352,12 @@ class Leader(State):
             # no log records yet
             last_index = None
             last_term = None
-        if response == "Invalid command":
-            return False
-        data = {
-            "term": log.get_term(),
-            "log_index": new_index,
-            "command": message.data,
-            "balance": balance,
-            "response": response,
-            "reply_address": target
-        }
+
+        # TODO: This is bogus, fix whatever to remove need to
+        # insert items in the app's record
+        data['log_index'] = new_index
+        data['reply_address'] = target
+        data['term'] = log.get_term()
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
@@ -384,41 +381,6 @@ class Leader(State):
                           log.get_term(), update_message.data)
         self._server.broadcast(update_message)
         return True
-
-    def execute_command(self, message):
-        command = message.data.split()
-        log = self._server.get_log()
-        last_rec = log.read()
-        if last_rec:
-            balance = last_rec.user_data['balance'] or 0
-        else:
-            balance = 0
-        if len(command) == 0:
-            response = "Invalid command"
-        elif len(command) == 1 and command[0] == 'query':
-            response = "Your current account balance is: " + str(balance)
-        elif len(command) == 2 and command[0] == 'credit':
-            if int(command[1]) <= 0:
-                response = "Credit amount must be positive"
-            else:
-                response = "Successfully credited " + command[1] + " to your account"
-                balance += int(command[1])
-        elif len(command) == 2 and command[0] == 'debit':
-            if balance >= int(command[1]):
-                if int(command[1]) <= 0:
-                    response = "Debit amount must be positive"
-                else:
-                    response = "Successfully debited " + command[1] + " from your account"
-                    balance -= int(command[1])
-            else:
-                response = "Insufficient account balance"
-        else:
-            response = "Invalid command"
-        if response == "Invalid command":
-            self.logger.debug("invalid client command %s", command)
-        else:
-            self.logger.debug("completed client command %s", command)
-        return response, balance
 
     def on_vote_received(self, message): # pragma: no cover error
         log = self._server.get_log()
