@@ -34,6 +34,7 @@ class State(metaclass=abc.ABCMeta):
         self._server = server
 
     def on_message(self, message):
+        logger = logging.getLogger(__name__)
         
         # If the message.term < currentTerm -> tell the sender to update term
         log = self._server.get_log()
@@ -43,7 +44,6 @@ class State(metaclass=abc.ABCMeta):
                 # empty log locally
                 set_term = True
         elif message.term and message.term > log.get_term():
-            logger = logging.getLogger(__name__)
             logger.info("updating term from %d to %s", log.get_term(),
                         message.term)
             log.set_term(message.term)
@@ -53,6 +53,9 @@ class State(metaclass=abc.ABCMeta):
         handler = regy.get_handler(message, self)
         if handler:
             return handler(message)
+        else:
+            logger.debug("state %s has no handler for message %s",
+                         self, message)
         
     def do_heartbeat(self, message):
         return self.on_heartbeat(message)

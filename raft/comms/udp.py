@@ -57,6 +57,7 @@ class UDPComms(CommsAPI):
 
 # async class to send messages between server
 class UDP_Protocol(asyncio.DatagramProtocol):
+
     def __init__(self, queue, message_handler, logger, server):
         self._queue = queue
         self.message_handler = message_handler

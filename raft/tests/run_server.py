@@ -32,6 +32,6 @@ os.chdir(wdir)
 config,_ = config_logging(f"{wdir.as_posix()}/server.log")
 dictConfig(config)
 server = UDPBankTellerServer(this_node[1],wdir,
-                             f"server_{index}", others)
+                             f"server_{index}", others, False)
         
 server.start()
