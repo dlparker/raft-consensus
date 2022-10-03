@@ -108,10 +108,10 @@ class MemoryBankTellerServer:
 
     def start(self):
         self.thread.start()
-
-    def stop(self):
-        self.thread.keep_running = False
         
+    def stop(self):
+        self.thread.stop()
+        self.thread.keep_running = False
 
 class ServerThread(threading.Thread):
 
@@ -145,12 +145,13 @@ class ServerThread(threading.Thread):
             comms = MemoryComms(timer_class=ControlledTimer)
             endpoint = (self.host, self.port)
             app = BankingApp()
-            server = Server(name=f"{endpoint}", state=state,
+            self.server = Server(name=f"{endpoint}", state=state,
                             log=data_log, other_nodes=self.other_nodes,
                             endpoint=endpoint,
                             comms=comms,
                             app=app)
             logger.info(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}")
+            self.server.get_endpoint()
             while self.keep_running:
                 await asyncio.sleep(0.01)
             await comms.stop()
@@ -158,3 +159,6 @@ class ServerThread(threading.Thread):
             print("\n\n!!!!!!Server thread failed!!!!")
             traceback.print_exc()
         
+    def stop(self):
+        self.server.stop()
+        self.keep_running = False

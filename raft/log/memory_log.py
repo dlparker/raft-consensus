@@ -35,7 +35,7 @@ class MemoryLog(Log):
                               context=newitem.context)
             self.entries.append(save_rec)
             save_rec.index = len(self.entries) - 1
-            if save_rec.term is None and self.term:
+            if save_rec.term is None and self.term is not None:
                 save_rec.term = self.term
         self.logger.debug("new log record %s", save_rec.index)
 
@@ -46,9 +46,7 @@ class MemoryLog(Log):
             self.commit_index = index
         self.logger.debug("trimmed log to %s", last_rec.index)
         
-    def commit(self, index: Optional[int] = None) -> None:
-        if index is None:
-            index = len(self.entries) - 1
+    def commit(self, index: int) -> None:
         if index > len(self.entries) - 1 or index < 0:
             raise Exception(f"cannot commit index {index}, not in records")
         self.commit_index = index

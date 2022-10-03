@@ -57,17 +57,9 @@ class State(metaclass=abc.ABCMeta):
             logger.debug("state %s has no handler for message %s",
                          self, message)
 
-    # TODO: look at why this is here, think it is fossil of old
-    # protocol
-    def do_heartbeat(self, message):
-        return self.on_heartbeat(message)
-        
     def get_type(self):
         return self._type
 
-    def get_leader_addr(self):
-        return None
-    
     def on_status_query(self, message):
         """Called when there is a status query"""
         state_type = self.get_type()
@@ -132,6 +124,10 @@ class State(metaclass=abc.ABCMeta):
         """Called when there is a vote request"""
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def get_leader_addr(self):  # pragma: no cover abstract
+        raise NotImplementedError
+    
     @abc.abstractmethod
     def on_vote_received(self, message):  # pragma: no cover abstract
         """Called when this node receives a vote"""

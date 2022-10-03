@@ -123,6 +123,9 @@ class Candidate(Voter):
         self.logger.info("candidate resigned")
         return follower, None
 
+    def get_leader_addr(self):
+        return None
+    
     def on_client_command(self, message):
         self.dispose_client_command(message, self._server)
 

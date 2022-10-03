@@ -55,9 +55,13 @@ class Leader(State):
 
     def __str__(self):
         return "leader"
+
+    def get_leader_addr(self):
+        return self._server.endpoint
     
     def on_heartbeat_response(self, message):
-        self.heartbeat_logger.debug("got heartbeat response from %s", message.sender)
+        self.heartbeat_logger.debug("got heartbeat response from %s",
+                                    message.sender)
 
     def on_log_pull(self, message):
         # Follower is asking for log records

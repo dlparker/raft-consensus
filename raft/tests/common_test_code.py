@@ -168,16 +168,17 @@ class BaseCase:
             client2 = self.get_client(run_data.first_follower['port'])
             self.do_op_seq_1(client1, client2)
 
-            self.logger.info("stopping leader server %s", run_data.leader['name'])
-            self.cluster.stop_server(run_data.leader['name']) 
-            self.logger.info("server %s stopped", run_data.leader['name'])
-
             if run_data.leader['port'] == 5000:
                 new_client = client2
             else:
                 new_client = client1
+            self.logger.info("stopping leader server %s", run_data.leader['name'])
+            self.cluster.stop_server(run_data.leader['name']) 
+            self.logger.info("server %s stopped", run_data.leader['name'])
+
             # wait for election to happen
-            re_run_data = self.wait_for_election_done(new_client, run_data.leader_addr, 7)
+            re_run_data = self.wait_for_election_done(new_client,
+                                                      run_data.leader_addr, 7)
             new_leader_addr = re_run_data.leader_addr
             self.assertNotEqual(new_leader_addr[0], -1,
                                 msg="Leader election started but did not complete")

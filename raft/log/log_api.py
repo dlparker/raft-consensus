@@ -27,7 +27,7 @@ class Log(metaclass=abc.ABCMeta):
         raise NotImplementedError
     
     @abc.abstractmethod
-    def commit(self, index: Optional[int] = None):
+    def commit(self, index: int):
         raise NotImplementedError
 
     @abc.abstractmethod
