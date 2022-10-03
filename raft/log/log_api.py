@@ -9,6 +9,7 @@ class LogRec:
     index: int = field(default = None)
     term: int = field(default = None)
     committed: bool = field(default = False)
+    context: dict = field(default = None, repr=False)
 
 # abstract class for all states
 class Log(metaclass=abc.ABCMeta):

@@ -1,27 +1,28 @@
-import raft
+import os
 import sys
-import asyncio
+from pathlib import Path
+sdir = Path(__file__).parent.resolve()
+basedir = sdir.parent
+raft_dir = Path(basedir, 'raft')
+test_dir = Path(raft_dir, "tests")
+sys.path.append(basedir.as_posix())
+sys.path.append(test_dir.as_posix())
+print(sys.path)
+from logging.config import dictConfig
+wdir = os.getcwd()
+
+from raft.tests.bt_server import UDPBankTellerServer
+from raft.tests.log_control import config_logging
 
 def run_server(ipv4, port, endpoints):
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-
-    state = raft.state_follower()
-    log = []
-    dummy_index = {
-        'term': None,
-        'command': None,
-        'balance': None
-    }
-    log.append(dummy_index)
-    async def main():
-        server = raft.create_server(name='raft', state=state, log=log, other_nodes=endpoints, endpoint=(ipv4, port), loop=loop)
-        print(f"started server on endpoint {(ipv4, port)} with others at {endpoints}", flush=True)
-    loop.run_until_complete(main())
-    loop.run_forever()
-    loop.stop()
+    config,_ = config_logging(f"server_{port}.log")
+    dictConfig(config)
+    print(endpoints)
+    server = UDPBankTellerServer(port,
+                                 os.getcwd(),
+                                 f"server_{port}",
+                                 endpoints, False)
+    server.start()
 
 
 if __name__ == '__main__':

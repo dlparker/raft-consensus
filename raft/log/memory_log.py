@@ -31,7 +31,8 @@ class MemoryLog(Log):
 
     def append(self, entries: List[LogRec]) -> None:
         for newitem in entries:
-            save_rec = LogRec(user_data=newitem.user_data)
+            save_rec = LogRec(user_data=newitem.user_data,
+                              context=newitem.context)
             self.entries.append(save_rec)
             save_rec.index = len(self.entries) - 1
             if save_rec.term is None and self.term:

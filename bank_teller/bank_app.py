@@ -1,6 +1,6 @@
 from typing import Union
 import logging
-from .app import App
+from raft.app_api.app import App
 
 class BankingApp(App):
 

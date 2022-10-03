@@ -1,12 +1,14 @@
 import sys
-from socket import *
+from pathlib import Path
+sdir = Path(__file__).parent.resolve()
+basedir = sdir.parent
+sys.path.append(basedir.as_posix())
+print(sys.path)
+from raft.tests.bt_client import UDPBankTellerClient
 
 
 def run_client(server_host, server_port):
-    sock = socket(AF_INET, SOCK_DGRAM)
-    sock.settimeout(5)
-
-    server_addr = server_host, server_port
+    client = UDPBankTellerClient(server_host, server_port)
 
     cmd = ''
 
@@ -14,15 +16,21 @@ def run_client(server_host, server_port):
     print('Your starting balance is 0')
     print('Available commands are: query, credit <amount>, debit <amount>')
 
-    while cmd != 'exit'.encode('utf8'):
-        cmd = input('Enter command: ').encode('utf8')
-        sock.sendto(cmd, server_addr)
-        try:
-            data = sock.recv(1024)
-        except OSError:
-            print('Timed out. Server is not responding')
+    while cmd != 'exit':
+        cmd = input('Enter command: ')
+        toks = cmd.split()
+        if toks[0] =='query':
+            result = client.do_query()
+        elif toks[0] =='credit':
+            result = client.do_credit(toks[1])
+        elif toks[0] =='debit':
+            result = client.do_debit(toks[1])
+        elif toks[0] =='exit':
+            break
+        else:
+            print(f"confused by command {cmd}")
             continue
-        print(data.decode('utf8'))
+        print(result['response'])
 
 
 if __name__=="__main__":

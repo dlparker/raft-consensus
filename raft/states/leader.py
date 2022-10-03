@@ -187,21 +187,22 @@ class Leader(State):
             self.logger.debug("(term %d) sending log commit to all followers: %s",
                               log.get_term(), commit_message.data)
             self._server.broadcast(commit_message)
-            reply_address = last_rec.user_data.get('reply_address', None)
-            if reply_address:
-                # This log record was for data submitted by client,
-                # not an internal record such as term change.
-                # make sure provided address is formated as a tuple
-                # and use it to send reply to client
-                reply_address = (reply_address[0], reply_address[1])
-                self.logger.debug("preparing reply for %s",
-                                  reply_address)
-                reply = ClientCommandResultMessage(self._server.endpoint,
-                                                   reply_address,
-                                                   last_term,
-                                                   last_rec.user_data)
-                self.logger.debug("sending reply message %s", reply)
-                asyncio.ensure_future(self._server.post_message(reply))
+            if last_rec.context is not None:
+                reply_address = last_rec.context.get('client_addr', None)
+                if reply_address:
+                    # This log record was for data submitted by client,
+                    # not an internal record such as term change.
+                    # make sure provided address is formated as a tuple
+                    # and use it to send reply to client
+                    reply_address = (reply_address[0], reply_address[1])
+                    self.logger.debug("preparing reply for %s",
+                                      reply_address)
+                    reply = ClientCommandResultMessage(self._server.endpoint,
+                                                       reply_address,
+                                                       last_term,
+                                                       last_rec.user_data)
+                    self.logger.debug("sending reply message %s", reply)
+                    asyncio.ensure_future(self._server.post_message(reply))
 
     def on_log_pull(self, message):
         # follwer wants log messages that it has not received
@@ -353,16 +354,13 @@ class Leader(State):
             last_index = None
             last_term = None
 
-        # TODO: This is bogus, fix whatever to remove need to
-        # insert items in the app's record
-        data['log_index'] = new_index
-        data['reply_address'] = target
-        data['term'] = log.get_term()
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
         last_rec = log.read()
-        log.append([LogRec(term=log.get_term(), user_data=data),])
+        new_rec = LogRec(term=log.get_term(), user_data=data,
+                         context=dict(client_addr=target))
+        log.append([new_rec,])
         new_rec = log.read()
         update_message = AppendEntriesMessage(
             self._server.endpoint,

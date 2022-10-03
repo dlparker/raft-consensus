@@ -16,12 +16,12 @@ class UDPComms(CommsAPI):
     async def start(self, server, endpoint):
         if self._started:   # pragma: no cover error
             raise Exception("can call start only once")
+        self._logger = logging.getLogger(__name__)
         self.server = server
         self.endpoint = endpoint
         self._queue = asyncio.Queue()
         self._sock = socket(AF_INET, SOCK_DGRAM)
         self._sock.bind(self.endpoint)
-        self._logger = logging.getLogger(__name__)
         await self._start()
         self._logger.info('UDP Listening on %s', self.endpoint)
         self._started = True

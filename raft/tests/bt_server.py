@@ -11,7 +11,7 @@ from raft.log.memory_log import MemoryLog
 from raft.comms.udp import UDPComms
 from raft.comms.memory_comms import MemoryComms
 from raft.tests.timer import ControlledTimer
-from raft.app_api.bank_app import BankingApp
+from bank_teller.bank_app import BankingApp
 
 class UDPBankTellerServer:
 

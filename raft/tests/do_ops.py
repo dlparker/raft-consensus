@@ -25,19 +25,19 @@ def test_leader_stop():
     logger = logging.getLogger(__name__)
     logger.info("starting transaction loop")
     client1 =  UDPBankTellerClient("localhost", 5000)
-    balance = client1.do_query()
-    print(balance)
-    start_balance = int(balance.split(":")[-1].strip())
+    result = client1.do_query()
+    print(result)
+    start_balance = result['balance']
     client1.do_credit(10)
-    balance = client1.do_query()
-    if balance != f"Your current account balance is: {start_balance + 10}":
-        raise Exception(f"client1 bad balance {balance} not {start_balance + 10}")
-    print(balance)
+    result = client1.do_query()
+    print(result)
+    if result['balance'] != start_balance + 10:
+        raise Exception(f"client1 bad balance {result['balance']} not {start_balance + 10}")
     client1.do_debit(10)
-    balance = client1.do_query()
-    if balance != f"Your current account balance is: {start_balance}":
+    result = client1.do_query()
+    print(result)
+    if result['balance'] != start_balance:
         raise Exception(f"client1 bad balance {balance} not {start_balance}")
-    print(balance)
 
     return
 

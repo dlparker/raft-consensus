@@ -68,52 +68,19 @@ class Server:
             self.logger.error("cannot deserialze incoming data '%s...'",
                               data[:30])
             return
-        if message.is_type("aaacommand"):
-            # TODO: this needs to be moved to usual state message
-            # handling, though it will be a bit different since
-            # it needs to connect to some sort of App object that
-            # we don't have yet.
-            # client does not set sender field, so set it
-            message._sender = addr
-            self.logger.info("command '%s' from %s", message, addr)
-            if message.original_sender:
-                self.logger.info("command originally from %s",
-                                 message.original_sender)
-                
-            if self._state.get_type() == "leader":
-                self._state.on_client_command(message, addr)
-            else:
-                leader_addr = self._state.get_leader_addr()
-                if leader_addr:
-                    message._receiver = leader_addr
-                    message._original_sender = addr
-                    self.logger.info("Redirecting client to %s on %s",
-                                     leader_addr, message)
-                    asyncio.ensure_future(self.comms.post_message(message))
-                else:
-                    response = '{"error": "not available"}'
-                    client_addr = (addr[0], addr[1])
-                    my_addr = (self.endpoint[0], self.endpoint[1])
-                    reply = ClientCommandResultMessage(my_addr,
-                                                       client_addr,
-                                                       None,
-                                                       response)
-                    self.logger.info("Client getting 'unavailable', no leader")
-                    asyncio.ensure_future(self.comms.post_message(reply))
-        else:
-            message._receiver = message.receiver[0], message.receiver[1]
-            message._sender = message.sender[0], message.sender[1]
-            self.logger.debug("state %s message %s", self._state, message)
-            try:
-                pre_state = self._state
-                self._state.on_message(message)
-                if pre_state != self._state:
-                    self.logger.info("changed state from %s to %s",
-                                     pre_state, self._state)
-            except Exception as e:  # pragma: no cover error
-                self.logger.error(traceback.format_exc())
-                self.logger.error("State %s got exception %s on message %s",
-                                  self._state, e, message)
+        message._receiver = message.receiver[0], message.receiver[1]
+        message._sender = message.sender[0], message.sender[1]
+        self.logger.debug("state %s message %s", self._state, message)
+        try:
+            pre_state = self._state
+            self._state.on_message(message)
+            if pre_state != self._state:
+                self.logger.info("changed state from %s to %s",
+                                 pre_state, self._state)
+        except Exception as e:  # pragma: no cover error
+            self.logger.error(traceback.format_exc())
+            self.logger.error("State %s got exception %s on message %s",
+                              self._state, e, message)
 
     async def post_message(self, message):
         await self.comms.post_message(message)
