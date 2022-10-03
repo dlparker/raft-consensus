@@ -71,19 +71,15 @@ class Follower(Voter):
     def on_log_pull_response(self, message):
         data = message.data
         log = self._server.get_log()
-        if len(data["entries"]) > 0:
-            self.logger.debug("updating log with %d entries",
-                              len(data["entries"]))
-            for ent in data["entries"]:
-                log.append([LogRec(term=ent['term'], user_data=ent['user_data']),])
-                if ent['committed']:
-                    log.commit(ent['index'])
+        if len(data["entries"]) == 0:
+            return
+        self.logger.debug("updating log with %d entries",
+                          len(data["entries"]))
+        for ent in data["entries"]:
+            log.append([LogRec(term=ent['term'], user_data=ent['user_data']),])
+            if ent['committed']:
+                log.commit(ent['index'])
         leader_commit = data['leaderCommit']
-        last_rec = log.read()
-        if last_rec:
-            if log.get_commit_index() < leader_commit:
-                commit_index = min(last_rec.index, leader_commit)
-                log.commit(commit_index)
         return
         
     def _do_sync_action(self, message):
@@ -223,8 +219,7 @@ class Follower(Voter):
                     and local_commit == leader_commit - 1):
                     # just commit it, we have the record
                     log.commit(leader_commit)
-                self.send_response_message(message, votedYes=True)
-                return
+                    return
         # log the records
         if len(data["entries"]) > 0:
             self.logger.debug("updating log with %d entries",
@@ -238,10 +233,6 @@ class Follower(Voter):
             return
         # we are not in sync, fix that
         self._do_sync_action(message)
-        
-    def on_client_command(self, command, client_port):
-        self.logger.info("follower got client command %s, discarding", command)
-        return True
     
     def send_response_message(self, msg, votedYes=True):
         log = self._server.get_log()
@@ -261,11 +252,6 @@ class Follower(Voter):
         logger.info("sent response to %s term=%d %s",
                     response.receiver, response.term, data)
 
-    def on_vote_received(self, message):
-        log = self._server.get_log()
-        self.logger.info("follower got vote: message.term = %d local_term = %d",
-                         message.term, log.get_term())
-
     def on_term_start(self, message):
         self.election_timer.reset()
         log = self._server.get_log()
@@ -275,89 +261,15 @@ class Follower(Voter):
         data = message.data
         self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 
-    def on_append_response(self, message):
+    def on_append_response(self, message): # pragma: no cover error
         self.logger.warning("follower unexpectedly got append response from %s",
                             message.sender)
+    
+    def on_vote_received(self, message): # pragma: no cover error
+        log = self._server.get_log()
+        self.logger.info("follower unexpectedly got vote: message.term = %d local_term = %d",
+                         message.term, log.get_term())
 
-    
-    
-    def foo(self):
-        # If the leader has committed something newer than our
-        # latest commit record, then we want to catch up as much
-        # as we can. That means that our most recent record should
-        # be committed unless it is more recent than the leader's
-        # commit index. In that case we should commit up to the
-        # leader's index.
-        # verbose for clarity
-        commit_reason = None
-        commit_index = None
-        self.heartbeat_logger.debug("leader data %s", data)
-        self.heartbeat_logger.debug("log data %s", last_rec)
-        do_commit = False
-        if leader_commit is not None:
-            if (log.get_commit_index() is None
-                or leader_commit != log.get_commit_index()):
-                if last_index is not None:
-                    if last_index < leader_commit:
-                        commit_reason = "partial"
-                        commit_index = last_index
-                        do_commit = True
-                    else:
-                        commit_reason = "full"
-                        commit_index = leader_commit
-                        do_commit = True
-        if do_commit:
-            self.logger.info("commiting up to %d as %s catch up with leader",
-                             commit_index, commit_reason)
-            try:
-                log.commit(commit_index)
-            except:
-                self.logger.error(traceback.format_exc())
-                self.logger.info("commiting up to %d as %s catch up with leader",
-                             commit_index, commit_reason)
-                return False
-        if last_index != leader_last_rec_index:
-            # tell the leader we need more log records, the
-            # leader has more than we do.
-            self.send_response_message(message, votedYes=False)
-            self.logger.info("asking leader for more log records")
-            return False
-        # Look at the leader's provided data for most recent
-        # log record, make sure that ours is not more recent.
-        # Not sure that this can happen, seems to violate
-        # promise of protocol. TODO: see if this can be forced
-        # in testing, or if it is dead code
-        # First check to see that we don't have the empty logs situation
-        if leader_last_rec_index and last_index:
-            last_matching_log_rec = log.read(leader_last_rec_index)
-            leader_log_term = data['prevLogTerm']
-            if last_matching_log_rec.term > leader_log_term:
-                target_index = min(last_index,
-                                   leader_last_rec_index)
-                self.logger.warning("leader commit is behind follower commit")
-                self.logger.warning("leader commit term is %d, follower is %d",
-                                    leader_log_term,
-                                    last_matching_log_rec.term)
-                log.trim_after(leader_last_rec_index)
-                if leader_commit is None or leader_commit == -1:
-                    self.logger.error("Trying to commit invalid index %s at last_index %s leader last rec index %s",
-                                      commit_index, last_index, leader_last_rec_index)
-                try:
-                    log.commit(leader_commit)
-                except:
-                    self.logger.error(traceback.format_exc())
-                self.send_response_message(message, votedYes=False)
-                return False
-        
-        if len(data["entries"]) > 0:
-            self.logger.debug("updating log with %d entries",
-                              len(data["entries"]))
-            for ent in data["entries"]:
-                log.append([LogRec(term=ent['term'], user_data=ent['user_data']),])
-                if ent['committed']:
-                    log.commit(ent['index'])
-            self.send_response_message(message)
-            self.logger.info("Sent log update ack %s", message)
-            return False
-        self.heartbeat_logger.debug("no action needed on heartbeat")
+    def on_client_command(self, command, client_port): # pragma: no cover error
+        self.logger.info("follower unexpectedly got client command %s, discarding", command)
         return True

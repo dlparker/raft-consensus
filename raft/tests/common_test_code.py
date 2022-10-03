@@ -160,6 +160,8 @@ class BaseCase:
                 try:
                     restart_client = self.get_client(server_def['port'])
                     status = restart_client.get_status()
+                    if status:
+                        break
                 except Exception as e:
                     status_exc = e
             self.assertIsNone(status_exc, msg="Restart Failed!")

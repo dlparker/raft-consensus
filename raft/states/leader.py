@@ -56,15 +56,8 @@ class Leader(State):
     def __str__(self):
         return "leader"
     
-    def _heartbeat_interval(self):
-        return random.uniform(0, self._heartbeat_timeout)
-
     def on_heartbeat_response(self, message):
         self.heartbeat_logger.debug("got heartbeat response from %s", message.sender)
-
-    def on_heartbeat(self, message):
-        self.logger.warning("Why am I getting hearbeat when I am leader?")
-        #self.on_heartbeat_common(self, message)
 
     def on_log_pull(self, message):
         # Follower is asking for log records
@@ -173,8 +166,27 @@ class Leader(State):
             # get a new copy of the record, committed flag should be True now
             last_rec = log.read(last_index)
             self.logger.debug("after commit, commit_index = %s", log.get_commit_index())
-            #self.logger.debug("after commit, last_rec = %s", last_rec)
-            #self.logger.debug("after commit, last_rec.data = %s", last_rec.user_data)
+            # now tell followers to commit too
+            # get the prevIndex and prevTerm from the message, as that is what
+            # we are commiting
+            old_index = message.data['prevLogIndex']
+            old_term = message.data['prevLogTerm']
+            commit_message = AppendEntriesMessage(
+                self._server.endpoint,
+                None,
+                log.get_term(),
+                {
+                    "leaderId": self._server._name,
+                    "leaderPort": self._server.endpoint,
+                    "prevLogIndex": old_index,
+                    "prevLogTerm": old_term,
+                    "entries": [],
+                    "leaderCommit": log.get_commit_index(),
+                }
+            )
+            self.logger.debug("(term %d) sending log commit to all followers: %s",
+                              log.get_term(), commit_message.data)
+            self._server.broadcast(commit_message)
             reply_address = last_rec.user_data.get('reply_address', None)
             if reply_address:
                 # This log record was for data submitted by client,
@@ -408,17 +420,22 @@ class Leader(State):
             self.logger.debug("completed client command %s", command)
         return response, balance
 
-    def on_vote_received(self, message):
+    def on_vote_received(self, message): # pragma: no cover error
         log = self._server.get_log()
-        self.logger.info("leader got vote: message.term = %d local_term = %d",
+        self.logger.info("leader unexpectedly got vote: message.term = %d local_term = %d",
                          message.term, log.get_term())
 
-    def on_vote_request(self, message):
-        self.logger.warning("got unexpected vote request from %s", message.sender)
+    def on_vote_request(self, message): # pragma: no cover error
+        self.logger.warning("got unexpectedly vote request from %s", message.sender)
     
-    def on_append_entries(self, message):
-        self.logger.warning("got unexpected vote request from %s", message.sender)
+    def on_append_entries(self, message): # pragma: no cover error
+        self.logger.warning("got unexpectedly vote request from %s", message.sender)
     
-    def on_term_start(self, message):
+    def on_term_start(self, message): # pragma: no cover error
         self.logger.warning("leader got term start message from %s, makes no sense!",
                          message.sender) 
+
+    def on_heartbeat(self, message): # pragma: no cover error
+        self.logger.warning("Why am I getting hearbeat when I am leader?")
+        #self.on_heartbeat_common(self, message)
+
