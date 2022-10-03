@@ -28,7 +28,6 @@ class Leader(State):
         self._heartbeat_timeout = heartbeat_timeout
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        self.do_break = False
         self._server = server
         server.set_state(self)
         log = self._server.get_log()
@@ -123,9 +122,6 @@ class Leader(State):
         asyncio.ensure_future(self._server.post_message(append_entry))
         
     def on_append_response_received(self, message):
-        if self.do_break:
-            self.do_break = False
-            breakpoint()
         log = self._server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -140,7 +136,8 @@ class Leader(State):
             # this is a common occurance since we commit after a quorum
             self.logger.debug("got append response message from %s but " \
                                 "all log messages already committed", message.sender)
-            self.logger.debug("message %s last_rec %s", message.data, last_rec)
+            self.logger.debug("message from %s %s last_rec %s", message.sender,
+                              message.data, last_rec)
             return
         sender_index = message.data['prevLogIndex']
         if sender_index and last_index and last_index != sender_index + 1:
@@ -196,9 +193,6 @@ class Leader(State):
                 asyncio.ensure_future(self._server.post_message(reply))
 
     def on_log_pull(self, message):
-        if self.do_break:
-            self.do_break = False
-            breakpoint()
         # follwer wants log messages that it has not received
         start_index = message.data['start_index']
         log = self._server.get_log()
@@ -265,9 +259,6 @@ class Leader(State):
         
         
     def on_append_response(self, message):
-        if self.do_break:
-            self.do_break = False
-            breakpoint()
         # check if last append_entries good?
         log = self._server.get_log()
         last_rec = log.read()
@@ -279,9 +270,6 @@ class Leader(State):
         return self, None
     
     def send_heartbeat(self):
-        if self.do_break:
-            self.do_break = False
-            breakpoint()
         log = self._server.get_log()
         last_rec = log.read()
         if last_rec:

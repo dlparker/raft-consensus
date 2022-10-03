@@ -98,7 +98,23 @@ def servers_as_procs_log_setup(file_path="/tmp/raft_tests/test.log",
             config['loggers'][inspec['name']] = spec
     global have_logging_server
     if use_server and not have_logging_server:
-        LogSocketServer.start(port=9999, configDict=server_config)
+        lfstring = '%(process)s %(asctime)s [%(levelname)s] %(name)s: %(message)s'
+        log_server_formaters = dict(standard=dict(format=lfstring))
+        file_handler = dict(level="DEBUG",
+                            formatter="standard",
+                            encoding='utf-8',
+                            mode='w',
+                            filename=str(server_filepath))
+        file_handler['class'] = "logging.FileHandler"
+        log_server_handlers = dict(file=file_handler)
+        log_server_handlers['stdout'] = server_config['handlers']['stdout']
+        handler_names = ['file', 'stdout']
+        log_server_loggers = set_levels(handler_names)
+        log_server_config = dict(version=1, disable_existing_loggers = True,
+                                 formatters=log_server_formaters,
+                                 handlers=log_server_handlers,
+                                 loggers=log_server_loggers)
+        LogSocketServer.start(port=9999, configDict=log_server_config)
         print("startted logging server")
         have_logging_server = True
     dictConfig(config)

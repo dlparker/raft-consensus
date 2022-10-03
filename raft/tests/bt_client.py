@@ -21,11 +21,14 @@ class UDPBankTellerClient:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.settimeout(2)
         self._sock.bind(("", 0))
-        port = self._sock.getsockname()[1]
-        addr = get_internal_ip()
-        self._addr = (addr, port)
+        self.port = self._sock.getsockname()[1]
+        self.host = get_internal_ip()
+        self._addr = (self.host, self.port)
         self._server_addr = server_host, server_port
 
+    def __str__(self):
+        return f"client_for_{self.port}"
+    
     def get_result(self):
         try:
             data = self._sock.recv(1024)
