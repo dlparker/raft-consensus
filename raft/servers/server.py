@@ -11,35 +11,38 @@ from ..app_api.app import App
 
 class Server:
 
-    def __init__(self, name, state, log, other_nodes, endpoint, comms, app):
-        self._name = name
-        self._log = log
+    def __init__(self, name, state_map, log, other_nodes, endpoint, comms, app):
+        self.name = name
+        self.log = log
         self.endpoint = endpoint
         self.other_nodes = other_nodes
-        self._total_nodes = len(self.other_nodes) + 1
+        self.total_nodes = len(self.other_nodes) + 1
         self.logger = logging.getLogger(__name__)
         self.comms = comms
         self.timer_class = None
-        self._state = state
-        # this will only work if the state has this method,
-        # currently only Follower does
-        self._state.set_server(self)
-        self._app = app
-        self._app.set_server(self)
-        self.comms_task = asyncio.create_task(self.comms.start(self, self.endpoint))
+        self.state_map = state_map
+        self.state = None # needed because activate will call set_state
+        self.state = self.state_map.activate(self)
+        self.app = app
+        self.app.set_server(self)
+        self.comms_task = asyncio.create_task(self.comms.start(self,
+                                                               self.endpoint))
         self.logger.info('Server on %s', self.endpoint)
 
     def stop(self):
         self.comms_task.cancel()
         
     def get_log(self):
-        return self._log
+        return self.log
 
     def get_app(self):
-        return self._app
+        return self.app
 
     def get_endpoint(self):
         return self.endpoint
+
+    def get_state_map(self):
+        return self.state_map
     
     def get_timer(self, name, interval, callback):
         if not self.timer_class:
@@ -50,8 +53,8 @@ class Server:
         self.timer_class = cls
 
     def set_state(self, state):
-        if self._state != state:
-            self._state = state
+        if self.state != state:
+            self.state = state
     
     async def on_message(self, data, addr):
         try:
@@ -70,17 +73,17 @@ class Server:
             return
         message._receiver = message.receiver[0], message.receiver[1]
         message._sender = message.sender[0], message.sender[1]
-        self.logger.debug("state %s message %s", self._state, message)
+        self.logger.debug("state %s message %s", self.state, message)
         try:
-            pre_state = self._state
-            self._state.on_message(message)
-            if pre_state != self._state:
+            pre_state = self.state
+            self.state.on_message(message)
+            if pre_state != self.state:
                 self.logger.info("changed state from %s to %s",
-                                 pre_state, self._state)
+                                 pre_state, self.state)
         except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("State %s got exception %s on message %s",
-                              self._state, e, message)
+                              self.state, e, message)
 
     async def post_message(self, message):
         await self.comms.post_message(message)
@@ -95,6 +98,6 @@ class Server:
             # Have to create a deep copy of message to have different receivers
             send_message = copy.deepcopy(message)
             send_message._receiver = n
-            self.logger.debug("%s sending message %s to %s", self._state,
+            self.logger.debug("%s sending message %s to %s", self.state,
                    send_message, n)
             asyncio.ensure_future(self.comms.post_message(send_message))

@@ -25,22 +25,22 @@ class Leader(State):
     _type = "leader"
     
     def __init__(self, server, heartbeat_timeout=0.5):
-        self._heartbeat_timeout = heartbeat_timeout
+        self.heartbeat_timeout = heartbeat_timeout
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        self._server = server
+        self.server = server
         server.set_state(self)
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index + 1
         else:
             # no log records yet
             last_index = -1
-        self.logger.info('Leader on %s in term %s', self._server.endpoint,
+        self.logger.info('Leader on %s in term %s', self.server.endpoint,
                          log.get_term())
         self.followers = {}
-        for other in self._server.other_nodes:
+        for other in self.server.other_nodes:
             # Assume follower is in sync, meaning we only send on new
             # log entry. If they are not, they will tell us that on
             # first heartbeat, and we will catch them up
@@ -48,8 +48,8 @@ class Leader(State):
         
         # Notify others of term start, just to make it official
         self.send_term_start()
-        self.heartbeat_timer = self._server.get_timer("leader-heartbeat",
-                                                      self._heartbeat_timeout,
+        self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
+                                                      self.heartbeat_timeout,
                                                       self.send_heartbeat)
         self.heartbeat_timer.start()
 
@@ -57,7 +57,7 @@ class Leader(State):
         return "leader"
 
     def get_leader_addr(self):
-        return self._server.endpoint
+        return self.server.endpoint
     
     def on_heartbeat_response(self, message):
         self.heartbeat_logger.debug("got heartbeat response from %s",
@@ -71,7 +71,7 @@ class Leader(State):
         # comes in after a heartbeat or append entry when the
         # follower examins the leader's log state, so the follower
         # knows how far behind it is
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec is None:
             # special case, log is empty
@@ -103,12 +103,12 @@ class Leader(State):
         # Tell the follower which log record should proceed the one we are sending
         # so the follower can check to see if they have it.
         append_entry = AppendEntriesMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             message.sender,
             log.get_term(),
             {
-                "leaderId": self._server._name,
-                "leaderPort": self._server.endpoint,
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
                 "prevLogIndex": prev_index,
                 "prevLogTerm": prev_term,
                 "entries": [asdict(current_rec),],
@@ -116,10 +116,10 @@ class Leader(State):
             })
         self.logger.debug("sending log entry prev at %s term %s to %s",
                           prev_index, prev_term, message.sender)
-        asyncio.ensure_future(self._server.post_message(append_entry))
+        asyncio.ensure_future(self.server.post_message(append_entry))
         
     def on_append_response_received(self, message):
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index
@@ -154,7 +154,7 @@ class Leader(State):
         fc.next_index += 1
 
         # counting this node, so replies plus 1
-        expected_confirms = (self._server._total_nodes - 1) / 2
+        expected_confirms = (self.server.total_nodes - 1) / 2
         received_confirms = 0
         for follower in self.followers.values():
             if follower.last_index == last_index:
@@ -176,12 +176,12 @@ class Leader(State):
             old_index = message.data['prevLogIndex']
             old_term = message.data['prevLogTerm']
             commit_message = AppendEntriesMessage(
-                self._server.endpoint,
+                self.server.endpoint,
                 None,
                 log.get_term(),
                 {
-                    "leaderId": self._server._name,
-                    "leaderPort": self._server.endpoint,
+                    "leaderId": self.server.name,
+                    "leaderPort": self.server.endpoint,
                     "prevLogIndex": old_index,
                     "prevLogTerm": old_term,
                     "entries": [],
@@ -190,7 +190,7 @@ class Leader(State):
             )
             self.logger.debug("(term %d) sending log commit to all followers: %s",
                               log.get_term(), commit_message.data)
-            self._server.broadcast(commit_message)
+            self.server.broadcast(commit_message)
             if last_rec.context is not None:
                 reply_address = last_rec.context.get('client_addr', None)
                 if reply_address:
@@ -201,35 +201,35 @@ class Leader(State):
                     reply_address = (reply_address[0], reply_address[1])
                     self.logger.debug("preparing reply for %s",
                                       reply_address)
-                    reply = ClientCommandResultMessage(self._server.endpoint,
+                    reply = ClientCommandResultMessage(self.server.endpoint,
                                                        reply_address,
                                                        last_term,
                                                        last_rec.user_data)
                     self.logger.debug("sending reply message %s", reply)
-                    asyncio.ensure_future(self._server.post_message(reply))
+                    asyncio.ensure_future(self.server.post_message(reply))
 
     def on_log_pull(self, message):
         # follwer wants log messages that it has not received
         start_index = message.data['start_index']
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec is None:
             self.logger.info("follower %s asking for log pull but log empty", message.sender)
             reply = LogPullResponseMessage(
-                self._server.endpoint,
+                self.server.endpoint,
                 message.sender,
                 log.get_term(),
                 {
                     "code": "reset",
-                    "leaderId": self._server._name,
-                    "leaderPort": self._server.endpoint,
+                    "leaderId": self.server.name,
+                    "leaderPort": self.server.endpoint,
                     "prevLogIndex": None,
                     "prevLogTerm": None,
                     "entries": [],
                     "leaderCommit": log.get_commit_index(),
                 }
             )
-            asyncio.ensure_future(self._server.post_message(reply))
+            asyncio.ensure_future(self.server.post_message(reply))
             return self, None
         if start_index is None:
             start_index = 0
@@ -237,46 +237,46 @@ class Leader(State):
             self.logger.info("follower %s asking for log pull %d beyond log limit %d or commit %d",
                              message.sender, start_index, last_rec.index, log.get_commit_index())
             reply = LogPullResponseMessage(
-                self._server.endpoint,
+                self.server.endpoint,
                 message.sender,
                 log.get_term(),
                 {
                     "code": "reset",
-                    "leaderId": self._server._name,
-                    "leaderPort": self._server.endpoint,
+                    "leaderId": self.server.name,
+                    "leaderPort": self.server.endpoint,
                     "prevLogIndex": last_rec.index,
                     "prevLogTerm": last_rec.term,
                     "entries": [],
                     "leaderCommit": log.get_commit_index(),
                 }
             )
-            asyncio.ensure_future(self._server.post_message(reply))
+            asyncio.ensure_future(self.server.post_message(reply))
             return self, None
         entries = []
         for i in range(start_index, log.get_commit_index() +1):
             a_rec = log.read(i)
             entries.append(asdict(a_rec))
         reply = LogPullResponseMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             message.sender,
             log.get_term(),
             {
                 "code": "apply",
-                "leaderId": self._server._name,
-                "leaderPort": self._server.endpoint,
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
                 "prevLogIndex": last_rec.index,
                 "prevLogTerm": last_rec.term,
                 "entries": entries,
                 "leaderCommit": log.get_commit_index(),
             }
         )
-        asyncio.ensure_future(self._server.post_message(reply))
+        asyncio.ensure_future(self.server.post_message(reply))
         return self, None
         
         
     def on_append_response(self, message):
         # check if last append_entries good?
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if not message.data["response"]:
             return self.on_log_pull(message)
@@ -286,7 +286,7 @@ class Leader(State):
         return self, None
     
     def send_heartbeat(self):
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index
@@ -296,23 +296,23 @@ class Leader(State):
             last_index = None
             last_term = None
         message = HeartbeatMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             None,
             log.get_term(),
             {
-                "leaderId": self._server._name,
-                "leaderPort": self._server.endpoint,
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
                 "prevLogIndex": last_index,
                 "prevLogTerm": last_term,
                 "entries": [],
                 "leaderCommit": log.get_commit_index(),
             }
         )
-        self._server.broadcast(message)
+        self.server.broadcast(message)
         self.heartbeat_logger.debug("sent heartbeat to all")
 
     def send_term_start(self):
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index
@@ -322,19 +322,19 @@ class Leader(State):
             last_index = None
             last_term = None
         data = {
-            "leaderId": self._server._name,
-            "leaderPort": self._server.endpoint,
+            "leaderId": self.server.name,
+            "leaderPort": self.server.endpoint,
             "prevLogIndex": last_index,
             "prevLogTerm": last_term,
             "leaderCommit": log.get_commit_index(),
         }
         message = TermStartMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             None,
             log.get_term(),
             data
         )
-        self._server.broadcast(message)
+        self.server.broadcast(message)
         self.logger.info("sent term start message to all %s %s", message, data)
 
     def on_client_command(self, message):
@@ -343,10 +343,10 @@ class Leader(State):
             target = message.original_sender
         self.logger.debug("saving address for reply %s",
                           target)
-        data = self._server.get_app().execute_command(message.data)
+        data = self.server.get_app().execute_command(message.data)
         if data is None:
             return False
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
             new_index = last_rec.index + 1
@@ -367,12 +367,12 @@ class Leader(State):
         log.append([new_rec,])
         new_rec = log.read()
         update_message = AppendEntriesMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             None,
             log.get_term(),
             {
-                "leaderId": self._server._name,
-                "leaderPort": self._server.endpoint,
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
                 "prevLogIndex": last_index,
                 "prevLogTerm": last_term,
                 "entries": [asdict(new_rec),],
@@ -381,11 +381,11 @@ class Leader(State):
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
                           log.get_term(), update_message.data)
-        self._server.broadcast(update_message)
+        self.server.broadcast(update_message)
         return True
 
     def on_vote_received(self, message): # pragma: no cover error
-        log = self._server.get_log()
+        log = self.server.get_log()
         self.logger.info("leader unexpectedly got vote: message.term = %d local_term = %d",
                          message.term, log.get_term())
 

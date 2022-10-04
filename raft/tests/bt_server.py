@@ -11,8 +11,23 @@ from raft.log.memory_log import MemoryLog
 from raft.comms.udp import UDPComms
 from raft.comms.memory_comms import MemoryComms
 from raft.tests.timer import ControlledTimer
+from raft.states.state_map import StandardStateMap
+from raft.states.follower import Follower
 from bank_teller.bank_app import BankingApp
 
+class StateMap4Test(StandardStateMap):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.first_time = True
+
+    def switch_to_follower(self, old_state=None):
+        follower = Follower(server=self.server,
+                            vote_at_start=self.first_time)
+        self.first_time = False
+        self.server.set_state(follower)
+        return follower
+    
 class UDPBankTellerServer:
 
     @classmethod
@@ -62,13 +77,13 @@ class UDPBankTellerServer:
         try:
             logger = logging.getLogger(__name__)
             logger.info("bank teller server starting")
-            state = raft.state_follower(vote_at_start=self.vote_at_start)
+            state_map = StateMap4Test()
             data_log = MemoryLog()
             loop = asyncio.get_running_loop()
             logger.info('creating server')
             endpoint = (self.host, self.port)
             app = BankingApp()
-            server = Server(name=f"{endpoint}", state=state,
+            server = Server(name=f"{endpoint}", state_map=state_map,
                             log=data_log, other_nodes=self.others,
                             endpoint=endpoint,
                             comms=UDPComms(),
@@ -139,13 +154,14 @@ class ServerThread(threading.Thread):
         try:
             logger = logging.getLogger(__name__)
             logger.info("memory comms bank teller server starting")
-            state = raft.state_follower(vote_at_start=self.vote_at_start)
+            #state = raft.state_follower(vote_at_start=self.vote_at_start)
+            state_map = StateMap4Test()
             data_log = MemoryLog()
             logger.info('creating server')
             comms = MemoryComms(timer_class=ControlledTimer)
             endpoint = (self.host, self.port)
             app = BankingApp()
-            self.server = Server(name=f"{endpoint}", state=state,
+            self.server = Server(name=f"{endpoint}", state_map=state_map,
                             log=data_log, other_nodes=self.other_nodes,
                             endpoint=endpoint,
                             comms=comms,

@@ -15,50 +15,50 @@ class Candidate(Voter):
     
     def __init__(self, server, timeout=0.5):
         Voter.__init__(self)
-        self._timeout = timeout
+        self.timeout = timeout
         self.logger = logging.getLogger(__name__)
-        self._server = server
+        self.server = server
         server.set_state(self)
-        self._votes = {}
-        self.candidate_timer = self._server.get_timer("candidate-interval",
+        self.votes = {}
+        self.candidate_timer = self.server.get_timer("candidate-interval",
                                                      self.candidate_interval(),
                                                      self.on_timer)
-        self._start_election()
+        self.start_election()
                             
     def __str__(self):
         return "candidate"
     
     def candidate_interval(self):
-        return random.uniform(0, self._timeout)
+        return random.uniform(0, self.timeout)
 
     def on_term_start(self, message):
         self.logger.info("candidate resigning because we got a term start message")
-        self._resign()
+        self.resign()
         
     def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
-        self._resign()
+        self.resign()
 
     def on_heartbeat(self, message):
         self.logger.info("candidate resigning because we got hearbeat from leader")
-        self._resign()
+        self.resign()
         self.on_heartbeat_common(message)
         self.logger.debug("sent heartbeat reply")
 
     def on_timer(self):
         self.logger.info("candidate resigning because timer ended")
-        self._resign()
+        self.resign()
 
     def on_vote_received(self, message):
         # reset timer
         self.candidate_timer.reset()
         self.logger.info("vote received from %s, response %s", message.sender,
                     message.data['response'])
-        if message.sender[1] not in self._votes and message.data['response']:
-            self._votes[message.sender[1]] = message.data['response']
+        if message.sender[1] not in self.votes and message.data['response']:
+            self.votes[message.sender[1]] = message.data['response']
 
             # check if received majorities
-            # if len(self._votes.keys()) > (self._server._total_nodes - 1) / 2:
+            # if len(self.votes.keys()) > (self.server.total_nodes - 1) / 2:
             # The above original logic from upstream was wrong, it does
             # not work with three servers if the leader dies, election
             # cannot complete because number of votes receive cannot be more
@@ -69,22 +69,24 @@ class Candidate(Voter):
             # the text of the paper, but it does not work for and election
             # held by two out of three servers.
             # with one dead.
-            if len(self._votes.keys()) + 1 > self._server._total_nodes / 2:
+            if len(self.votes.keys()) + 1 > self.server.total_nodes / 2:
                 self.candidate_timer.stop()
-                leader = Leader(self._server)
+                sm = self.server.get_state_map()
+                leader = sm.switch_to_leader(self)
+                #leader = Leader(self.server)
                 self.logger.info("changing to leader")
                 return leader, None
 
         # check if received all the votes -> resign
-        if len(self._votes) == len(self._server.other_nodes):
+        if len(self.votes) == len(self.server.other_nodes):
             self.logger.info("candidate resigning because all votes are in but we didn't win")
-            self._resign()
+            self.resign()
         else:
             return self, None
 
     # start elections by increasing term, voting for itself and send out vote requests
-    def _start_election(self):
-        log = self._server.get_log()
+    def start_election(self):
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index
@@ -94,14 +96,13 @@ class Candidate(Voter):
             last_index = None
             last_term = None
         self.candidate_timer.start()
-        # CHANGE_TRACE: self._server._currentTerm += 1
         log.incr_term()
 
         self.logger.info("candidate starting election term is %d",
                          log.get_term())
         
         election = RequestVoteMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             None,
             log.get_term(),
             {
@@ -109,17 +110,18 @@ class Candidate(Voter):
                 "lastLogTerm": last_term,
             }
         )
-        self._server.broadcast(election)
-        self._last_vote = self._server.endpoint
+        self.server.broadcast(election)
+        self.last_vote = self.server.endpoint
 
     # received append entry from leader or not enough votes -> step down
-    def _resign(self):
+    def resign(self):
         self.candidate_timer.stop()
-
-        from .follower import Follower
-        follower = Follower(server=self._server)
-        self._server._state = follower
-        follower.set_server(self._server)
+        sm = self.server.get_state_map()
+        follower = sm.switch_to_follower(self)
+        #from .follower import Follower
+        #follower = Follower(server=self.server)
+        #self.server.state = follower
+        #follower.set_server(self.server)
         self.logger.info("candidate resigned")
         return follower, None
 
@@ -127,7 +129,7 @@ class Candidate(Voter):
         return None
     
     def on_client_command(self, message):
-        self.dispose_client_command(message, self._server)
+        self.dispose_client_command(message, self.server)
 
     def on_append_response(self, message): # pragma: no cover error
         self.logger.warning("candidate unexpectedly got append response from %s",

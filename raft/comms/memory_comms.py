@@ -28,6 +28,8 @@ class MemoryComms(CommsAPI):
         self.keep_running = False
         self.timer_class = timer_class
         self.logger = logging.getLogger(__name__)
+        self.in_message_holder = None
+        self.out_message_holder = None
 
     async def start(self, server, endpoint):
         if self.timer_class:
@@ -44,6 +46,12 @@ class MemoryComms(CommsAPI):
     async def stop(self):
         self.keep_running = False
         self.task.cancel()
+
+    def set_in_message_holder(self, holder):
+        self.in_message_holder = holder
+        
+    def set_out_message_holder(self, holder):
+        self.out_message_holder = holder
         
     async def post_message(self, message):
         global queues
@@ -64,6 +72,8 @@ class MemoryComms(CommsAPI):
             w = Wrapper(data, self.endpoint)
             self.logger.debug("%s posted %s to %s",
                               self.endpoint, message.code, target)
+            if self.out_message_holder:
+                await self.out_message_holder(w)
             await queue.put(w)
         except Exception: # pragma: no cover error
             self.logger.error(traceback.format_exc())
@@ -78,6 +88,8 @@ class MemoryComms(CommsAPI):
                 message = Serializer.deserialize(data)
                 self.logger.debug("%s got %s from %s",
                                   self.endpoint, message.code, addr)
+                if self.in_message_holder:
+                    await self.in_message_holder(message, addr)
                 await self.server.on_message(data, addr)
             except Exception as e: # pragma: no cover error
                 self.logger.error(traceback.format_exc())

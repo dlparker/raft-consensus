@@ -19,14 +19,14 @@ class Follower(Voter):
     
     def __init__(self, timeout=0.75, server=None, vote_at_start=False):
         Voter.__init__(self)
-        self._timeout = timeout
-        self._vote_at_start = vote_at_start
+        self.timeout = timeout
+        self.vote_at_start = vote_at_start
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         self.election_timer = None
-        self._leader_addr = None
-        self._server = None
+        self.leader_addr = None
+        self.server = None
         if server:
             self.set_server(server)
 
@@ -34,28 +34,29 @@ class Follower(Voter):
         return "follower"
 
     def get_leader_addr(self):
-        return self._leader_addr
+        return self.leader_addr
     
     def set_server(self, server):
-        if self._server:
+        if self.server:
             return
-        self._server = server
+        self.server = server
         server.set_state(self)
         self.logger.debug("called server set_state")
         interval = self.election_interval()
-        self.election_timer = self._server.get_timer("follower-election",
+        self.election_timer = self.server.get_timer("follower-election",
                                                      interval,
-                                                     self._start_election)
+                                                     self.start_election)
         self.election_timer.start()
-        if self._vote_at_start:
-            asyncio.get_event_loop().call_soon(self._start_election)
+        if self.vote_at_start:
+            asyncio.get_event_loop().call_soon(self.start_election)
 
     def election_interval(self):
-        return random.uniform(self._timeout, 2 * self._timeout)
+        return random.uniform(self.timeout, 2 * self.timeout)
 
-    def _start_election(self):
+    def start_election(self):
         self.election_timer.stop()
-        candidate = Candidate(self._server)
+        sm = self.server.get_state_map()
+        candidate = sm.switch_to_candidate(self)
         return candidate, None
 
     def on_heartbeat(self, message):
@@ -63,14 +64,14 @@ class Follower(Voter):
         self.election_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
-        self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
-        if self._do_sync_action(message):
+        self.leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
+        if self.do_sync_action(message):
             self.on_heartbeat_common(message)
             self.heartbeat_logger.debug("heartbeat reply send")
 
     def on_log_pull_response(self, message):
         data = message.data
-        log = self._server.get_log()
+        log = self.server.get_log()
         if len(data["entries"]) == 0:
             return
         self.logger.debug("updating log with %d entries",
@@ -82,7 +83,7 @@ class Follower(Voter):
         leader_commit = data['leaderCommit']
         return
         
-    def _do_sync_action(self, message):
+    def do_sync_action(self, message):
         data = message.data
         leader_commit = data['leaderCommit']
         leader_last_rec_index = data["prevLogIndex"]
@@ -90,7 +91,7 @@ class Follower(Voter):
 
         # The simplest case is that the local log and the leader log match. Look
         # for that first
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if not last_rec:
             # local log is empty
@@ -154,7 +155,7 @@ class Follower(Voter):
         # just tell the leader where we are and have him
         # send what we are missing
 
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec is None:
             start_index = 0
@@ -162,14 +163,14 @@ class Follower(Voter):
             start_index = last_rec.index + 1
         self.logger.info("asking leader for log pull starting at %d", start_index)
         message = LogPullMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             message.sender,
             log.get_term(),
             {
                 "start_index": start_index
             }
         )
-        self._server.send_message_response(message)
+        self.server.send_message_response(message)
 
     def do_rollback_to_leader(self, message):
         # figure out what the leader's actual
@@ -179,7 +180,7 @@ class Follower(Voter):
         leader_commit = data['leaderCommit']
         leader_last_rec_index = data["prevLogIndex"]
         leader_last_rec_term = data["prevLogIndex"]
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         self.logger.info("setting log term to %d, was %d", message.term, log.get_term())
         log.set_term(message.term)
@@ -196,10 +197,10 @@ class Follower(Voter):
             
     def on_append_entries(self, message):
         self.election_timer.reset()
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         data = message.data
-        self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
+        self.leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 
         self.logger.debug("on_append_entries message %s", message)
         if log.get_term() and message.term < log.get_term():
@@ -232,44 +233,44 @@ class Follower(Voter):
             self.logger.info("Sent log update ack %s", message)
             return
         # we are not in sync, fix that
-        self._do_sync_action(message)
+        self.do_sync_action(message)
     
     def send_response_message(self, msg, votedYes=True):
-        log = self._server.get_log()
+        log = self.server.get_log()
         data = {
             "response": votedYes,
             "currentTerm": log.get_term(),
         }
         data.update(msg.data)
         response = AppendResponseMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             msg.sender,
             msg.term,
             data
         )
-        self._server.send_message_response(response)
+        self.server.send_message_response(response)
         logger = logging.getLogger(__name__)
         logger.info("sent response to %s term=%d %s",
                     response.receiver, response.term, data)
 
     def on_term_start(self, message):
         self.election_timer.reset()
-        log = self._server.get_log()
+        log = self.server.get_log()
         self.logger.info("follower got term start: message.term = %s local_term = %s",
                          message.term, log.get_term())
         log.set_term(message.term)
         data = message.data
-        self._leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
+        self.leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
 
     def on_client_command(self, message):
-        self.dispose_client_command(message, self._server)
+        self.dispose_client_command(message, self.server)
 
     def on_append_response(self, message): # pragma: no cover error
         self.logger.warning("follower unexpectedly got append response from %s",
                             message.sender)
     
     def on_vote_received(self, message): # pragma: no cover error
-        log = self._server.get_log()
+        log = self.server.get_log()
         self.logger.info("follower unexpectedly got vote: message.term = %d local_term = %d",
                          message.term, log.get_term())
 

@@ -31,13 +31,13 @@ class State(metaclass=abc.ABCMeta):
                 NotImplemented)
             
     def set_server(self, server):
-        self._server = server
+        self.server = server
 
     def on_message(self, message):
         logger = logging.getLogger(__name__)
         
         # If the message.term < currentTerm -> tell the sender to update term
-        log = self._server.get_log()
+        log = self.server.get_log()
         set_term = False
         if not log.get_term():
             if message.term:
@@ -64,26 +64,26 @@ class State(metaclass=abc.ABCMeta):
         """Called when there is a status query"""
         state_type = self.get_type()
         if state_type == "leader":
-            leader_addr = self._server.endpoint
+            leader_addr = self.server.endpoint
         elif state_type == "candidate":
             leader_addr = None
         else:
             leader_addr = self.get_leader_addr()
-        log = self._server.get_log()
+        log = self.server.get_log()
         status_data = dict(state=state_type,
                            leader=leader_addr,
                            term=log.get_term())
         status_response = StatusQueryResponseMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             message.sender,
             log.get_term(),
             status_data
         )
-        asyncio.ensure_future(self._server.post_message(status_response))
+        asyncio.ensure_future(self.server.post_message(status_response))
         return self, None
 
     def on_heartbeat_common(self, message):
-        log = self._server.get_log()
+        log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index
@@ -95,7 +95,7 @@ class State(metaclass=abc.ABCMeta):
                                          message.sender,
                                          term=log.get_term(),
                                          data=last_index)
-        asyncio.ensure_future(self._server.post_message(reply))
+        asyncio.ensure_future(self.server.post_message(reply))
 
     def dispose_client_command(self, message, server):
         # only the leader can execute, other states should

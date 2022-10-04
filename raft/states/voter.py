@@ -6,7 +6,7 @@ from ..messages.request_vote import RequestVoteResponseMessage
 class Voter(State):
 
     def __init__(self):
-        self._last_vote = None
+        self.last_vote = None
 
     def on_vote_request(self, message):
         # If this node has not voted,
@@ -22,7 +22,7 @@ class Voter(State):
         # our last log record index is max.
         # If we have already voted, then we say no. Election
         # will resolve or restart.
-        log = self._server.get_log()
+        log = self.server.get_log()
         # get the last record in the log
         last_rec = log.read()
         if last_rec:
@@ -33,23 +33,23 @@ class Voter(State):
             last_index = None
             last_term = None
         vote = False
-        if self._last_vote is None and last_index is None:
+        if self.last_vote is None and last_index is None:
             vote = True
-        elif (self._last_vote is None 
+        elif (self.last_vote is None 
             and message.data["lastLogIndex"] >= last_rec.index):
             vote = True
         if vote:
-            self._last_vote = message.sender
-            self._send_vote_response_message(message)
+            self.last_vote = message.sender
+            self.send_vote_response_message(message)
         else:
-            self._send_vote_response_message(message, votedYes=False)
+            self.send_vote_response_message(message, votedYes=False)
 
         return self, None
 
-    def _send_vote_response_message(self, message, votedYes=True):
+    def send_vote_response_message(self, message, votedYes=True):
         vote_response = RequestVoteResponseMessage(
-            self._server.endpoint,
+            self.server.endpoint,
             message.sender,
             message.term,
             {"response": votedYes})
-        self._server.send_message_response(vote_response)
+        self.server.send_message_response(vote_response)
