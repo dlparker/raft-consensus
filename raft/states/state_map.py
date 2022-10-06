@@ -51,9 +51,9 @@ class StandardStateMap(StateMap):
     server = None
     state = None
     
-    def activate(self, server) -> State:
+    async def activate(self, server) -> State:
         self.server = server
-        return self.switch_to_follower()
+        return await self.switch_to_follower()
         
     def get_server(self):
         return self.server
@@ -63,21 +63,21 @@ class StandardStateMap(StateMap):
             raise Exception('must call set_server before any other method!')
         return self.state
 
-    def switch_to_follower(self, old_state: Optional[State] = None) -> Follower:
+    async def switch_to_follower(self, old_state: Optional[State] = None) -> Follower:
         if not self.server:
             raise Exception('must call set_server before any other method!')
         follower =  Follower(server=self.server)
         self.server.set_state(follower)
         return follower
     
-    def switch_to_candidate(self, old_state: Optional[State] = None) -> Candidate:
+    async def switch_to_candidate(self, old_state: Optional[State] = None) -> Candidate:
         if not self.server:
             raise Exception('must call set_server before any other method!')
         candidate =  Candidate(server=self.server)
         self.server.set_state(candidate)
         return candidate
 
-    def switch_to_leader(self, old_state: Optional[State] = None) -> Leader:
+    async def switch_to_leader(self, old_state: Optional[State] = None) -> Leader:
         if not self.server:
             raise Exception('must call set_server before any other method!')
         leader =  Leader(server=self.server)

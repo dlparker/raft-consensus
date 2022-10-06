@@ -22,13 +22,18 @@ class Server:
         self.timer_class = None
         self.state_map = state_map
         self.state = None # needed because activate will call set_state
-        self.state = self.state_map.activate(self)
         self.app = app
-        self.app.set_server(self)
-        self.comms_task = asyncio.create_task(self.comms.start(self,
-                                                               self.endpoint))
-        self.logger.info('Server on %s', self.endpoint)
+        self.comms_task = None
+        asyncio.create_task(self.start())
 
+    async def start(self):
+        self.app.set_server(self)
+        self.state = await self.state_map.activate(self)
+        self.comms_task = asyncio.create_task(
+            self.comms.start(self, self.endpoint)
+        )
+        self.logger.info('Server on %s', self.endpoint)
+        
     def stop(self):
         self.comms_task.cancel()
         
@@ -55,14 +60,8 @@ class Server:
     def set_state(self, state):
         if self.state != state:
             self.state = state
-    
+
     async def on_message(self, data, addr):
-        try:
-            self._on_message(data, addr)
-        except Exception as e: # pragma: no cover error
-            self.logger.error(traceback.format_exc())
-            
-    def _on_message(self, data, addr):
         message = None
         try:
             message = Serializer.deserialize(data)
@@ -71,12 +70,15 @@ class Server:
             self.logger.error("cannot deserialze incoming data '%s...'",
                               data[:30])
             return
-        message._receiver = message.receiver[0], message.receiver[1]
-        message._sender = message.sender[0], message.sender[1]
-        self.logger.debug("state %s message %s", self.state, message)
+        try:
+            message._receiver = message.receiver[0], message.receiver[1]
+            message._sender = message.sender[0], message.sender[1]
+            self.logger.debug("state %s message %s", self.state, message)
+        except Exception as e: # pragma: no cover error
+            self.logger.error(traceback.format_exc())
         try:
             pre_state = self.state
-            self.state.on_message(message)
+            await self.state.on_message(message)
             if pre_state != self.state:
                 self.logger.info("changed state from %s to %s",
                                  pre_state, self.state)
@@ -88,12 +90,12 @@ class Server:
     async def post_message(self, message):
         await self.comms.post_message(message)
 
-    def send_message_response(self, message):
+    async def send_message_response(self, message):
         n = [n for n in self.other_nodes if n == message.receiver]
         if len(n) > 0:
-            asyncio.ensure_future(self.comms.post_message(message))
+            await self.comms.post_message(message)
         
-    def broadcast(self, message):
+    async def broadcast(self, message):
         for n in self.other_nodes:
             # Have to create a deep copy of message to have different receivers
             send_message = copy.deepcopy(message)

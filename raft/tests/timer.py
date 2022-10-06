@@ -1,3 +1,4 @@
+import time
 import asyncio
 import threading
 from collections import defaultdict
@@ -53,8 +54,8 @@ class ControlledTimer:
         self.eye_d = f"{self.name}_{self.thread_id}"
         self.interval = interval
         self.callback = callback
-        self.active = False
-        self.handler = None
+        self.task = None
+        self.keep_running = False
         global timer_set
         if timer_set is None:
             timer_set = TimerSet()
@@ -63,37 +64,25 @@ class ControlledTimer:
         self.countdown = -1
         self.loop = None
 
-    def get_loop(self):
-        if self.loop:
-            return self.loop
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-        return self.loop
-    
     def start(self):
-        self.active = True
-        if not self.loop:
-            self.get_loop()
-        self.handler = self.loop.call_later(self.interval, self._run)
+        self.keep_running = True
+        self.task = asyncio.create_task(self.run())
 
-    def _run(self):
-        if self.active:
-            if not self.loop:
-                self.get_loop()
-            self.callback()
-            self.handler = self.loop.call_later(self.interval, self._run)
-            if self.countdown == 0:
-                self.stop()
-                self.countdown = -1
-            elif self.countdown > 0:
-                self.countdown -= 1
+    async def one_pass(self):
+        start_time = time.time()
+        while time.time() - start_time < self.interval:
+            await asyncio.sleep(0.1)
+        await self.callback()
+        
+    async def run(self):
+        while self.keep_running:
+            await self.one_pass()
+        breakpoint()
+        self.task = None
                 
     def stop(self):
-        self.active = False
-        self.handler.cancel()
+        self.keep_running = False
+        self.countdown = -1
 
     def reset(self):
         self.stop()

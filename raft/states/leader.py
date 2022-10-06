@@ -51,23 +51,23 @@ class Leader(State):
                                                       self.heartbeat_timeout,
                                                       self.send_heartbeat)
         self.heartbeat_timer.start()
-        asyncio.ensure_future(self.on_start())
+        asyncio.create_task(self.on_start())
 
     def __str__(self):
         return "leader"
 
     async def on_start(self):
-        self.send_term_start()
-        self.set_substate(Substate.became_leader)
+        await self.send_term_start()
+        await self.set_substate(Substate.became_leader)
         
     def get_leader_addr(self):
         return self.server.endpoint
     
-    def on_heartbeat_response(self, message):
+    async def on_heartbeat_response(self, message):
         self.heartbeat_logger.debug("got heartbeat response from %s",
                                     message.sender)
 
-    def on_log_pull(self, message):
+    async def on_log_pull(self, message):
         # Follower is asking for log records
         # for now we continue with the older walkback algo until
         # we get this new logic working, then we'll fix the alqo
@@ -120,9 +120,9 @@ class Leader(State):
             })
         self.logger.debug("sending log entry prev at %s term %s to %s",
                           prev_index, prev_term, message.sender)
-        asyncio.ensure_future(self.server.post_message(append_entry))
+        await self.server.post_message(append_entry)
         
-    def on_append_response_received(self, message):
+    async def on_append_response_received(self, message):
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -194,7 +194,7 @@ class Leader(State):
             )
             self.logger.debug("(term %d) sending log commit to all followers: %s",
                               log.get_term(), commit_message.data)
-            self.server.broadcast(commit_message)
+            await self.server.broadcast(commit_message)
             if last_rec.context is not None:
                 reply_address = last_rec.context.get('client_addr', None)
                 if reply_address:
@@ -210,9 +210,9 @@ class Leader(State):
                                                        last_term,
                                                        last_rec.user_data)
                     self.logger.debug("sending reply message %s", reply)
-                    asyncio.ensure_future(self.server.post_message(reply))
+                    await self.server.post_message(reply)
 
-    def on_log_pull(self, message):
+    async def on_log_pull(self, message):
         # follwer wants log messages that it has not received
         start_index = message.data['start_index']
         log = self.server.get_log()
@@ -233,7 +233,7 @@ class Leader(State):
                     "leaderCommit": log.get_commit_index(),
                 }
             )
-            asyncio.ensure_future(self.server.post_message(reply))
+            await self.server.post_message(reply)
             return self, None
         if start_index is None:
             start_index = 0
@@ -254,7 +254,7 @@ class Leader(State):
                     "leaderCommit": log.get_commit_index(),
                 }
             )
-            asyncio.ensure_future(self.server.post_message(reply))
+            await self.server.post_message(reply)
             return self, None
         entries = []
         for i in range(start_index, log.get_commit_index() +1):
@@ -274,22 +274,22 @@ class Leader(State):
                 "leaderCommit": log.get_commit_index(),
             }
         )
-        asyncio.ensure_future(self.server.post_message(reply))
+        await self.server.post_message(reply)
         return self, None
         
         
-    def on_append_response(self, message):
+    async def on_append_response(self, message):
         # check if last append_entries good?
         log = self.server.get_log()
         last_rec = log.read()
         if not message.data["response"]:
-            return self.on_log_pull(message)
+            return await self.on_log_pull(message)
         else:
-            self.on_append_response_received(message)
+            await self.on_append_response_received(message)
 
         return self, None
     
-    def send_heartbeat(self):
+    async def send_heartbeat(self):
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -312,10 +312,11 @@ class Leader(State):
                 "leaderCommit": log.get_commit_index(),
             }
         )
-        self.server.broadcast(message)
-        self.heartbeat_logger.debug("sent heartbeat to all")
+        await self.server.broadcast(message)
+        self.heartbeat_logger.debug("sent heartbeat to all commit = %s",
+                                    message.data['leaderCommit'])
 
-    def send_term_start(self):
+    async def send_term_start(self):
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -338,11 +339,11 @@ class Leader(State):
             log.get_term(),
             data
         )
-        self.server.broadcast(message)
+        await self.server.broadcast(message)
         self.logger.info("sent term start message to all %s %s", message, data)
-        self.set_substate(Substate.sent_term_start)
+        await self.set_substate(Substate.sent_term_start)
 
-    def on_client_command(self, message):
+    async def on_client_command(self, message):
         target = message.sender
         if message.original_sender:
             target = message.original_sender
@@ -386,25 +387,25 @@ class Leader(State):
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
                           log.get_term(), update_message.data)
-        self.server.broadcast(update_message)
+        await self.server.broadcast(update_message)
         return True
 
-    def on_vote_received(self, message): # pragma: no cover error
+    async def on_vote_received(self, message): # pragma: no cover error
         log = self.server.get_log()
         self.logger.info("leader unexpectedly got vote: message.term = %d local_term = %d",
                          message.term, log.get_term())
 
-    def on_vote_request(self, message): # pragma: no cover error
+    async def on_vote_request(self, message): # pragma: no cover error
         self.logger.warning("got unexpectedly vote request from %s", message.sender)
     
-    def on_append_entries(self, message): # pragma: no cover error
+    async def on_append_entries(self, message): # pragma: no cover error
         self.logger.warning("got unexpectedly vote request from %s", message.sender)
     
-    def on_term_start(self, message): # pragma: no cover error
+    async def on_term_start(self, message): # pragma: no cover error
         self.logger.warning("leader got term start message from %s, makes no sense!",
                          message.sender) 
 
-    def on_heartbeat(self, message): # pragma: no cover error
+    async def on_heartbeat(self, message): # pragma: no cover error
         self.logger.warning("Why am I getting hearbeat when I am leader?")
-        #self.on_heartbeat_common(self, message)
+
 

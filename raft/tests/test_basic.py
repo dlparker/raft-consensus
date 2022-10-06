@@ -5,9 +5,10 @@ import logging
 import traceback
 import os
 
-from raft.tests.timer import get_timer_set
+from raft.tests.timer import get_timer_set, ControlledTimer
 from raft.log.log_api import LogRec
 from raft.log.memory_log import MemoryLog
+from raft.states.timer import Timer
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
 
@@ -163,8 +164,69 @@ class TestMemoryLog(unittest.TestCase):
         self.assertEqual(mlog.get_term(), 11)
         
         
+class TestTimer(unittest.TestCase):
+
+    def setUp(self):
+        self.counter = 0
+
+    async def target(self):
+        self.counter += 1
+
+    async def inner_test_timer_1(self):
+        self.counter = 0
+        t1 = Timer(0.05, self.target)
+        t1.start()
+        await asyncio.sleep(0.06)
+        self.assertTrue(self.counter > 0)
+
+    def test_timer_1(self):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.inner_test_timer_1())
         
+    async def inner_test_controlled_timer_1(self):
+        self.counter = 0
+        name1 = "test1"
+        t1 = ControlledTimer(name1, 0.05, self.target)
+        t1.start()
+        await asyncio.sleep(0.06)
+        self.assertTrue(self.counter > 0)
+        # now "pause" it through the controller api
+        gset = get_timer_set()
+        gset.pause_by_name(name1)
+        self.counter = 0
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.counter, 0)
+        gset.resume_by_name(name1)
+        await asyncio.sleep(0.06)
+        self.assertTrue(self.counter > 0)
+
+        gset.pause_all()
+        name2 = "test2"
+        t2 = ControlledTimer(name2, 0.05, self.target)
+        t2.start()
+        # make sure new one is running
+        await asyncio.sleep(0.06)
+        self.assertTrue(self.counter > 0)
+        gset.pause_all()
+        self.counter = 0
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.counter, 0)
+        gset.resume_all()
+        await asyncio.sleep(0.6)
+        self.assertTrue(self.counter > 1)
         
-            
+
+    def test_controlled_timer_1(self):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.run_until_complete(self.inner_test_controlled_timer_1())
+        
 
         

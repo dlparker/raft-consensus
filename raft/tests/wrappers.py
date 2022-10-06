@@ -36,11 +36,11 @@ class StateCST:
     def set_pause_on_substate(self, substate: Substate, method):
         self.pause_on_substates[substate] = method
 
-    def set_substate(self, substate: Substate):
+    async def set_substate(self, substate: Substate):
         if substate != self.state.substate:
             self.logger.info("Moving substate from %s to %s",
                              self.state.substate, substate)
-            self.superstate.set_substate(substate)
+            await self.superstate.set_substate(substate)
         method = self.pause_on_substates.get(substate, None)
         if method:
             try:
@@ -52,7 +52,7 @@ class StateCST:
                 del self.pause_on_substates[substate] 
             
 
-    def on_message(self, message):
+    async def on_message(self, message):
         if self.pause_before_on_message:
             try:
                 clear = self.pause_before_on_message(self.state, message)
@@ -61,7 +61,7 @@ class StateCST:
                 clear = True
             if clear:
                 self.pause_before_on_message = None
-        res = self.superstate.on_message(message)
+        res = await self.superstate.on_message(message)
         if self.pause_after_on_message:
             try:
                 clear = self.pause_after_on_message(self.state, message)
@@ -92,11 +92,11 @@ class FollowerWrapper(Follower):
     def set_pause_on_substate(self, substate, method):
         self.cst.set_pause_on_substate(substate, method)
 
-    def set_substate(self, substate: Substate):
-        self.cst.set_substate(substate)
+    async def set_substate(self, substate: Substate):
+        await self.cst.set_substate(substate)
 
-    def on_message(self, message):
-        self.cst.on_message(message)
+    async def on_message(self, message):
+        await self.cst.on_message(message)
 
     
 class CandidateWrapper(Candidate):
@@ -115,11 +115,11 @@ class CandidateWrapper(Candidate):
     def set_pause_on_substate(self, substate, method):
         self.cst.set_pause_on_substate(substate, method)
 
-    def set_substate(self, substate: Substate):
-        self.cst.set_substate(substate)
+    async def set_substate(self, substate: Substate):
+        await self.cst.set_substate(substate)
 
-    def on_message(self, message):
-        self.cst.on_message(message)
+    async def on_message(self, message):
+        await self.cst.on_message(message)
 
 class LeaderWrapper(Leader):
 
@@ -137,11 +137,11 @@ class LeaderWrapper(Leader):
     def set_pause_on_substate(self, substate, method):
         self.cst.set_pause_on_substate(substate, method)
 
-    def set_substate(self, substate: Substate):
-        self.cst.set_substate(substate)
+    async def set_substate(self, substate: Substate):
+        await self.cst.set_substate(substate)
 
-    def on_message(self, message):
-        self.cst.on_message(message)
+    async def on_message(self, message):
+        await self.cst.on_message(message)
 
 
 class LogWrapper(MemoryLog):
@@ -159,6 +159,7 @@ class StandardStateMapWrapper(StandardStateMap):
         self.vote_at_start = vote_at_start
         self.pause_methods = defaultdict(dict)
         self.state_names = ['follower', 'candidate', 'leader']
+        self.election_counter = 0
         
     def set_pause_on_substate(self, state_name, substate_name, method):
         if state_name != "all":
@@ -194,7 +195,7 @@ class StandardStateMapWrapper(StandardStateMap):
                 else:
                     state.set_pause_on_substate(name, method)
 
-    def switch_to_follower(self, old_state=None):
+    async def switch_to_follower(self, old_state=None):
         # The vote_at_start flag causes the follower
         # to start an election immediately so that
         # tests run faster. We only use this the
@@ -206,32 +207,37 @@ class StandardStateMapWrapper(StandardStateMap):
         else:
             vote = False
         follower = FollowerWrapper(server=self.server,
+                                   timeout=3.0,
                                    vote_at_start=False)
         self.first_time = False
         self.server.set_state(follower)
         self.set_state(follower)
         return follower
 
-    def switch_to_candidate(self, old_state=None):
+    async def switch_to_candidate(self, old_state=None):
         # The vote_at_start flag causes the follower
         # to start an election immediately so that
         # tests run faster. We only use this the
         # first time that a Follower is created
         # so later the normal timeouts will decide
         # when an election is needed.
+        self.election_counter += 1
+        if self.election_counter < 0:
+            breakpoint()
         candidate = CandidateWrapper(server=self.server,
-                                    timeout=0.5)
+                                     timeout=0.5)
         self.server.set_state(candidate)
         self.set_state(candidate)
         return candidate
 
-    def switch_to_leader(self, old_state=None):
+    async def switch_to_leader(self, old_state=None):
         # The vote_at_start flag causes the follower
         # to start an election immediately so that
         # tests run faster. We only use this the
         # first time that a Follower is created
         # so later the normal timeouts will decide
         # when an election is needed.
+        self.election_counter = 0
         leader = LeaderWrapper(server=self.server,
                                heartbeat_timeout=0.5)
         self.server.set_state(leader)

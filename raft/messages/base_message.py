@@ -17,12 +17,14 @@ class BaseMessage:
 
     _code = "invalid"
     
-    def __init__(self, sender, receiver, term, data, original_sender=None):
+    def __init__(self, sender, receiver, term, data,
+                 original_sender=None):
         self._sender = sender
         self._receiver = receiver
         self._data = data
         self._term = term
         self._original_sender = original_sender
+        self._msg_number = None
 
     def __str__(self):
         return f"{self._code} from {self._sender} to {self._receiver} term {self._term}"
@@ -30,7 +32,10 @@ class BaseMessage:
     @classmethod
     def get_code(cls):
         return cls._code
-    
+
+    def set_msg_number(self, number):
+        self._msg_number = number
+        
     def is_type(self, type_val):
         return self._code == type_val
 
@@ -67,3 +72,8 @@ class BaseMessage:
     @property
     def original_sender(self):
         return self._original_sender
+
+    @property
+    def msg_number(self):
+        return self._msg_number
+

@@ -8,7 +8,7 @@ class Voter(State):
     def __init__(self):
         self.last_vote = None
 
-    def on_vote_request(self, message):
+    async def on_vote_request(self, message):
         # If this node has not voted,
         # and if lastLogIndex in message
         # is not earlier than our local log index
@@ -40,16 +40,16 @@ class Voter(State):
             vote = True
         if vote:
             self.last_vote = message.sender
-            self.send_vote_response_message(message)
+            await self.send_vote_response_message(message)
         else:
-            self.send_vote_response_message(message, votedYes=False)
+            await self.send_vote_response_message(message, votedYes=False)
 
         return self, None
 
-    def send_vote_response_message(self, message, votedYes=True):
+    async def send_vote_response_message(self, message, votedYes=True):
         vote_response = RequestVoteResponseMessage(
             self.server.endpoint,
             message.sender,
             message.term,
             {"response": votedYes})
-        self.server.send_message_response(vote_response)
+        await self.server.send_message_response(vote_response)
