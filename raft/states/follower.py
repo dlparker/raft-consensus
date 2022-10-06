@@ -4,31 +4,32 @@ from dataclasses import asdict
 import logging
 import traceback
 
-from ..log.log_api import LogRec
+from .base_state import Substate
 from .voter import Voter
-from .timer import Timer
-from .candidate import Candidate
+from ..log.log_api import LogRec
 from ..messages.append_entries import AppendResponseMessage
 from ..messages.log_pull import LogPullMessage
-
 
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
 
     _type = "follower"
     
-    def __init__(self, timeout=0.75, server=None, vote_at_start=False):
+    def __init__(self, server, timeout=0.75):
         Voter.__init__(self)
+        self.server = server
         self.timeout = timeout
-        self.vote_at_start = vote_at_start
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         self.election_timer = None
         self.leader_addr = None
-        self.server = None
-        if server:
-            self.set_server(server)
+        self.substate = Substate.starting
+        interval = self.election_interval()
+        self.election_timer = self.server.get_timer("follower-election",
+                                                     interval,
+                                                     self.start_election)
+        self.election_timer.start()
 
     def __str__(self):
         return "follower"
@@ -39,17 +40,14 @@ class Follower(Voter):
     def set_server(self, server):
         if self.server:
             return
-        self.server = server
         server.set_state(self)
         self.logger.debug("called server set_state")
-        interval = self.election_interval()
-        self.election_timer = self.server.get_timer("follower-election",
-                                                     interval,
-                                                     self.start_election)
-        self.election_timer.start()
         if self.vote_at_start:
             asyncio.get_event_loop().call_soon(self.start_election)
 
+    def set_substate(self, substate: Substate):
+        self.substate = substate
+        
     def election_interval(self):
         return random.uniform(self.timeout, 2 * self.timeout)
 
@@ -64,10 +62,17 @@ class Follower(Voter):
         self.election_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
-        self.leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
+        laddr = (data["leaderPort"][0], data["leaderPort"][1])
+        if self.leader_addr != laddr:
+            if self.leader_addr is None:
+                self.set_substate(Substate.joined)
+            else:
+                self.set_substate(Substate.new_leader)
+            self.leader_addr = laddr
         if self.do_sync_action(message):
             self.on_heartbeat_common(message)
             self.heartbeat_logger.debug("heartbeat reply send")
+            self.set_substate(Substate.synced)
 
     def on_log_pull_response(self, message):
         data = message.data
@@ -106,6 +111,7 @@ class Follower(Voter):
                 if log.get_commit_index() == leader_commit -1:
                     # leader committed last record, and we didn't
                     # get the memo, so just apply it
+                    self.set_substate(Substate.syncing_commit)
                     log.commit(leader_commit)
                 # logs in sync, just return a hearbeat response
                 return True
@@ -223,6 +229,7 @@ class Follower(Voter):
                     return
         # log the records
         if len(data["entries"]) > 0:
+            self.set_substate(Substate.log_appending)
             self.logger.debug("updating log with %d entries",
                               len(data["entries"]))
             for ent in data["entries"]:
@@ -260,7 +267,13 @@ class Follower(Voter):
                          message.term, log.get_term())
         log.set_term(message.term)
         data = message.data
-        self.leader_addr = (data["leaderPort"][0], data["leaderPort"][1])
+        laddr = (data["leaderPort"][0], data["leaderPort"][1])
+        if self.leader_addr != laddr:
+            if self.leader_addr is None:
+                self.set_substate(Substate.joined)
+            else:
+                self.set_substate(Substate.new_leader)
+            self.leader_addr = laddr
 
     def on_client_command(self, message):
         self.dispose_client_command(message, self.server)

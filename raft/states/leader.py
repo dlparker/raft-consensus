@@ -4,7 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field, asdict
 
-from .base_state import State
+from .base_state import State, Substate
 from ..log.log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
 from ..messages.command import ClientCommandResultMessage
@@ -47,15 +47,19 @@ class Leader(State):
             self.followers[other] = FollowerCursor(other, last_index)
         
         # Notify others of term start, just to make it official
-        self.send_term_start()
         self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
                                                       self.heartbeat_timeout,
                                                       self.send_heartbeat)
         self.heartbeat_timer.start()
+        asyncio.ensure_future(self.on_start())
 
     def __str__(self):
         return "leader"
 
+    async def on_start(self):
+        self.send_term_start()
+        self.set_substate(Substate.became_leader)
+        
     def get_leader_addr(self):
         return self.server.endpoint
     
@@ -336,6 +340,7 @@ class Leader(State):
         )
         self.server.broadcast(message)
         self.logger.info("sent term start message to all %s %s", message, data)
+        self.set_substate(Substate.sent_term_start)
 
     def on_client_command(self, message):
         target = message.sender

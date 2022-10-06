@@ -209,3 +209,89 @@ class BaseCase:
                 return
             self.do_restart(run_data.second_follower)
             self.do_op_seq_3(client1)
+
+    class TestClientOps(unittest.TestCase):
+        
+        @classmethod
+        def setUpClass(cls):
+            cls.logger = None
+            pass
+    
+        @classmethod
+        def tearDownClass(cls):
+            pass
+    
+        def setUp(self):
+            self.cluster = Cluster(server_count=3,
+                                   use_processes=self.get_process_flag(),
+                                   logging_type=self.get_logging_type(),
+                                   base_port=5000)
+            if self.logger is None:
+                self.logger = logging.getLogger(__name__)
+            self.cluster.start_all_servers()
+            try:
+                self.loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self.loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self.loop)
+
+        def tearDown(self):
+            self.cluster.stop_all_servers()
+            time.sleep(0.5)
+            self.cluster.stop_logging_server()
+
+        def run_data_from_status(self, status):
+            run_data = {}
+            leader_addr = status.data['leader']
+            leader = None
+            first_follower = None
+            second_follower = None
+            for name,sdef in self.cluster.server_recs.items():
+                if sdef['port'] == leader_addr[1]:
+                    sdef['role'] = "leader"
+                    leader = sdef
+                else:
+                    if not first_follower:
+                        first_follower = sdef
+                    else:
+                        second_follower = sdef
+                    sdef['role'] = "follower"
+            self.logger.info("found leader %s", leader_addr)
+            run_data = RunData(leader, leader_addr, first_follower, second_follower)
+            return run_data
+            
+        def wait_for_election_done(self, client, old_leader=None, timeout=3):
+            self.logger.info("waiting for election results")
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                time.sleep(0.01)
+                status = client.get_status()
+                if status and status.data['leader']:
+                    new_leader_addr = status.data['leader']
+                    if old_leader:
+                        if old_leader != new_leader_addr:
+                            break
+                    else:
+                        break
+                status = None
+            
+            self.assertIsNotNone(status)
+            self.assertIsNotNone(status.data['leader'])
+            return self.run_data_from_status(status)
+        
+        def test_client_ops(self, restart=False):
+            client1 =  self.get_client(5000)
+            run_data = self.wait_for_election_done(client1)
+            self.logger.info("doing credit at %s", client1)
+            client1.do_credit(10)
+            self.logger.info("doing query of %s", client1)
+            result = client1.do_query()
+            self.assertEqual(result['balance'], 10)
+            self.logger.info("doing debit at %s", client1)
+            client1.do_debit(5)
+            self.logger.info("doing query of %s", client1)
+            result = client1.do_query()
+            self.assertEqual(result['balance'], 5)
+            self.logger.info("client ops via %s worked", client1)
+
+            

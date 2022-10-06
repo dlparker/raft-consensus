@@ -1,3 +1,5 @@
+# TODO: Fix name, it is messed up
+
 import asyncio
 from pathlib import Path
 import traceback
@@ -10,23 +12,14 @@ from raft.servers.server import Server
 from raft.log.memory_log import MemoryLog
 from raft.comms.udp import UDPComms
 from raft.comms.memory_comms import MemoryComms
-from raft.tests.timer import ControlledTimer
 from raft.states.state_map import StandardStateMap
 from raft.states.follower import Follower
 from bank_teller.bank_app import BankingApp
 
-class StateMap4Test(StandardStateMap):
+from raft.tests.timer import ControlledTimer
+from raft.tests.wrappers import FollowerWrapper
+from raft.tests.wrappers import StandardStateMapWrapper
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.first_time = True
-
-    def switch_to_follower(self, old_state=None):
-        follower = Follower(server=self.server,
-                            vote_at_start=self.first_time)
-        self.first_time = False
-        self.server.set_state(follower)
-        return follower
     
 class UDPBankTellerServer:
 
@@ -77,7 +70,7 @@ class UDPBankTellerServer:
         try:
             logger = logging.getLogger(__name__)
             logger.info("bank teller server starting")
-            state_map = StateMap4Test()
+            state_map = StandardStateMapWrapper()
             data_log = MemoryLog()
             loop = asyncio.get_running_loop()
             logger.info('creating server')
@@ -115,14 +108,20 @@ class MemoryBankTellerServer:
         # versions to make control code cleaner
         self.host = "localhost"
         self.port = port
-        self.name = name
         self.working_dir = working_dir
-        self.others = others
-        self.thread = ServerThread(port, others, vote_at_start)
+        self.other_nodes = others
+        self.endpoint = (self.host, self.port)
+        self.name = f"{self.endpoint}"
+        self.state_map = StandardStateMapWrapper()
+        self.data_log = MemoryLog()
+        self.comms = MemoryComms(timer_class=ControlledTimer)
+        self.app = BankingApp()
+        self.thread = ServerThread(self)
         self.thread.name = f"{self.port}"
 
     def start(self):
         self.thread.start()
+        return self.thread
         
     def stop(self):
         self.thread.stop()
@@ -130,17 +129,11 @@ class MemoryBankTellerServer:
 
 class ServerThread(threading.Thread):
 
-    def __init__(self, port, other_nodes, vote_at_start):
-        # vote_at_start True means that server starts with
-        # a follower that does not wait for timeout, which
-        # makes testing go faster. Sometimes you want the
-        # timeout to happen, so set to False
+    def __init__(self, bt_server):
         threading.Thread.__init__(self)
+        self.bt_server = bt_server
         self.host = "localhost"
-        self.port = port
-        self.other_nodes = other_nodes
         self.keep_running = True
-        self.vote_at_start = vote_at_start
 
     def run(self):
         try:
@@ -154,23 +147,21 @@ class ServerThread(threading.Thread):
         try:
             logger = logging.getLogger(__name__)
             logger.info("memory comms bank teller server starting")
-            #state = raft.state_follower(vote_at_start=self.vote_at_start)
-            state_map = StateMap4Test()
-            data_log = MemoryLog()
             logger.info('creating server')
-            comms = MemoryComms(timer_class=ControlledTimer)
-            endpoint = (self.host, self.port)
-            app = BankingApp()
-            self.server = Server(name=f"{endpoint}", state_map=state_map,
-                            log=data_log, other_nodes=self.other_nodes,
-                            endpoint=endpoint,
-                            comms=comms,
-                            app=app)
-            logger.info(f"started server on memory addr {(self.host, self.port)} with others at {self.other_nodes}")
+            self.server = Server(name=self.bt_server.name,
+                                 state_map=self.bt_server.state_map,
+                                 log=self.bt_server.data_log,
+                                 other_nodes=self.bt_server.other_nodes,
+                                 endpoint=self.bt_server.endpoint,
+                                 comms=self.bt_server.comms,
+                                 app=self.bt_server.app)
+            logger.info("started server on memory addr %s  with others at %s",
+                        self.bt_server.endpoint,
+                        self.bt_server.other_nodes)
             self.server.get_endpoint()
             while self.keep_running:
                 await asyncio.sleep(0.01)
-            await comms.stop()
+            await self.bt_server.comms.stop()
         except:
             print("\n\n!!!!!!Server thread failed!!!!")
             traceback.print_exc()

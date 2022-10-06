@@ -61,8 +61,8 @@ class Cluster:
         for name, srec in self.server_recs.items():
             if self.use_procs and srec.get('proc'):
                 raise Exception(f"server {name} process already running")
-            elif srec.get("tserver"):
-                raise Exception(f"server {name} tserver already running")
+            elif srec.get("server_thread"):
+                raise Exception(f"server {name} server_thread already running")
             others = []
             for addr in all_servers:
                 if addr[1] != srec['port']:
@@ -79,7 +79,40 @@ class Cluster:
             if srec[addr] == addr:
                 return srec
         return None
-        
+
+    def prep_mem_servers(self):
+        if not self.dirs_ready:
+            raise Exception('target dirs not clean, are servers running?')
+        all_servers = [ ("localhost", sdef['port']) for sdef in self.server_recs.values() ]
+        args_set = []
+        for name, srec in self.server_recs.items():
+            if srec.get("server_thread"):
+                raise Exception(f"server {name} server_thread already running")
+            others = []
+            for addr in all_servers:
+                if addr[1] != srec['port']:
+                    others.append(addr)
+            srec['run_args']= [srec['port'], srec['working_dir'],
+                               srec['name'], others, self.log_config,
+                               False]
+        for name, srec in self.server_recs.items():
+            self.prep_mem_server(name)
+        return 
+
+
+    def prep_mem_server(self, name, vote_at_start=True):
+        if self.use_procs:
+            raise Exception('invalid call for mp servers')
+        srec = self.server_recs[name]
+        # vote at start is last arg
+        args = [ item for item in srec['run_args'][:-1] ]
+        args.append(vote_at_start)
+        if srec.get('server_thread'):
+            raise Exception(f"server {name} server_thread already running")
+        if not srec.get("memserver"):
+            memserver = MemoryBankTellerServer(*args)
+            srec['memserver'] = memserver
+            
     def start_one_server(self, name, vote_at_start=True):
         # vote_at_start True means that server starts with
         # a follower that does not wait for timeout, which
@@ -99,11 +132,14 @@ class Cluster:
             s_process.start()
             srec['proc'] = s_process
         else:
-            if srec.get('tserver'):
-                raise Exception(f"server {name} tserver already running")
-            tserver = MemoryBankTellerServer(*args)
-            tserver.start()
-            srec['tserver'] = tserver
+            if srec.get('server_thread'):
+                raise Exception(f"server {name} server_thread already running")
+            memserver = srec.get("memserver", None)
+            if not memserver:
+                memserver = MemoryBankTellerServer(*args)
+                srec['memserver'] = memserver
+            server_thread = memserver.start()
+            srec['server_thread'] = server_thread
             
     def stop_server(self, name):
         srec = self.server_recs[name]
@@ -114,10 +150,13 @@ class Cluster:
                 s_process.join()
                 del srec['proc']
         else:
-            tserver = srec.get('tserver', None)
-            if tserver:
-                tserver.stop()
-                del srec['tserver']
+            server_thread = srec.get('server_thread', None)
+            if server_thread:
+                server_thread.stop()
+                del srec['server_thread']
+            memserver = srec.get('memserver', None)
+            if memserver:
+                del srec['memserver']
 
     def stop_all_servers(self):
         for name, srec in self.server_recs.items():

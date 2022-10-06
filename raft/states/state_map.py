@@ -10,9 +10,15 @@ from .leader import Leader
 class StateMap(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
-    def set_server(self, server) -> None:
+    def activate(self, server) -> State:
         """ Stores a reference to the server object. This must
         be called before any of the other methods.
+        Assumes there is no current state and switches to 
+        the first state, telling it and the server about each other.
+        In the standard state map, the "first" state is Follower.
+        StateMap implementors can choose to have some additional
+        state happen prior to the switch to Follower by making
+        this method switch to that one. 
         """
         raise NotImplementedError
     
@@ -20,17 +26,6 @@ class StateMap(metaclass=abc.ABCMeta):
         """ Returns the reference to the server object. 
         TODO: should create a base class for Servers 
         to be used in type hints.
-        """
-        raise NotImplementedError
-    
-    @abc.abstractmethod
-    def activate(self) -> State:
-        """ Assumes there is no current state and switches to 
-        the first state, telling it and the server about each other.
-        In the standard state map, the "first" state is Follower.
-        StateMap implementors can choose to have some additional
-        state happen prior to the switch to Follower by making
-        this method switch to that one. 
         """
         raise NotImplementedError
     
@@ -56,8 +51,9 @@ class StandardStateMap(StateMap):
     server = None
     state = None
     
-    def set_server(self, server) -> None:
+    def activate(self, server) -> State:
         self.server = server
+        return self.switch_to_follower()
         
     def get_server(self):
         return self.server
@@ -67,10 +63,6 @@ class StandardStateMap(StateMap):
             raise Exception('must call set_server before any other method!')
         return self.state
 
-    def activate(self, server) -> State:
-        self.server = server
-        return self.switch_to_follower()
-        
     def switch_to_follower(self, old_state: Optional[State] = None) -> Follower:
         if not self.server:
             raise Exception('must call set_server before any other method!')

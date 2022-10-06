@@ -2,6 +2,7 @@ import logging
 import asyncio
 import abc
 from dataclasses import asdict
+from enum import Enum
 
 
 from ..messages.base_message import BaseMessage
@@ -10,10 +11,38 @@ from ..messages.status import StatusQueryResponseMessage
 from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
 from ..messages.regy import get_message_registry
 
+class Substate(str, Enum):
+    """ Before any connections """
+    starting = "STARTING"
+
+    """ Leader has called us at least once """
+    joined = "JOINED"                  
+
+    """ Was already following, now have new leader """
+    new_leader = "NEW_LEADER"
+    
+    """ Just got elected """
+    became_leader = "BECAME_LEADER"
+    
+    """ Just sent term start (as leader) """
+    sent_term_start = "SENT_TERM_START"
+    
+    """ As of last call from leader, log is in sync """
+    synced = "SYNCED"                 
+
+    """ Last call from leader synced commit, no new records """
+    syncing_commit = "SYNCING_COMMIT"
+
+    """ Last call from leader had new records """
+    log_appending = "log_appending"
+
+
 
 # abstract class for all server states
 class State(metaclass=abc.ABCMeta):
     _type = "base"
+    substate = Substate.starting
+    
     @classmethod
     def __subclasshook__(cls, subclass):  # pragma: no cover abstract
         return (hasattr(subclass, 'on_vote_request') and 
@@ -32,6 +61,10 @@ class State(metaclass=abc.ABCMeta):
             
     def set_server(self, server):
         self.server = server
+
+    def set_substate(self, substate: Substate):
+        self.substate = substate
+        
 
     def on_message(self, message):
         logger = logging.getLogger(__name__)

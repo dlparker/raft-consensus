@@ -24,25 +24,25 @@ class TimerSet:
 
     def pause_all(self):
         for timer in self.recs.values():
-            timer.pause()
+            timer.stop()
         
     def resume_all(self, countdown=None):
         for timer in self.recs.values():
             if countdown:
                 timer.countdown = countdown
-            timer.resume()
+            timer.start()
 
     def pause_by_name(self, name):
         for tid in self.ids_by_name[name]:
             timer = self.recs[tid]
-            timer.pause()
+            timer.stop()
         
     def resume_by_name(self, name, countdown=None):
         for tid in self.ids_by_name[name]:
             timer = self.recs[tid]
             if countdown:
                 timer.countdown = countdown
-            timer.resume()
+            timer.start()
         
 
 class ControlledTimer:
@@ -60,15 +60,8 @@ class ControlledTimer:
             timer_set = TimerSet()
         timer_set.register_timer(self)
         self.timer_set = timer_set
-        self.paused = False
         self.countdown = -1
         self.loop = None
-
-    def pause(self):
-        self.paused = True
-
-    def resume(self):
-        self.paused = False
 
     def get_loop(self):
         if self.loop:
@@ -87,13 +80,13 @@ class ControlledTimer:
         self.handler = self.loop.call_later(self.interval, self._run)
 
     def _run(self):
-        if self.active and not self.paused:
+        if self.active:
             if not self.loop:
                 self.get_loop()
             self.callback()
             self.handler = self.loop.call_later(self.interval, self._run)
             if self.countdown == 0:
-                self.pause()
+                self.stop()
                 self.countdown = -1
             elif self.countdown > 0:
                 self.countdown -= 1

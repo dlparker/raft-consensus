@@ -103,7 +103,7 @@ class MemoryBankTellerClient:
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self._do_debug(amount))
+        return loop.run_until_complete(self._do_debit(amount))
 
     def do_query(self):
         try:

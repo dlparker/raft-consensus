@@ -47,7 +47,15 @@ class TestUtils(unittest.TestCase):
         hb_c = regy.get_message_class("heartbeat")
         self.assertIsNotNone(hb_c)
         msg = hb_c('1', '2', 0, "{'x':1}")
-        fo = Follower()
+        # dummy objects to get follower to init enough
+        # to use it as a handler source 
+        class ftimer:
+            def start(self):
+                return
+        class dserver:
+            def get_timer(self, name, interval, function):
+                return ftimer()
+        fo = Follower(dserver())
         mh = regy.get_handler(msg, fo)
         self.assertIsNotNone(mh)
         expected_codes = ['heartbeat', 'heartbeat_response', 

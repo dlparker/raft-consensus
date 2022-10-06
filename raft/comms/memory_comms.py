@@ -52,11 +52,24 @@ class MemoryComms(CommsAPI):
         
     def set_out_message_holder(self, holder):
         self.out_message_holder = holder
-        
+
+    def are_out_queues_empty(self):
+        global queues
+        any_full = False
+        for name, queue in queues.items():
+            if name == self.endpoint:
+                continue
+            if not queue.empty():
+                print(f'queue {name} not empty {queue.qsize()}')
+                any_full = True
+        return not any_full
+            
     async def post_message(self, message):
         global queues
         try:
             target = message.receiver
+            # this can happen at startup, waiting for
+            # other server threads to start
             if target not in queues:
                 start_time = time.time()
                 while time.time() - start_time < 0.25:
