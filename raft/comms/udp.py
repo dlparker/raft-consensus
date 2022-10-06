@@ -93,10 +93,21 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         self._logger.info("connection made %s", transport)
         asyncio.ensure_future(self.start())
 
-    def foo(self, data, addr):
+    def datagram_received(self, data, addr):
+        self._logger.debug("protocol got message from %s %s", addr, data[:30])
         msg = Serializer.deserialize(data)
         # will never actually send a zero, always 1+
         last = self._seq_by_sender[addr]
+        # If the message is directly after the last one
+        # order is good. If the message is before the last
+        # one, other process must have rebooted, so reset
+        if (msg.msg_number == last + 1 or
+            msg.msg_number < last): 
+            await self.message_handler(data, addr)
+            self._seq_by_sender[addr] = msg.msg_number
+            return
+        # If the message is after the expected number, it
+        # arrived out of order, so save it
         if msg.msg_number > last + 1:
             # defer processing
             saver = self._out_of_order[addr]
@@ -104,21 +115,45 @@ class UDP_Protocol(asyncio.DatagramProtocol):
                                          data=data,
                                          addr=addr)
             return
-        elif len(self._out_of_order[addr]):
-            pending = list(self._out_of_order[addr].keys())
-            pending.sort()
-            first = pending[0]
-            last = pending[-1]
-            if msg.msg_number < first:
-                if msg.msg_number == last + 1:
-                    pass
-            elif msg.msg_number > last:
-                pass
-            else:
-                pass
-
+        # If we still haven't figured out the message,
+        # see if we have pending out of order messages
+        # and see if it can help us clear those, or has to be
+        # added to them.
+        if len(self._out_of_order[addr]) == 0:
+            self.logger.error("Can't figure out ordering of message")
+            return
+        my_set = self._out_of_order[addr]
+        pending = list(my_set.keys())
+        pending.sort()
+        first = pending[0]
+        last = pending[-1]
+        if msg.msg_number > last:
+            my_set[msg.msg_number] = dict(msg_number=msg.msg_number,
+                                          data=data,
+                                          addr=addr)
+            return
+        if msg.msg_number == last + 1:
+            # this is the first of the late
+            # arrivalsm,  handle it, then
+            # work through the rest until
+            # caught up or another gap
+            await self.message_handler(data, addr)
+            last = self._seq_by_sender[addr] = msg.msg_number
+            for pend in pending:
+                if pend != last + 1:
+                    # still missing something
+                    break
+                rec = my_set[pend]
+                await self.message_handler(rec['data'], rec['addr'])
+                del my_set[pend]
+                last = self._seq_by_sender[addr] = rec['msg_number']
+            return
+        # another out of order, save it
+        my_set[msg.msg_number] = dict(msg_number=msg.msg_number,
+                                      data=data,
+                                      addr=addr)
         
-    def datagram_received(self, data, addr):
+    def a_datagram_received(self, data, addr):
         self._logger.debug("protocol got message from %s %s", addr, data[:30])
         asyncio.ensure_future(self.message_handler(data, addr))
         #await self.message_handler(data, addr)
