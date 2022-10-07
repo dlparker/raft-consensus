@@ -97,6 +97,14 @@ class Cluster:
                                False]
         for name, srec in self.server_recs.items():
             self.prep_mem_server(name)
+            
+        for name, srec in self.server_recs.items():
+            memserver = srec['memserver']
+            for oname, osrec in self.server_recs.items():
+                if oname != name:
+                    omemserver = osrec['memserver']
+                    memserver.add_other_server(omemserver)
+                    
         return 
 
 

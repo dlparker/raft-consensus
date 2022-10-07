@@ -23,6 +23,7 @@ class Follower(Voter):
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         self.election_timer = None
+        self.switched = False
         self.leader_addr = None
         self.substate = Substate.starting
         interval = self.election_interval()
@@ -44,11 +45,20 @@ class Follower(Voter):
         return random.uniform(self.timeout, 2 * self.timeout)
 
     async def start_election(self):
-        self.logger.debug("starting election")
-        await self.election_timer.stop()
-        self.logger.debug("doing switch to candidate")
-        sm = self.server.get_state_map()
-        candidate = await sm.switch_to_candidate(self)
+        if self.switched:
+            # order in async makes race for server states
+            # switch and new timer fire
+            return
+        try:
+            self.logger.debug("starting election")
+            self.logger.debug("doing switch to candidate")
+            sm = self.server.get_state_map()
+            self.switched = True
+            candidate = await sm.switch_to_candidate(self)
+            await self.election_timer.terminate() # never run again
+        except:
+            self.logger.error(traceback.format_exc())
+            raise
 
     async def on_heartbeat(self, message):
         # reset timeout

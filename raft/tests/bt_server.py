@@ -16,7 +16,7 @@ from raft.states.state_map import StandardStateMap
 from raft.states.follower import Follower
 from bank_teller.bank_app import BankingApp
 
-from raft.tests.timer import ControlledTimer
+from raft.tests.timer import ControlledTimer, get_timer_set
 from raft.tests.wrappers import FollowerWrapper
 from raft.tests.wrappers import StandardStateMapWrapper
 
@@ -119,6 +119,15 @@ class MemoryBankTellerServer:
         self.thread = ServerThread(self)
         self.thread.name = f"{self.port}"
 
+    def add_other_server(self, other):
+        self.thread.add_other_server(other)
+        
+    async def pause_on_reason(self, reason_string, propogate=True):
+        await self.thread.pause_on_reason(reason_string, propogate)
+
+    async def resume_from_reason(self, reason_string, propogate=True):
+        await self.thread.resume_from_reason(reason_string, propogate)
+        
     def start(self):
         self.thread.start()
         return self.thread
@@ -134,6 +143,25 @@ class ServerThread(threading.Thread):
         self.bt_server = bt_server
         self.host = "localhost"
         self.keep_running = True
+        self.other_servers = []
+
+    def add_other_server(self, other):
+        # this is so the pause operation can stop all servers
+        self.other_servers.append(other)
+
+    async def pause_on_reason(self, reason_string, propogate=True):
+        self.bt_server.comms.pause()
+        await get_timer_set().pause_all_this_thread()
+        if propogate:
+            for other in self.other_servers:
+                other.pause_on_reason(reason_string, False)
+
+    async def resume_from_reason(self, reason_string, propogate=True):
+        self.bt_server.comms.resume()
+        await get_timer_set().resume_all_this_thread()
+        if propogate:
+            for other in self.other_servers:
+                other.resume_from_reason(reason_string, False)
 
     def run(self):
         try:
@@ -148,6 +176,7 @@ class ServerThread(threading.Thread):
             logger = logging.getLogger(__name__)
             logger.info("memory comms bank teller server starting")
             logger.info('creating server')
+            self.bt_server.state_map.set_server_wrapper(self)
             self.server = Server(name=self.bt_server.name,
                                  state_map=self.bt_server.state_map,
                                  log=self.bt_server.data_log,
@@ -155,10 +184,11 @@ class ServerThread(threading.Thread):
                                  endpoint=self.bt_server.endpoint,
                                  comms=self.bt_server.comms,
                                  app=self.bt_server.app)
+            self.server.set_timer_class(ControlledTimer)
+            self.server.get_endpoint()
             logger.info("started server on memory addr %s  with others at %s",
                         self.bt_server.endpoint,
                         self.bt_server.other_nodes)
-            self.server.get_endpoint()
             while self.keep_running:
                 await asyncio.sleep(0.01)
             await self.bt_server.comms.stop()

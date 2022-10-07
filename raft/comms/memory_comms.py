@@ -30,7 +30,14 @@ class MemoryComms(CommsAPI):
         self.logger = logging.getLogger(__name__)
         self.in_message_holder = None
         self.out_message_holder = None
+        self.paused = False
 
+    def pause(self):
+        self.paused = True
+
+    def resume(self):
+        self.paused = True
+        
     async def start(self, server, endpoint):
         if self.timer_class:
             server.set_timer_class(self.timer_class)
@@ -80,6 +87,8 @@ class MemoryComms(CommsAPI):
                     self.logger.debug("%s not connected to %s",
                                       self.endpoint, target)
                     return
+            while self.paused:
+                 await asyncio.sleep(0.001)   
             queue = queues[target]
             data = Serializer.serialize(message)
             w = Wrapper(data, self.endpoint)
@@ -95,6 +104,8 @@ class MemoryComms(CommsAPI):
         global queues
         while self.keep_running:
             try:
+                while self.paused:
+                    await asyncio.sleep(0.001)   
                 w = await self.queue.get()
                 addr = w.addr
                 data = w.data

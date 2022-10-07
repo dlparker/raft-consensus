@@ -36,7 +36,10 @@ class Voter(State):
         if self.last_vote is None and last_index is None:
             vote = True
         elif (self.last_vote is None 
-            and message.data["lastLogIndex"] >= last_rec.index):
+              and message.data["lastLogIndex"] is None and last_rec is None):
+            vote = True
+        elif (self.last_vote is None 
+            and message.data["lastLogIndex"] >= last_index):
             vote = True
         if vote:
             self.last_vote = message.sender

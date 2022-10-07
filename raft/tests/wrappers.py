@@ -44,18 +44,20 @@ class StateCST:
         method = self.pause_on_substates.get(substate, None)
         if method:
             try:
-                clear = method(self.state, substate)
+                clear = await method(self.state, substate)
             except:
                 traceback.print_exc()
                 clear = True
             if clear:
+                self.logger.info("removing substate pause from %s to %s",
+                                 self.state.substate, substate)
                 del self.pause_on_substates[substate] 
             
 
     async def on_message(self, message):
         if self.pause_before_on_message:
             try:
-                clear = self.pause_before_on_message(self.state, message)
+                clear = await self.pause_before_on_message(self.state, message)
             except:
                 traceback.print_exc()
                 clear = True
@@ -64,7 +66,7 @@ class StateCST:
         res = await self.superstate.on_message(message)
         if self.pause_after_on_message:
             try:
-                clear = self.pause_after_on_message(self.state, message)
+                clear = await self.pause_after_on_message(self.state, message)
             except: 
                 traceback.print_exc()
                 clear = True
@@ -74,8 +76,10 @@ class StateCST:
     
 class FollowerWrapper(Follower):
 
-    def __init__(self, server, timeout=0.75, vote_at_start=False):
-        super().__init__(server, timeout)
+    def __init__(self, *args, **kwargs):
+        vote_at_start = kwargs.pop("vote_at_start")
+        self.server_wrapper = kwargs.pop("server_wrapper")
+        super().__init__(**kwargs)
         self.wrapper_logger = logging.getLogger("FollowerWrapper")
         self.cst = StateCST(self, super(), self.wrapper_logger)
         # If vote_at_start flag is true, start and election
@@ -102,6 +106,7 @@ class FollowerWrapper(Follower):
 class CandidateWrapper(Candidate):
 
     def __init__(self, *args, **kwargs):
+        self.server_wrapper = kwargs.pop("server_wrapper")
         super().__init__(*args, **kwargs)
         self.wrapper_logger = logging.getLogger("CandidateWrapper")
         self.cst = StateCST(self, super(), self.wrapper_logger)
@@ -124,6 +129,7 @@ class CandidateWrapper(Candidate):
 class LeaderWrapper(Leader):
 
     def __init__(self, *args, **kwargs):
+        self.server_wrapper = kwargs.pop("server_wrapper")
         super().__init__(*args, **kwargs)
         self.wrapper_logger = logging.getLogger("LeaderWrapper")
         self.cst = StateCST(self, super(), self.wrapper_logger)
@@ -143,6 +149,27 @@ class LeaderWrapper(Leader):
     async def on_message(self, message):
         await self.cst.on_message(message)
 
+    async def on_vote_received(self, message): # pragma: no cover error
+        reason = "Unexpectedly got vote received"
+        self.logger.warning(reason)
+        try:
+            await self.server_wrapper.pause_on_reason(reason)
+        except Exception as e:
+            print(e)
+            print(self.server)
+            print(dir(self.server))
+            raise
+        
+    async def on_heartbeat(self, message): # pragma: no cover error
+        reason = "Why am I getting hearbeat when I am leader?"
+        self.logger.warning(reason)
+        try:
+            await self.server_wrapper.pause_on_reason(reason)
+        except Exception as e:
+            print(e)
+            print(self.server)
+            print(dir(self.server))
+            raise
 
 class LogWrapper(MemoryLog):
     pass
@@ -160,6 +187,10 @@ class StandardStateMapWrapper(StandardStateMap):
         self.pause_methods = defaultdict(dict)
         self.state_names = ['follower', 'candidate', 'leader']
         self.election_counter = 0
+        self.server_wrapper = None
+        
+    def set_server_wrapper(self, wrapper):
+        self.server_wrapper = wrapper
         
     def set_pause_on_substate(self, state_name, substate_name, method):
         if state_name != "all":
@@ -195,6 +226,7 @@ class StandardStateMapWrapper(StandardStateMap):
                 else:
                     state.set_pause_on_substate(name, method)
 
+        
     async def switch_to_follower(self, old_state=None):
         # The vote_at_start flag causes the follower
         # to start an election immediately so that
@@ -207,8 +239,9 @@ class StandardStateMapWrapper(StandardStateMap):
         else:
             vote = False
         follower = FollowerWrapper(server=self.server,
-                                   timeout=3.0,
-                                   vote_at_start=False)
+                                   timeout=0.5,
+                                   vote_at_start=False,
+                                   server_wrapper=self.server_wrapper)
         self.first_time = False
         self.server.set_state(follower)
         self.set_state(follower)
@@ -225,7 +258,8 @@ class StandardStateMapWrapper(StandardStateMap):
         if self.election_counter < 0:
             breakpoint()
         candidate = CandidateWrapper(server=self.server,
-                                     timeout=0.5)
+                                     timeout=0.5,
+                                     server_wrapper=self.server_wrapper)
         self.server.set_state(candidate)
         self.set_state(candidate)
         return candidate
@@ -239,7 +273,9 @@ class StandardStateMapWrapper(StandardStateMap):
         # when an election is needed.
         self.election_counter = 0
         leader = LeaderWrapper(server=self.server,
-                               heartbeat_timeout=0.5)
+                               heartbeat_timeout=0.5,
+                               server_wrapper=self.server_wrapper)
+
         self.server.set_state(leader)
         self.set_state(leader)
         return leader

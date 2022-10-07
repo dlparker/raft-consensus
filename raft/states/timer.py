@@ -8,15 +8,18 @@ class Timer:
         self.callback = callback
         self.task = None
         self.keep_running = False
+        self.terminated = False
 
     def start(self):
+        if self.terminated:
+            raise Exception("tried to start already terminated timer")
         self.keep_running = True
         self.task = asyncio.create_task(self.run())
 
     async def one_pass(self):
         start_time = time.time()
         while time.time() - start_time < self.interval:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.005)
             if not self.keep_running:
                 return
         await self.callback()
@@ -27,14 +30,20 @@ class Timer:
         self.task = None
         
     async def stop(self):
+        if self.terminated:
+            raise Exception("tried to stop already terminated timer")
         self.keep_running = False
-        
-    async def reset(self):
-        await self.stop()
         while self.task:
             await asyncio.sleep(0.001)
+        
+    async def reset(self):
+        if self.terminated:
+            raise Exception("tried to reset already terminated timer")
+        await self.stop()
         self.start()
 
-    def get_interval(self):
-        return self.interval() if callable(self.interval) else self.interval
+    async def terminate(self):
+        await self.stop()
+        self.terminated = True
+
 

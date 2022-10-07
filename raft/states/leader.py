@@ -79,7 +79,8 @@ class Leader(State):
         last_rec = log.read()
         if last_rec is None:
             # special case, log is empty
-            self.logger.error("follower %s thinks there log records to pull but log is empty",
+            self.logger.error("follower %s thinks there log records" \
+                              "to pull but log is empty",
                               message.sender, prev_index)
             return self, None
         fc = self.followers[message.sender]
@@ -91,7 +92,8 @@ class Leader(State):
             prev_index = fc.next_index - 1
             prev_rec = log.read(prev_index)
             if not prev_rec:
-                self.logger.error("cannot find last log message %d for follower %s",
+                self.logger.error("cannot find last log message %d" \
+                                  " for follower %s",
                                   prev_index, message.sender)
                 return self, None
             # this helps the follower validate the log position
@@ -122,7 +124,7 @@ class Leader(State):
                           prev_index, prev_term, message.sender)
         await self.server.post_message(append_entry)
         
-    async def on_append_response_received(self, message):
+    async def on_append_response(self, message):
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -277,18 +279,6 @@ class Leader(State):
         await self.server.post_message(reply)
         return self, None
         
-        
-    async def on_append_response(self, message):
-        # check if last append_entries good?
-        log = self.server.get_log()
-        last_rec = log.read()
-        if not message.data["response"]:
-            return await self.on_log_pull(message)
-        else:
-            await self.on_append_response_received(message)
-
-        return self, None
-    
     async def send_heartbeat(self):
         log = self.server.get_log()
         last_rec = log.read()

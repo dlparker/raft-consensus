@@ -21,6 +21,7 @@ class Candidate(Voter):
         self.server = server
         server.set_state(self)
         self.votes = {}
+        self.switched = False
         self.candidate_timer = self.server.get_timer("candidate-interval",
                                                      self.candidate_interval(),
                                                      self.on_timer)
@@ -71,10 +72,10 @@ class Candidate(Voter):
             # held by two out of three servers.
             # with one dead.
             if len(self.votes.keys()) + 1 > self.server.total_nodes / 2:
-                await self.candidate_timer.stop()
+                self.switched = True
                 sm = self.server.get_state_map()
                 leader = await sm.switch_to_leader(self)
-                #leader = Leader(self.server)
+                await self.candidate_timer.terminate() # never run again
                 self.logger.info("changing to leader")
                 return leader, None
 
@@ -116,11 +117,19 @@ class Candidate(Voter):
 
     # received append entry from leader or not enough votes -> step down
     async def resign(self):
-        await self.candidate_timer.stop()
-        sm = self.server.get_state_map()
-        follower = await sm.switch_to_follower(self)
-        self.logger.info("candidate resigned")
-        return follower, None
+        if self.switched:
+            # order in async makes race for server states
+            # switch and new timer fire
+            return
+        try:
+            self.switched = True
+            sm = self.server.get_state_map()
+            follower = await sm.switch_to_follower(self)
+            await self.candidate_timer.terminate() # never run again
+            self.logger.info("candidate resigned")
+            return follower, None
+        except:
+            self.logger.error(traceback.format_exc())
 
     def get_leader_addr(self):
         return None

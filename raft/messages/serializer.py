@@ -13,7 +13,7 @@ class Serializer:
             'data': message.data,
             'term': message.term,
             'original_sender': message.original_sender,
-            'msg_number': msg_number,
+            'msg_number': message.msg_number,
         }
         return msgpack.packb(data, use_bin_type=True)
 
