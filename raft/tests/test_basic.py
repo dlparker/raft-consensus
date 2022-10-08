@@ -106,22 +106,6 @@ class TestUtils(unittest.TestCase):
             new_msg = Serializer.deserialize(bad_data)
 
 
-        from raft.states.timer import Timer
-        def my_interval():
-            return 10
-        async def runner():
-            t1 = Timer(my_interval, None)
-            self.assertEqual(t1.get_interval(), 10)
-            t2 = Timer(20, None)
-            self.assertEqual(t2.get_interval(), 20)
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(runner())
-            
 
 class TestMemoryLog(unittest.TestCase):
 

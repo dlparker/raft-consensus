@@ -138,13 +138,15 @@ class Leader(State):
         if log.get_commit_index() != message_commit:
             # this is a common occurance since we commit after a quorum
             self.logger.debug("got append response message from %s but " \
-                                "all log messages already committed", message.sender)
-            self.logger.debug("message from %s %s last_rec %s", message.sender,
-                              message.data, last_rec)
+                                "all log messages already committed",
+                              message.sender)
+            self.logger.debug("ignoring message because sender is consistent " \
+                              "with our log to that point")
             return
         sender_index = message.data['prevLogIndex']
         if sender_index and last_index and last_index != sender_index + 1:
-            self.logger.error("got append response message from %s for index %s but " \
+            self.logger.error("got append response message from %s"
+                              " for index %s but " \
                               "log index is up to %s, should be one less",
                               message.sender, sender_index, last_index)
             return
@@ -382,14 +384,15 @@ class Leader(State):
 
     async def on_vote_received(self, message): # pragma: no cover error
         log = self.server.get_log()
-        self.logger.info("leader unexpectedly got vote: message.term = %d local_term = %d",
+        self.logger.info("leader ignoring vote reply: message.term = %d local_term = %d",
                          message.term, log.get_term())
 
     async def on_vote_request(self, message): # pragma: no cover error
-        self.logger.warning("got unexpectedly vote request from %s", message.sender)
+        self.logger.info("ignoring vote request from %s", message.sender)
     
     async def on_append_entries(self, message): # pragma: no cover error
-        self.logger.warning("got unexpectedly vote request from %s", message.sender)
+        self.logger.warning("leader unexpectedly got append entries from %s",
+                            message.sender)
     
     async def on_term_start(self, message): # pragma: no cover error
         self.logger.warning("leader got term start message from %s, makes no sense!",

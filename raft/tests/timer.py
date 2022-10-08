@@ -1,6 +1,7 @@
 import time
 import asyncio
 import threading
+import logging
 from collections import defaultdict
 
 timer_set = None
@@ -73,6 +74,7 @@ class ControlledTimer:
         self.eye_d = f"{self.name}_{self.thread_id}"
         self.interval = interval
         self.callback = callback
+        self.logger = logging.getLogger(__name__)
         self.task = None
         self.keep_running = False
         global timer_set
@@ -85,6 +87,7 @@ class ControlledTimer:
         self.timer_set = timer_set
 
     def start(self):
+        self.logger.debug("Starting timer %s", self.eye_d)
         if self.terminated:
             raise Exception("tried to start already terminated timer")
         self.keep_running = True
@@ -111,6 +114,7 @@ class ControlledTimer:
             self.countdown -= 1
         if not self.keep_running:
             return
+        self.logger.debug("launching callback task from %s", self.eye_d)
         asyncio.create_task(self.callback())
         
     async def run(self):
@@ -121,8 +125,9 @@ class ControlledTimer:
     async def stop(self):
         if self.terminated:
             raise Exception("tried to stop already terminated timer")
-        if self.keep_running:
+        if not self.keep_running:
             return
+        self.logger.debug("Stopping timer %s", self.eye_d)
         self.keep_running = False
         self.countdown = -1
         start_time = time.time()
@@ -130,6 +135,7 @@ class ControlledTimer:
             await asyncio.sleep(0.005)
         if self.task:
             raise Exception("timer task did not exit!")
+        self.logger.debug("Stopped timer %s", self.eye_d)
 
     async def reset(self):
         if self.terminated:

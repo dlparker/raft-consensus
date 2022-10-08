@@ -149,7 +149,7 @@ class LeaderWrapper(Leader):
     async def on_message(self, message):
         await self.cst.on_message(message)
 
-    async def on_vote_received(self, message): # pragma: no cover error
+    async def break_on_vote_received(self, message): # pragma: no cover error
         reason = "Unexpectedly got vote received"
         self.logger.warning(reason)
         try:
@@ -160,7 +160,7 @@ class LeaderWrapper(Leader):
             print(dir(self.server))
             raise
         
-    async def on_heartbeat(self, message): # pragma: no cover error
+    async def break_on_heartbeat(self, message): # pragma: no cover error
         reason = "Why am I getting hearbeat when I am leader?"
         self.logger.warning(reason)
         try:

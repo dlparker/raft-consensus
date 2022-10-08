@@ -134,6 +134,9 @@ class Candidate(Voter):
     def get_leader_addr(self):
         return None
     
+    async def on_vote_request(self, message):
+        self.logger.info("ignoring vote request from %s", message.sender)
+        
     async def on_client_command(self, message):
         await self.dispose_client_command(message, self.server)
 

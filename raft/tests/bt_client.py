@@ -130,14 +130,16 @@ class MemoryBankTellerClient:
         return loop.run_until_complete(self.a_get_result())
         
     async def a_get_result(self):
-        start_time = time.time()
         w = None
+        start_time = time.time()
         while time.time() - start_time < 2:
             if not self.queue.empty():
                 w = await self.queue.get()
                 break
             await asyncio.sleep(0.01)
+            xtime = time.time()
         if not w:
+            print(xtime - start_time)
             raise Exception("timeout")
         data = w.data
         result = Serializer.deserialize(data)

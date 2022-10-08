@@ -25,9 +25,9 @@ for ot in nodes:
 
 
 wdir = Path(f"/tmp/raft_tests/server_{index}")
-if wdir.exists:
+if wdir.exists():
     shutil.rmtree(wdir)
-wdir.mkdir()
+wdir.mkdir(parents=True)
 os.chdir(wdir)
 config,_ = config_logging(f"{wdir.as_posix()}/server.log")
 dictConfig(config)

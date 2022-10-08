@@ -1,3 +1,4 @@
+import logging
 from .base_state import State
 from ..messages.request_vote import RequestVoteResponseMessage
 
@@ -7,8 +8,11 @@ class Voter(State):
 
     def __init__(self):
         self.last_vote = None
+        # this will be overriden by child states, prolly, s'fine
+        self.logger = logging.getLogger(__name__) 
+        
 
-    async def on_vote_request(self, message):
+    async def common_on_vote_request(self, message):
         # If this node has not voted,
         # and if lastLogIndex in message
         # is not earlier than our local log index
@@ -32,22 +36,25 @@ class Voter(State):
             # no log records yet
             last_index = None
             last_term = None
-        vote = False
+        approve = False
         if self.last_vote is None and last_index is None:
-            vote = True
+            self.logger.info("everything None, voting true")
+            approve = True
         elif (self.last_vote is None 
               and message.data["lastLogIndex"] is None and last_rec is None):
-            vote = True
+            self.logger.info("last vote None, logs empty, voting true")
+            approve = True
         elif (self.last_vote is None 
             and message.data["lastLogIndex"] >= last_index):
-            vote = True
-        if vote:
+            self.logger.info("last vote None, logs match, voting true")
+            approve = True
+        if approve:
             self.last_vote = message.sender
-            await self.send_vote_response_message(message)
+            await self.send_vote_response_message(message, votedYes=True)
         else:
+            self.logger.info("voting false")
             await self.send_vote_response_message(message, votedYes=False)
-
-        return self, None
+        return approve
 
     async def send_vote_response_message(self, message, votedYes=True):
         vote_response = RequestVoteResponseMessage(

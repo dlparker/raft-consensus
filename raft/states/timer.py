@@ -32,9 +32,14 @@ class Timer:
     async def stop(self):
         if self.terminated:
             raise Exception("tried to stop already terminated timer")
+        if self.keep_running:
+            return
         self.keep_running = False
-        while self.task:
-            await asyncio.sleep(0.001)
+        while time.time() - start_time < 0.1 and self.task:
+            while self.task:
+                await asyncio.sleep(0.001)
+        if self.task:
+            raise Exception("timer task did not exit!")
         
     async def reset(self):
         if self.terminated:
