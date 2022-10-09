@@ -4,6 +4,8 @@ import threading
 import logging
 from collections import defaultdict
 
+from raft.states.timer import Timer
+
 timer_set = None
 
 def get_timer_set():
@@ -66,21 +68,16 @@ class TimerSet:
             timer.start()
         
 
-class ControlledTimer:
+class ControlledTimer(Timer):
 
-    def __init__(self, timer_name, interval, callback): 
-        self.name = timer_name
+    def __init__(self, timer_name, interval, callback, source_state=None):
+        super().__init__(timer_name, interval, callback, source_state)
         self.thread_id = threading.current_thread().ident
         self.eye_d = f"{self.name}_{self.thread_id}"
-        self.interval = interval
-        self.callback = callback
         self.logger = logging.getLogger(__name__)
-        self.task = None
-        self.keep_running = False
-        global timer_set
         self.countdown = -1
-        self.loop = None
         self.terminated = False
+        global timer_set
         if timer_set is None:
             timer_set = TimerSet()
         timer_set.register_timer(self)
@@ -88,64 +85,33 @@ class ControlledTimer:
 
     def start(self):
         self.logger.debug("Starting timer %s", self.eye_d)
-        if self.terminated:
-            raise Exception("tried to start already terminated timer")
-        self.keep_running = True
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        self.task = asyncio.create_task(self.run())
+        super().start()
 
     async def one_pass(self):
+        await super().one_pass()
         start_time = time.time()
-        while time.time() - start_time < self.interval:
-            if not self.keep_running:
-                return
-            if self.countdown == 0:
-                break
-            await asyncio.sleep(0.005)
+        if self.countdown < 0:
+            return
         if self.countdown == 0:
             self.keep_running = False
             self.countdown = -1
             return
         elif self.countdown > 0:
             self.countdown -= 1
-        if not self.keep_running:
-            return
-        self.logger.debug("launching callback task from %s", self.eye_d)
-        asyncio.create_task(self.callback())
-        
-    async def run(self):
-        while self.keep_running:
-            await self.one_pass()
-        self.task = None
         
     async def stop(self):
-        if self.terminated:
-            raise Exception("tried to stop already terminated timer")
-        if not self.keep_running:
-            return
         self.logger.debug("Stopping timer %s", self.eye_d)
-        self.keep_running = False
-        self.countdown = -1
-        start_time = time.time()
-        while time.time() - start_time < 0.1 and self.task:
-            await asyncio.sleep(0.005)
-        if self.task:
-            raise Exception("timer task did not exit!")
+        await super().stop()
         self.logger.debug("Stopped timer %s", self.eye_d)
 
     async def reset(self):
-        if self.terminated:
-            raise Exception("tried to reset already terminated timer")
-        await self.stop()
-        self.start()
+        self.logger.debug("resetting timer %s", self.eye_d)
+        await super().stop()
 
     async def terminate(self):
         if self.terminated:
             raise Exception("tried to stop terminate already terminated timer")
-        await self.stop()
+        self.logger.debug("terminating timer %s", self.eye_d)
+        await super().terminate()
         timer_set.delete_timer(self)
-        self.terminated = True
+

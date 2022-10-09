@@ -52,21 +52,22 @@ class StateMap(metaclass=abc.ABCMeta):
 
 class StandardStateMap(StateMap):
 
-
-    def new__init__(self, server):
+    server = None
+    state = None
+    queue = None
+    # can't be done with init because instance
+    # of this class required for server class init
+    async def activate(self, server) -> State:
         self.server = server
         self.state = None
         self.queue = asyncio.Queue()
-
+        return await self.switch_to_follower()
+    
     async def add_event(self, event):
         self.queue.put(event)
 
     async def next_event(self):
         return await self.queue.get()
-    
-    async def activate(self, server) -> State:
-        self.server = server
-        return await self.switch_to_follower()
         
     def get_server(self):
         return self.server

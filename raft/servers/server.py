@@ -50,9 +50,10 @@ class Server:
         return self.state_map
     
     def get_timer(self, name, interval, callback):
+        self.logger.info("creating timer %s", name)
         if not self.timer_class:
-            return Timer(interval, callback)
-        return self.timer_class(name, interval, callback)
+            return Timer(name, interval, callback, self.state)
+        return self.timer_class(name, interval, callback, self.state)
 
     def set_timer_class(self, cls):
         self.timer_class = cls

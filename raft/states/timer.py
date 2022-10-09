@@ -4,24 +4,30 @@ import time
 class Timer:
 
     """Scheduling periodic callbacks"""
-    def __init__(self, interval, callback):
+    def __init__(self, timer_name, interval, callback, source_state=None):
+        self.name = timer_name
         self.interval = interval
         self.callback = callback
+        self.source_state = source_state
         self.task = None
         self.keep_running = False
         self.terminated = False
-
+        self.start_time = None
+        
     def start(self):
         if self.terminated:
             raise Exception("tried to start already terminated timer")
         self.keep_running = True
         self.task = asyncio.create_task(self.run())
+        self.start_time = time.time()
 
     async def one_pass(self):
-        start_time = time.time()
         while time.time() - start_time < self.interval:
             await asyncio.sleep(0.005)
             if not self.keep_running:
+                return
+        if self.source_state:
+            if self.source_state.is_terminate():
                 return
         await self.callback()
         
@@ -45,8 +51,10 @@ class Timer:
     async def reset(self):
         if self.terminated:
             raise Exception("tried to reset already terminated timer")
-        await self.stop()
-        self.start()
+        if not self.keep_running or self.task is None:
+            self.start()
+        else:
+            self.start_time = time.time()
 
     async def terminate(self):
         await self.stop()
