@@ -23,15 +23,15 @@ class Follower(Voter):
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        self.election_timer = None
+        self.leaderless_timer = None
         self.switched = False
         self.leader_addr = None
         self.substate = Substate.starting
         interval = self.election_interval()
-        self.election_timer = self.server.get_timer("follower-election",
+        self.leaderless_timer = self.server.get_timer("follower-election",
                                                      interval,
-                                                     self.start_election)
-        self.election_timer.start()
+                                                     self.leader_lost)
+        self.leaderless_timer.start()
         self.last_vote = None
         self.last_vote_time = None
         
@@ -47,30 +47,33 @@ class Follower(Voter):
     def election_interval(self):
         return random.uniform(self.timeout, 2 * self.timeout)
 
-    async def start_election(self):
-        if self.switched:
-            # order in async makes race for server states
-            # switch and new timer fire
+    async def leader_lost(self):
+        if self.terminated:
             return
-        if self.last_vote_time and time.time() - self.last_vote_time < .75:
+        return await self.start_election()
+    
+    async def start_election(self):
+        if (self.last_vote_time and time.time() - self.last_vote_time <
+            self.timeout):
             self.logger.error("timing problem")
             await asyncio.sleep(time.time() - self.last_vote_time)
             if self.switched or self.leader_addr is not None:
                 return
         try:
+            self.terminated = True
+            await self.leaderless_timer.terminate()
             self.logger.debug("starting election")
             self.logger.debug("doing switch to candidate")
             sm = self.server.get_state_map()
             self.switched = True
             candidate = await sm.switch_to_candidate(self)
-            await self.election_timer.terminate() # never run again
         except:
             self.logger.error(traceback.format_exc())
             raise
 
     async def on_heartbeat(self, message):
         # reset timeout
-        await self.election_timer.reset()
+        await self.leaderless_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
@@ -86,7 +89,7 @@ class Follower(Voter):
             await self.set_substate(Substate.synced)
 
     async def on_log_pull_response(self, message):
-        await self.election_timer.reset()
+        await self.leaderless_timer.reset()
         data = message.data
         log = self.server.get_log()
         if len(data["entries"]) == 0:
@@ -226,7 +229,7 @@ class Follower(Voter):
         log.commit(leader_commit)
             
     async def on_append_entries(self, message):
-        await self.election_timer.reset()
+        await self.leaderless_timer.reset()
         log = self.server.get_log()
         data = message.data
         self.logger.debug("append %s %s", message, message.data)
@@ -313,7 +316,7 @@ class Follower(Voter):
                     response.receiver, response.term, data)
 
     async def on_term_start(self, message):
-        await self.election_timer.reset()
+        await self.leaderless_timer.reset()
         log = self.server.get_log()
         self.logger.info("follower got term start: message.term = %s local_term = %s",
                          message.term, log.get_term())
@@ -371,7 +374,7 @@ class Follower(Voter):
             self.logger.info("voting false")
             await self.send_vote_response_message(message, votedYes=False)
             self.last_vote_time = time.time()
-        await self.election_timer.reset() # election in progress, let it run
+        await self.leaderless_timer.reset() # election in progress, let it run
         return self, None
         
     async def on_client_command(self, message):

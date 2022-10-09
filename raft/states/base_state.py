@@ -43,6 +43,7 @@ class Substate(str, Enum):
 class State(metaclass=abc.ABCMeta):
     _type = "base"
     substate = Substate.starting
+    terminated = False
     
     @classmethod
     def __subclasshook__(cls, subclass):  # pragma: no cover abstract
@@ -65,9 +66,14 @@ class State(metaclass=abc.ABCMeta):
 
     async def set_substate(self, substate: Substate):
         self.substate = substate
-        
 
+    def is_terminated(self):
+        return self.terminated
+    
     async def on_message(self, message):
+        if self.terminated:
+            await self.server.reroute_message(message)
+            return
         logger = logging.getLogger(__name__)
         
         # If the message.term < currentTerm -> tell the sender to update term

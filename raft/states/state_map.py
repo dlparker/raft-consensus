@@ -1,7 +1,11 @@
 import abc
 from typing import Optional
+import asyncio
+import logging
+import traceback
 
 from .base_state import State
+from .event import TimerEvent, MessageEvent, BaseEvent
 from .candidate import Candidate
 from .follower import Follower
 from .leader import Leader
@@ -48,8 +52,17 @@ class StateMap(metaclass=abc.ABCMeta):
 
 class StandardStateMap(StateMap):
 
-    server = None
-    state = None
+
+    def new__init__(self, server):
+        self.server = server
+        self.state = None
+        self.queue = asyncio.Queue()
+
+    async def add_event(self, event):
+        self.queue.put(event)
+
+    async def next_event(self):
+        return await self.queue.get()
     
     async def activate(self, server) -> State:
         self.server = server
