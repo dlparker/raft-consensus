@@ -261,9 +261,9 @@ class TestTimer(unittest.TestCase):
         # Now make sure that an exception happens if the
         # loop won't stop for some strange reason
         # the one_pass method will not break the timer
-        self.runner = True
         class Runaway(Timer):
 
+            runner = True
             async def run(self):
                     while self.keep_running:
                         self.start_time = time.time()

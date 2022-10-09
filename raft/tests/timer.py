@@ -39,10 +39,8 @@ class TimerSet:
         for timer in self.recs.values():
             await timer.stop()
         
-    def resume_all(self, countdown=None):
+    def resume_all(self):
         for timer in self.recs.values():
-            if countdown:
-                timer.countdown = countdown
             timer.start()
 
     async def pause_by_name(self, name):
@@ -60,11 +58,9 @@ class TimerSet:
             timer = self.recs[timer_id]
             await timer.reset()
         
-    def resume_by_name(self, name, countdown=None):
+    def resume_by_name(self, name):
         for tid in self.ids_by_name[name]:
             timer = self.recs[tid]
-            if countdown:
-                timer.countdown = countdown
             timer.start()
         
 
@@ -75,7 +71,6 @@ class ControlledTimer(Timer):
         self.thread_id = threading.current_thread().ident
         self.eye_d = f"{self.name}_{self.thread_id}"
         self.logger = logging.getLogger(__name__)
-        self.countdown = -1
         self.terminated = False
         global timer_set
         if timer_set is None:
@@ -87,18 +82,6 @@ class ControlledTimer(Timer):
         self.logger.debug("Starting timer %s", self.eye_d)
         super().start()
 
-    async def one_pass(self):
-        await super().one_pass()
-        start_time = time.time()
-        if self.countdown < 0:
-            return
-        if self.countdown == 0:
-            self.keep_running = False
-            self.countdown = -1
-            return
-        elif self.countdown > 0:
-            self.countdown -= 1
-        
     async def stop(self):
         self.logger.debug("Stopping timer %s", self.eye_d)
         await super().stop()
@@ -106,7 +89,7 @@ class ControlledTimer(Timer):
 
     async def reset(self):
         self.logger.debug("resetting timer %s", self.eye_d)
-        await super().stop()
+        await super().reset()
 
     async def terminate(self):
         if self.terminated:

@@ -71,7 +71,7 @@ class State(metaclass=abc.ABCMeta):
         return self.terminated
     
     async def on_message(self, message):
-        if self.terminated:
+        if self.terminated and False:
             await self.server.reroute_message(message)
             return
         logger = logging.getLogger(__name__)

@@ -93,7 +93,7 @@ class UDPBankTellerServer:
             asyncio.set_event_loop(loop)
         loop.run_until_complete(self._run())
         loop.run_forever()
-        loop.stop()
+        #loop.stop()
 
 
 class MemoryBankTellerServer:

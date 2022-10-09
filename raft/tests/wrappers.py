@@ -85,7 +85,7 @@ class FollowerWrapper(Follower):
         # If vote_at_start flag is true, start and election
         # immediately so tests don't have to wait for timeout.
         if vote_at_start:
-            asyncio.get_event_loop().call_soon(self.start_election)
+            asyncio.get_event_loop().call_soon(self.leader_lost)
 
     def set_pause_before_on_message(self, method):
         self.cst.set_pause_before_on_message(method)

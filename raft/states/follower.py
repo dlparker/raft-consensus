@@ -268,7 +268,6 @@ class Follower(Voter):
         last_rec = log.read()
         if last_rec is None:
             self.logger.info("leader sent an append message with no entries, but we have no local log records, trying to sync up")
-            breakpoint()
             if await self.do_sync_action(message):
                 await self.send_response_message(message)
                 self.logger.info("Sent log update ack %s", message)
@@ -292,7 +291,6 @@ class Follower(Voter):
                     return
         # we are not in sync, fix that
         self.logger.debug("append entry empty and indexes and commits did not make sense against local log, trying to sync with leader")
-        breakpoint()
         if await self.do_sync_action(message):
             await self.send_response_message(message)
             self.logger.info("Sent log update ack %s", message)
