@@ -1,5 +1,7 @@
 import asyncio
 import time
+import logging
+import traceback
 
 class Timer:
 
@@ -13,38 +15,41 @@ class Timer:
         self.keep_running = False
         self.terminated = False
         self.start_time = None
+        self.logger = logging.getLogger(__name__)
         
     def start(self):
         if self.terminated:
             raise Exception("tried to start already terminated timer")
         self.keep_running = True
         self.task = asyncio.create_task(self.run())
-        self.start_time = time.time()
 
     async def one_pass(self):
-        while time.time() - start_time < self.interval:
+        while time.time() - self.start_time < self.interval:
             await asyncio.sleep(0.005)
             if not self.keep_running:
                 return
         if self.source_state:
-            if self.source_state.is_terminate():
+            if self.source_state.is_terminated():
                 return
         await self.callback()
         
     async def run(self):
         while self.keep_running:
-            await self.one_pass()
+            self.start_time = time.time()
+            try:
+                await self.one_pass()
+            except:
+                self.logger.error(traceback.format_exc())
         self.task = None
         
     async def stop(self):
         if self.terminated:
             raise Exception("tried to stop already terminated timer")
-        if self.keep_running:
+        if not self.keep_running:
             return
         self.keep_running = False
-        while time.time() - start_time < 0.1 and self.task:
-            while self.task:
-                await asyncio.sleep(0.001)
+        while time.time() - self.start_time < self.interval and self.task:
+            await asyncio.sleep(0.001)
         if self.task:
             raise Exception("timer task did not exit!")
         
@@ -57,6 +62,8 @@ class Timer:
             self.start_time = time.time()
 
     async def terminate(self):
+        if self.terminated:
+            raise Exception("tried to terminate already terminated timer")
         await self.stop()
         self.terminated = True
 

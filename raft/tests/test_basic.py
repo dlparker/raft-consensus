@@ -147,7 +147,6 @@ class TestMemoryLog(unittest.TestCase):
         mlog.incr_term()
         self.assertEqual(mlog.get_term(), 11)
         
-        
 class TestTimer(unittest.TestCase):
 
     def setUp(self):
@@ -158,11 +157,139 @@ class TestTimer(unittest.TestCase):
 
     async def inner_test_timer_1(self):
         self.counter = 0
-        t1 = Timer(0.05, self.target)
+        t1 = Timer('foo', 0.05, self.target)
         t1.start()
         await asyncio.sleep(0.06)
         self.assertTrue(self.counter > 0)
+        await t1.terminate()
+        
+        self.counter = 0
+        t2 = Timer('bar', 0.05, self.target)
+        start_time = time.time()
+        t2.start()
+        while time.time() - start_time < 0.06:
+            await asyncio.sleep(0.005)
+            await t2.reset()
+        # should not have fired before we interupted with reset
+        self.assertEqual(self.counter, 0)
+        await asyncio.sleep(0.06)
+        self.assertTrue(self.counter > 0)
 
+        # make sure restart restarts if timer already stopped
+        await t2.stop()
+        # make sure stopping twice does not get error
+        await t2.stop()
+        self.counter = 0
+        await t2.reset()
+        start_time = time.time()
+        while time.time() - start_time < 0.06:
+            await asyncio.sleep(0.01)
+        self.assertTrue(self.counter > 0)
+
+        
+        await t2.terminate()
+        with self.assertRaises(Exception) as context:
+            t1.start()
+        self.assertTrue("start" in str(context.exception))
+        self.assertTrue("terminated" in str(context.exception))
+        with self.assertRaises(Exception) as context:
+            await t1.stop()
+        self.assertTrue("stop" in str(context.exception))
+        self.assertTrue("terminated" in str(context.exception))
+        with self.assertRaises(Exception) as context:
+            await t1.reset()
+        self.assertTrue("reset" in str(context.exception))
+        self.assertTrue("terminated" in str(context.exception))
+        with self.assertRaises(Exception) as context:
+            await t1.terminate()
+        self.assertTrue("terminate " in str(context.exception))
+        self.assertTrue("terminated" in str(context.exception))
+            
+        # test that terminated state prevents callback
+        # dummy objects to get follower to init enough
+        # to use it as for timer check of terminated state 
+        class ftimer:
+            def start(self):
+                return
+        class dserver:
+            def get_timer(self, name, interval, function):
+                return ftimer()
+        fo = Follower(dserver())
+        
+        t3 = Timer('on_term', 0.05, self.target, fo)
+        # make sure it works once
+        t3.start()
+        await asyncio.sleep(0.06)
+        await t3.stop() 
+        self.assertTrue(self.counter > 0)
+
+        # now change follower state to terminated
+        fo.terminated = True
+        self.counter = 0
+        await t3.reset()
+        await asyncio.sleep(0.06)
+        await t3.terminate() 
+        self.assertEqual(self.counter, 0)
+
+        # Now make sure that an exception in the execution of
+        # the one_pass method will not break the timer
+        class Exploder(Timer):
+            fuse = -1
+            async def one_pass(self):
+                self.fuse += 1
+                if self.fuse == 1:
+                    raise Exception("I die!")
+                await super().one_pass()
+                
+        
+        self.counter = 0
+        t4 = Exploder('boom', 0.05, self.target)
+        # first pass should work
+        t4.start()
+        await asyncio.sleep(0.06)
+        self.assertEqual(self.counter, 1)
+        # on second pass one_pass should blow up and callback won't happen
+        # explode happens right away, and recalling one_pass happens right
+        # away too, so don't wait long
+        await asyncio.sleep(0.01)
+        self.assertEqual(self.counter, 1)
+        # third pass should work
+        await asyncio.sleep(0.06)
+        self.assertTrue(self.counter > 1)
+        await t4.terminate()
+
+        # Now make sure that an exception happens if the
+        # loop won't stop for some strange reason
+        # the one_pass method will not break the timer
+        self.runner = True
+        class Runaway(Timer):
+
+            async def run(self):
+                    while self.keep_running:
+                        self.start_time = time.time()
+                        try:
+                            await self.one_pass()
+                        except:
+                            self.logger.error(traceback.format_exc())
+
+                        while self.runner:
+                            await asyncio.sleep(0.01)
+                        self.task = None
+
+        t5 = Runaway('boom', 0.05, self.target)
+        # first pass should work
+        t5.start()
+        self.counter = 0
+        await asyncio.sleep(0.06)
+        self.assertEqual(self.counter, 1)
+        with self.assertRaises(Exception) as context:
+            await t5.stop()
+        # cleanup
+        t5.runner = False
+        await t5.stop()
+        await t5.terminate()
+
+        
     def test_timer_1(self):
         try:
             loop = asyncio.get_running_loop()
@@ -203,6 +330,8 @@ class TestTimer(unittest.TestCase):
         await asyncio.sleep(0.6)
         self.assertTrue(self.counter > 1)
         
+        await t1.terminate()
+        await t2.terminate()
 
     def test_controlled_timer_1(self):
         try:
