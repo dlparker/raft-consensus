@@ -60,6 +60,10 @@ class Leader(State):
         await self.send_term_start()
         await self.set_substate(Substate.became_leader)
         
+    async def stop(self):
+        self.terminated = True
+        await self.heartbeat_timer.terminate()
+        
     def get_leader_addr(self):
         return self.server.endpoint
     

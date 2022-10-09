@@ -41,6 +41,10 @@ class Follower(Voter):
     def get_leader_addr(self):
         return self.leader_addr
     
+    async def stop(self):
+        self.terminated = True
+        await self.leaderless_timer.terminate()
+        
     async def set_substate(self, substate: Substate):
         self.substate = substate
         

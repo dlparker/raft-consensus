@@ -33,6 +33,10 @@ class Candidate(Voter):
     def candidate_interval(self):
         return random.uniform(0, self.timeout)
 
+    async def stop(self):
+        self.terminated = True
+        await self.candidate_timer.terminate()
+        
     async def on_term_start(self, message):
         self.logger.info("candidate resigning because we got a term start message")
         await self.resign()

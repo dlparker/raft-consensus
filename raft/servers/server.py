@@ -34,8 +34,9 @@ class Server:
         )
         self.logger.info('Server on %s', self.endpoint)
         
-    def stop(self):
+    async def stop(self):
         self.comms_task.cancel()
+        await self.state.stop()
         
     def get_log(self):
         return self.log

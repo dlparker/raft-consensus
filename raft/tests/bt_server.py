@@ -92,10 +92,17 @@ class UDPBankTellerServer:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         loop.run_until_complete(self._run())
-        loop.run_forever()
-        #loop.stop()
+        try:
+            # run_forever() returns after calling loop.stop()
+            loop.run_forever()
+            tasks = Task.all_tasks()
+            for t in [t for t in tasks if not (t.done() or t.cancelled())]:
+                # give canceled tasks the last chance to run
+                loop.run_until_complete(t)
+        finally:
+            loop.close()        
 
-
+        
 class MemoryBankTellerServer:
 
     def __init__(self, port, working_dir, name, others,
@@ -169,7 +176,14 @@ class ServerThread(threading.Thread):
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        loop.run_until_complete(self._run())
+        try:
+            loop.run_until_complete(self._run())
+            tasks = Task.all_tasks()
+            for t in [t for t in tasks if not (t.done() or t.cancelled())]:
+                # give canceled tasks the last chance to run
+                loop.run_until_complete(t)
+        finally:
+            loop.close()        
         
     async def _run(self):
         try:
@@ -192,6 +206,7 @@ class ServerThread(threading.Thread):
             while self.keep_running:
                 await asyncio.sleep(0.01)
             await self.bt_server.comms.stop()
+            await self.server.stop()
         except:
             print("\n\n!!!!!!Server thread failed!!!!")
             traceback.print_exc()
