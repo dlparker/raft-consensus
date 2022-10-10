@@ -42,6 +42,8 @@ class Timer:
         if self.source_state:
             if self.source_state.is_terminated():
                 return
+            if self.source_state.server.get_state() != self.source_state:
+                return
         asyncio.create_task(self.callback())
         
     async def run(self):
@@ -49,9 +51,23 @@ class Timer:
             self.start_time = time.time()
             try:
                 await self.one_pass()
+                if self.source_state and self.source_state.is_terminated():
+                    self.logger.info("timer %s run method exiting because" \
+                                     "source state is terminated",
+                                     self.name)
+                    break
+                if (self.source_state
+                    and self.source_state.server.get_state() != self.source_state):
+                    self.logger.info("timer %s run method exiting because" \
+                                     "source state is no longer current",
+                                     self.name)
+                    break
             except:
                 self.logger.error(traceback.format_exc())
-        self.logger.info("timer %s run exiting", self.name)
+        if not self.keep_running:
+            self.logger.info("timer %s run method exiting on stop", self.name)
+        else:
+            self.keep_running = False
         self.task = None
         
     async def stop(self):

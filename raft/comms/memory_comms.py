@@ -109,12 +109,21 @@ class MemoryComms(CommsAPI):
                 w = await self.queue.get()
                 addr = w.addr
                 data = w.data
-                message = Serializer.deserialize(data)
+                try:
+                    message = Serializer.deserialize(data)
+                except Exception as e:  # pragma: no cover error
+                    self.logger.error(traceback.format_exc())
+                    self.logger.error("cannot deserialze incoming data '%s...'",
+                                      data[:30])
+                    continue
                 self.logger.debug("%s got %s from %s",
                                   self.endpoint, message.code, addr)
+                # ensure addresses are tuples
+                message._receiver = message.receiver[0], message.receiver[1]
+                message._sender = message.sender[0], message.sender[1]
                 if self.in_message_holder:
                     await self.in_message_holder(message, addr)
-                await self.server.on_message(data, addr)
+                await self.server.on_message(message)
             except Exception as e: # pragma: no cover error
                 self.logger.error(traceback.format_exc())
 

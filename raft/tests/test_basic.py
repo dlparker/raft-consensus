@@ -223,6 +223,7 @@ class TestTimer(unittest.TestCase):
         class dserver:
             def __init__(self):
                 self.log = MemoryLog()
+                self.state = None
                 
             def get_log(self):
                 return self.log
@@ -230,7 +231,15 @@ class TestTimer(unittest.TestCase):
             def get_timer(self, name, term, interval, function):
                 return ftimer()
 
-        fo = Follower(dserver())
+            def get_state(self):
+                return self.state
+
+            def set_state(self, state):
+                self.state = state
+
+        ds = dserver()
+        fo = Follower(ds)
+        ds.set_state(fo)
         
         t3 = Timer('on_term', 0, 0.05, self.target, fo)
         # make sure it works once

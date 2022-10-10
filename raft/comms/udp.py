@@ -51,7 +51,17 @@ class UDPComms(CommsAPI):
 
     async def on_message(self, data, addr):
         try:
-            await self.server.on_message(data, addr)
+            try:
+                message = Serializer.deserialize(data)
+            except Exception as e:  # pragma: no cover error
+                self.logger.error(traceback.format_exc())
+                self.logger.error("cannot deserialze incoming data '%s...'",
+                                  data[:30])
+                return
+            # ensure addresses are tuples
+            message._receiver = message.receiver[0], message.receiver[1]
+            message._sender = message.sender[0], message.sender[1]
+            await self.server.on_message(message)
         except Exception as e: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             
@@ -92,7 +102,8 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             except Exception as e:  # pragma: no cover error
                 self.logger.error(traceback.format_exc())
                 self.logger.error("error sending queued message %s", e)
-            await asyncio.sleep(0.05)
+            # git transport a chance to deliver before we dequeu another
+            await asyncio.sleep(0.0001)
 
     def connection_made(self, transport):
         self.transport = transport

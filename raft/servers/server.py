@@ -4,8 +4,6 @@ import errno
 import logging
 import traceback
 
-from ..messages.serializer import Serializer
-from ..messages.command import ClientCommandResultMessage
 from ..states.timer import Timer
 from ..app_api.app import App
 
@@ -63,22 +61,10 @@ class Server:
         if self.state != state:
             self.state = state
 
-    async def on_message(self, data, addr, recursed=False):
-        message = None
-        try:
-            message = Serializer.deserialize(data)
-        except Exception as e:  # pragma: no cover error
-            self.logger.error(traceback.format_exc())
-            self.logger.error("cannot deserialze incoming data '%s...'",
-                              data[:30])
-            return
-        try:
-            # ensure addresses are tuples
-            message._receiver = message.receiver[0], message.receiver[1]
-            message._sender = message.sender[0], message.sender[1]
-            self.logger.debug("state %s message %s", self.state, message)
-        except Exception as e: # pragma: no cover error
-            self.logger.error(traceback.format_exc())
+    def get_state(self):
+        return self.state
+
+    async def on_message(self, message, recursed=False):
         try:
             pre_state = self.state
             handled = await self.state.on_message(message)
@@ -91,7 +77,7 @@ class Server:
                     if recursed:
                         raise Exception("already recursed, not doing it again" \
                                         " to avoid loop")
-                    await self.on_message(data, addr, recursed=True)
+                    await self.on_message(message, recursed=True)
         except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("State %s got exception %s on message %s",
