@@ -1,3 +1,5 @@
 
-After making server and API, update state object constructors to expect an
-abstract server.
+
+Change the location of serialize/deserialize calls to the comms system, from
+the current server location.
+

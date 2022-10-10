@@ -63,7 +63,7 @@ class Server:
         if self.state != state:
             self.state = state
 
-    async def on_message(self, data, addr):
+    async def on_message(self, data, addr, recursed=False):
         message = None
         try:
             message = Serializer.deserialize(data)
@@ -80,10 +80,17 @@ class Server:
             self.logger.error(traceback.format_exc())
         try:
             pre_state = self.state
-            await self.state.on_message(message)
-            if pre_state != self.state:
-                self.logger.info("changed state from %s to %s",
+            handled = await self.state.on_message(message)
+            if not handled:
+                self.logger.info("on_message handler of state %s rejected message",
+                                 pre_state)
+                if pre_state != self.state:
+                    self.logger.info("changed state from %s to %s, recursing",
                                  pre_state, self.state)
+                    if recursed:
+                        raise Exception("already recursed, not doing it again" \
+                                        " to avoid loop")
+                    await self.on_message(data, addr, recursed=True)
         except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("State %s got exception %s on message %s",
