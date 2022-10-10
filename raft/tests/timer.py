@@ -32,12 +32,13 @@ class TimerSet:
         if timer.eye_d in self.recs:
             del self.recs[timer.eye_d]
             self.ids_by_name[timer.name].remove(timer.eye_d)
-            th_id = threading.get_ident()
-            self.ids_by_thread[th_id].remove(timer.eye_d)
+            for th_id, rec in self.ids_by_thread.items():
+                if timer.eye_d in rec:
+                    rec.remove(timer.eye_d)
         
     async def pause_all(self):
         for timer in self.recs.values():
-            await timer.stop()
+            await timer.pause()
         
     def resume_all(self):
         for timer in self.recs.values():
@@ -46,12 +47,12 @@ class TimerSet:
     async def pause_by_name(self, name):
         for tid in self.ids_by_name[name]:
             timer = self.recs[tid]
-            await timer.stop()
+            await timer.pause()
         
     async def pause_all_this_thread(self):
         for timer_id in self.ids_by_thread[threading.get_ident()]:
             timer = self.recs[timer_id]
-            await timer.stop()
+            await timer.pause()
         
     async def resume_all_this_thread(self):
         for timer_id in self.ids_by_thread[threading.get_ident()]:
@@ -86,6 +87,26 @@ class ControlledTimer(Timer):
         self.logger.debug("Stopping timer %s", self.eye_d)
         await super().stop()
         self.logger.debug("Stopped timer %s", self.eye_d)
+
+    async def one_pass(self):
+        try:
+            await super().one_pass()
+        except asyncio.exceptions.CancelledError:
+            return
+        
+    async def pause(self):
+        self.logger.debug("Pausing timer %s", self.eye_d)
+        if self.task:
+            save_task = self.task
+            self.keep_running = False
+            self.task.cancel()
+            start_time = time.time()
+            
+            while self.task and time.time() - start_time < 1:
+                await asyncio.sleep(0.01)
+            if self.task:
+                raise Exception(f"timer {self.eye_d} would not cancel")
+        self.logger.debug("Paused timer %s", self.eye_d)
 
     async def reset(self):
         self.logger.debug("resetting timer %s", self.eye_d)

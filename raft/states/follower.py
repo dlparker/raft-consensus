@@ -83,6 +83,7 @@ class Follower(Voter):
 
     async def on_heartbeat(self, message):
         # reset timeout
+        self.logger.info("resetting leaderless_timer on heartbeat")
         await self.leaderless_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
@@ -239,6 +240,7 @@ class Follower(Voter):
         log.commit(leader_commit)
             
     async def on_append_entries(self, message):
+        self.logger.info("resetting leaderless_timer on append entries")
         await self.leaderless_timer.reset()
         log = self.server.get_log()
         data = message.data
@@ -324,6 +326,7 @@ class Follower(Voter):
                     response.receiver, response.term, data)
 
     async def on_term_start(self, message):
+        self.logger.info("resetting leaderless_timer on term start")
         await self.leaderless_timer.reset()
         log = self.server.get_log()
         self.logger.info("follower got term start: message.term = %s local_term = %s",
@@ -378,11 +381,13 @@ class Follower(Voter):
         if approve:
             self.last_vote = message.sender
             self.last_vote_time = time.time()
+            self.logger.info("voting true")
             await self.send_vote_response_message(message, votedYes=True)
         else:
             self.logger.info("voting false")
             await self.send_vote_response_message(message, votedYes=False)
             self.last_vote_time = time.time()
+        self.logger.info("resetting leaderless_timer on vote received")
         await self.leaderless_timer.reset() # election in progress, let it run
         return self, None
         

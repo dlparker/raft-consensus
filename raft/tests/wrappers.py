@@ -26,7 +26,12 @@ class StateCST:
         self.pause_before_on_message = None
         self.pause_after_on_message = None
         self.pause_on_substates = {}
-    
+
+    def clear_pauses(self):
+        self.pause_before_on_message = None
+        self.pause_after_on_message = None
+        self.pause_on_substates = {}
+
     def set_pause_before_on_message(self, method):
         self.pause_before_on_message = method
 
@@ -66,6 +71,8 @@ class StateCST:
         res = await self.superstate.on_message(message)
         if self.pause_after_on_message:
             try:
+                self.logger.info("%s pausing after on message %s",
+                                 self.state, message.code)
                 clear = await self.pause_after_on_message(self.state, message)
             except: 
                 traceback.print_exc()
@@ -87,6 +94,9 @@ class FollowerWrapper(Follower):
         if vote_at_start:
             asyncio.get_event_loop().call_soon(self.leader_lost)
 
+    def clear_pauses(self):
+        self.cst.clear_pauses()
+        
     def set_pause_before_on_message(self, method):
         self.cst.set_pause_before_on_message(method)
 
@@ -100,7 +110,7 @@ class FollowerWrapper(Follower):
         await self.cst.set_substate(substate)
 
     async def on_message(self, message):
-        await self.cst.on_message(message)
+        return await self.cst.on_message(message)
 
     
 class CandidateWrapper(Candidate):
@@ -111,6 +121,9 @@ class CandidateWrapper(Candidate):
         self.wrapper_logger = logging.getLogger("CandidateWrapper")
         self.cst = StateCST(self, super(), self.wrapper_logger)
 
+    def clear_pauses(self):
+        self.cst.clear_pauses()
+        
     def set_pause_before_on_message(self, method):
         self.cst.set_pause_before_on_message(method)
 
@@ -124,7 +137,7 @@ class CandidateWrapper(Candidate):
         await self.cst.set_substate(substate)
 
     async def on_message(self, message):
-        await self.cst.on_message(message)
+        return await self.cst.on_message(message)
 
 class LeaderWrapper(Leader):
 
@@ -134,6 +147,9 @@ class LeaderWrapper(Leader):
         self.wrapper_logger = logging.getLogger("LeaderWrapper")
         self.cst = StateCST(self, super(), self.wrapper_logger)
 
+    def clear_pauses(self):
+        self.cst.clear_pauses()
+        
     def set_pause_before_on_message(self, method):
         self.cst.set_pause_before_on_message(method)
 
@@ -147,7 +163,7 @@ class LeaderWrapper(Leader):
         await self.cst.set_substate(substate)
 
     async def on_message(self, message):
-        await self.cst.on_message(message)
+        return await self.cst.on_message(message)
 
     async def break_on_vote_received(self, message): # pragma: no cover error
         reason = "Unexpectedly got vote received"
@@ -192,6 +208,10 @@ class StandardStateMapWrapper(StandardStateMap):
     def set_server_wrapper(self, wrapper):
         self.server_wrapper = wrapper
         
+    def clear_pauses(self):
+        if self.state:
+            self.state.clear_pauses()
+        
     def set_pause_on_substate(self, state_name, substate_name, method):
         if state_name != "all":
             self.pause_methods[state_name][substate_name] = method
@@ -199,6 +219,9 @@ class StandardStateMapWrapper(StandardStateMap):
         for name in self.state_names:
             methrec = self.pause_methods[name]
             methrec[substate_name] = method
+        if self.state:
+            if str(self.state) == state_name or state_name == "all":
+                self.state.set_on_substate(substate_name, method)
             
     def set_pause_before_on_message(self, state_name, method):
         if state_name != "all":
@@ -207,6 +230,9 @@ class StandardStateMapWrapper(StandardStateMap):
         for name in self.state_names:
             methrec = self.pause_methods[name]
             methrec['before_on_message'] = method
+        if self.state:
+            if str(self.state) == state_name or state_name == "all":
+                self.state.set_before_after_on_message(method)
 
     def set_pause_after_on_message(self, state_name, method):
         if state_name != "all":
@@ -215,8 +241,12 @@ class StandardStateMapWrapper(StandardStateMap):
         for name in self.state_names:
             methrec = self.pause_methods[name]
             methrec['after_on_message'] = method
+        if self.state:
+            if str(self.state) == state_name or state_name == "all":
+                self.state.set_pause_after_on_message(method)
 
     def set_state(self, state):
+        self.state = state
         for sname,pauses in self.pause_methods.items():
             for name, method in pauses.items():
                 if name == "before_on_message":
@@ -225,7 +255,6 @@ class StandardStateMapWrapper(StandardStateMap):
                     state.set_pause_after_on_message(method)
                 else:
                     state.set_pause_on_substate(name, method)
-
         
     async def switch_to_follower(self, old_state=None):
         # The vote_at_start flag causes the follower

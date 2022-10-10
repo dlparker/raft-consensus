@@ -98,6 +98,7 @@ class State(metaclass=abc.ABCMeta):
             logger.debug("state %s has no handler for message %s",
                          self, message)
             return False
+        
     def get_type(self):
         return self._type
 

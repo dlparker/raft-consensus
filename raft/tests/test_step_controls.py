@@ -138,7 +138,7 @@ class TestStepControls(unittest.TestCase):
             self.pause_states[my_id[1]] = dict(state=state, mode="on_substate",
                                                substate=substate)
             if str(state)  == "follower":
-                await state.election_timer.stop()
+                await state.leaderless_timer.stop()
                 self.follower_pause_count += 1
                 if self.follower_pause_count == 2:
                     await get_timer_set().pause_all()
@@ -190,15 +190,19 @@ class TestStepControls(unittest.TestCase):
         # the pause methods return true, which should clear the
         # pause settings
         self.pause = False
-        await asyncio.sleep(0.01)
         get_timer_set().resume_all()
         for port in self.pause_states.keys():
             self.pause_states[port] = None
-
+        await asyncio.sleep(0.01)
             
         client1 =  self.get_client(5000)
         run_data = await self.wait_for_election_done(client1)
+ 
+        for name,rec in self.cluster.server_recs.items():
+            mserver = rec['memserver']
+            mserver.state_map.clear_pauses()
 
+        self.pause = True
         # now get them all to pause after the next message send, which will
         # be a heartbeat
         for name,rec in self.cluster.server_recs.items():
@@ -214,12 +218,14 @@ class TestStepControls(unittest.TestCase):
                 if rec is not None:
                     found_paused += 1
             await asyncio.sleep(.01)
-        if found_paused < 3:
-            get_timer_set().pause_all()
+        # expecting both followers to pause after on_message for heartbeat
+        # and leader for heartbeat response sent before the pause
         self.assertEqual(found_paused, 3)
+        get_timer_set().pause_all()
+        await asyncio.sleep(.01)
         from pprint import pprint
         pprint(self.pause_states)
-        # all should be paused
+        # all should be paused on after
         for port, rec in self.pause_states.items():
             if rec is None:
                 continue

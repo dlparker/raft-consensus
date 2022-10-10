@@ -69,8 +69,8 @@ class Server:
             pre_state = self.state
             handled = await self.state.on_message(message)
             if not handled:
-                self.logger.info("on_message handler of state %s rejected message",
-                                 pre_state)
+                self.logger.info("on_message handler of state %s rejected"\
+                                 " message %s", pre_state, message.code)
                 if pre_state != self.state:
                     self.logger.info("changed state from %s to %s, recursing",
                                  pre_state, self.state)

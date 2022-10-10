@@ -24,9 +24,14 @@ class Timer:
     
     def start(self):
         if self.terminated:
-            raise Exception("tried to start already terminated timer")
+            raise Exception("tried to start on already terminated timer" \
+                            f" {self.name}")
         if self.waiting:
-            raise Exception("called start while waiting for stop!")
+            print("\n\ncalled start while waiting for stop on timer" \
+                            f" {self.name}")
+            breakpoint()
+            raise Exception("called start while waiting for stop on timer" \
+                            f" {self.name}")
         self.keep_running = True
         self.task = asyncio.create_task(self.run())
 
@@ -53,13 +58,13 @@ class Timer:
                 await self.one_pass()
                 if self.source_state and self.source_state.is_terminated():
                     self.logger.info("timer %s run method exiting because" \
-                                     "source state is terminated",
+                                     " source state is terminated",
                                      self.name)
                     break
                 if (self.source_state
                     and self.source_state.server.get_state() != self.source_state):
                     self.logger.info("timer %s run method exiting because" \
-                                     "source state is no longer current",
+                                     " source state is no longer current",
                                      self.name)
                     break
             except:
@@ -72,7 +77,8 @@ class Timer:
         
     async def stop(self):
         if self.terminated:
-            raise Exception("tried to stop already terminated timer")
+            raise Exception("tried to stop already terminated timer"  \
+                            f" {self.name}")
         if not self.keep_running:
             return
         if not self.task:
@@ -80,20 +86,25 @@ class Timer:
         self.waiting = True
         self.keep_running = False
         wait_start = time.time()
-        wait_time  = self.interval + (0.1 * self.interval)
-        while self.task and time.time() - wait_start < wait_time:
+        wait_limit = self.interval + (0.1 * self.interval)
+        self.logger.debug("timer %s waiting %.8f for task exit",
+                          self.name, wait_limit)
+        while self.task and time.time() - wait_start < wait_limit:
             await asyncio.sleep(0.001)
+        self.logger.debug("timer %s done waiting for task exit", self.name)
+        self.waiting = False
         if self.task:
             dur = time.time() - wait_start
             raise Exception(f"Timer {self.name} task did not exit" \
                             f" after waiting {dur:.8f}")
-        self.waiting = False
         
     async def reset(self):
         if self.terminated:
-            raise Exception("tried to reset already terminated timer")
+            raise Exception("tried to reset already terminated timer"  \
+                            f" {self.name}")
         if self.waiting:
-            raise Exception("called start while waiting for stop!")
+            raise Exception("called start while waiting for stop!"  \
+                            f" {self.name}")
         if not self.keep_running or self.task is None:
             self.start()
         else:
@@ -101,7 +112,8 @@ class Timer:
 
     async def terminate(self):
         if self.terminated:
-            raise Exception("tried to terminate already terminated timer")
+            raise Exception("tried to terminate already terminated timer"  \
+                            f" {self.name}")
         await self.stop()
         self.terminated = True
 
