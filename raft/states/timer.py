@@ -6,8 +6,9 @@ import traceback
 class Timer:
 
     """Scheduling periodic callbacks"""
-    def __init__(self, timer_name, interval, callback, source_state=None):
+    def __init__(self, timer_name, term, interval, callback, source_state=None):
         self.name = timer_name
+        self.term = term
         self.interval = interval
         self.callback = callback
         self.source_state = source_state
@@ -17,7 +18,10 @@ class Timer:
         self.start_time = None
         self.waiting = False
         self.logger = logging.getLogger(__name__)
-        
+
+    def __str__(self):
+        return self.name
+    
     def start(self):
         if self.terminated:
             raise Exception("tried to start already terminated timer")

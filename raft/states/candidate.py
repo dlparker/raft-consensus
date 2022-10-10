@@ -22,13 +22,19 @@ class Candidate(Voter):
         server.set_state(self)
         self.votes = {}
         self.switched = False
+        log = server.get_log()
+        self.term = log.get_term()
         self.candidate_timer = self.server.get_timer("candidate-interval",
+                                                     self.term,
                                                      self.candidate_interval(),
                                                      self.on_timer)
         asyncio.create_task(self.start_election())
                             
     def __str__(self):
         return "candidate"
+    
+    def get_term(self):
+        return self.term
     
     def candidate_interval(self):
         return random.uniform(0, self.timeout)
@@ -103,9 +109,9 @@ class Candidate(Voter):
             last_term = None
         self.candidate_timer.start()
         log.incr_term()
-
+        self.term = log.get_term()
         self.logger.info("candidate starting election term is %d",
-                         log.get_term())
+                         self.term)
         
         election = RequestVoteMessage(
             self.server.endpoint,

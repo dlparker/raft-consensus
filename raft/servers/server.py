@@ -50,11 +50,11 @@ class Server:
     def get_state_map(self):
         return self.state_map
     
-    def get_timer(self, name, interval, callback):
+    def get_timer(self, name, term, interval, callback):
         self.logger.info("creating timer %s", name)
         if not self.timer_class:
-            return Timer(name, interval, callback, self.state)
-        return self.timer_class(name, interval, callback, self.state)
+            return Timer(name, term, interval, callback, self.state)
+        return self.timer_class(name, term, interval, callback, self.state)
 
     def set_timer_class(self, cls):
         self.timer_class = cls
@@ -73,6 +73,7 @@ class Server:
                               data[:30])
             return
         try:
+            # ensure addresses are tuples
             message._receiver = message.receiver[0], message.receiver[1]
             message._sender = message.sender[0], message.sender[1]
             self.logger.debug("state %s message %s", self.state, message)

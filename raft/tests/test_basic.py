@@ -53,9 +53,17 @@ class TestUtils(unittest.TestCase):
         class ftimer:
             def start(self):
                 return
+
         class dserver:
-            def get_timer(self, name, interval, function):
+            def __init__(self):
+                self.log = MemoryLog()
+                
+            def get_log(self):
+                return self.log
+            
+            def get_timer(self, name, term, interval, function):
                 return ftimer()
+
         fo = Follower(dserver())
         mh = regy.get_handler(msg, fo)
         self.assertIsNotNone(mh)
@@ -157,14 +165,14 @@ class TestTimer(unittest.TestCase):
 
     async def inner_test_timer_1(self):
         self.counter = 0
-        t1 = Timer('foo', 0.05, self.target)
+        t1 = Timer('foo', 0, 0.05, self.target)
         t1.start()
         await asyncio.sleep(0.06)
         self.assertTrue(self.counter > 0)
         await t1.terminate()
         
         self.counter = 0
-        t2 = Timer('bar', 0.05, self.target)
+        t2 = Timer('bar', 0, 0.05, self.target)
         start_time = time.time()
         t2.start()
         while time.time() - start_time < 0.06:
@@ -211,12 +219,20 @@ class TestTimer(unittest.TestCase):
         class ftimer:
             def start(self):
                 return
+
         class dserver:
-            def get_timer(self, name, interval, function):
+            def __init__(self):
+                self.log = MemoryLog()
+                
+            def get_log(self):
+                return self.log
+            
+            def get_timer(self, name, term, interval, function):
                 return ftimer()
+
         fo = Follower(dserver())
         
-        t3 = Timer('on_term', 0.05, self.target, fo)
+        t3 = Timer('on_term', 0, 0.05, self.target, fo)
         # make sure it works once
         t3.start()
         await asyncio.sleep(0.06)
@@ -240,10 +256,9 @@ class TestTimer(unittest.TestCase):
                 if self.fuse == 1:
                     raise Exception("I die!")
                 await super().one_pass()
-                
         
         self.counter = 0
-        t4 = Exploder('boom', 0.05, self.target)
+        t4 = Exploder('boom', 0, 0.05, self.target)
         # first pass should work
         t4.start()
         await asyncio.sleep(0.06)
@@ -276,7 +291,7 @@ class TestTimer(unittest.TestCase):
                             await asyncio.sleep(0.01)
                         self.task = None
 
-        t5 = Runaway('boom', 0.05, self.target)
+        t5 = Runaway('boom', 0, 0.05, self.target)
         # first pass should work
         t5.start()
         self.counter = 0
@@ -301,7 +316,7 @@ class TestTimer(unittest.TestCase):
     async def inner_test_controlled_timer_1(self):
         self.counter = 0
         name1 = "test1"
-        t1 = ControlledTimer(name1, 0.05, self.target)
+        t1 = ControlledTimer(name1, 0, 0.05, self.target)
         t1.start()
         await asyncio.sleep(0.06)
         self.assertTrue(self.counter > 0)
@@ -317,7 +332,7 @@ class TestTimer(unittest.TestCase):
 
         gset.pause_all()
         name2 = "test2"
-        t2 = ControlledTimer(name2, 0.05, self.target)
+        t2 = ControlledTimer(name2, 0, 0.05, self.target)
         t2.start()
         # make sure new one is running
         await asyncio.sleep(0.06)

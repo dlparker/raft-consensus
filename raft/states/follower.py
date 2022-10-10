@@ -28,9 +28,12 @@ class Follower(Voter):
         self.leader_addr = None
         self.substate = Substate.starting
         interval = self.election_interval()
+        log = server.get_log()
+        self.term = log.get_term()
         self.leaderless_timer = self.server.get_timer("follower-election",
-                                                     interval,
-                                                     self.leader_lost)
+                                                      self.term,
+                                                      interval,
+                                                      self.leader_lost)
         self.leaderless_timer.start()
         self.last_vote = None
         self.last_vote_time = None
@@ -38,6 +41,9 @@ class Follower(Voter):
     def __str__(self):
         return "follower"
 
+    def get_term(self):
+        return self.term
+    
     def get_leader_addr(self):
         return self.leader_addr
     
@@ -324,6 +330,7 @@ class Follower(Voter):
                          message.term, log.get_term())
         log.set_term(message.term)
         data = message.data
+        self.term = message.term
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
         if self.leader_addr != laddr:
             if self.leader_addr is None:
@@ -331,7 +338,7 @@ class Follower(Voter):
             else:
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
-
+            
     async def on_vote_request(self, message): 
         # If this node has not voted,
         # and if lastLogIndex in message

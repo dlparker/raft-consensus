@@ -66,8 +66,8 @@ class TimerSet:
 
 class ControlledTimer(Timer):
 
-    def __init__(self, timer_name, interval, callback, source_state=None):
-        super().__init__(timer_name, interval, callback, source_state)
+    def __init__(self, timer_name, term, interval, callback, source_state=None):
+        super().__init__(timer_name, term, interval, callback, source_state)
         self.thread_id = threading.current_thread().ident
         self.eye_d = f"{self.name}_{self.thread_id}"
         self.logger = logging.getLogger(__name__)

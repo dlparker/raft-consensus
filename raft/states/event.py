@@ -13,16 +13,18 @@ class BaseEvent:
         self.event_type = "base"
         self.source_state = source_state
 
-class TimerEvent:
+class TimerEvent(BaseEvent):
 
     def __init__(self, state_map, source_state, timer):
         super().__init__(state_map, source_state)
         self.timer = timer
-
-class MessageEvent:
+        
+class MessageEvent(BaseEvent):
 
     def __init__(self, state_map, source_state, message):
         super().__init__(state_map, source_state)
         self.message = message
 
+
+        
         

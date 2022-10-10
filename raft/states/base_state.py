@@ -63,13 +63,13 @@ class State(metaclass=abc.ABCMeta):
             
     def set_server(self, server):
         self.server = server
-
+        
     async def set_substate(self, substate: Substate):
         self.substate = substate
 
     def is_terminated(self):
         return self.terminated
-    
+        
     async def on_message(self, message):
         logger = logging.getLogger(__name__)
         if self.terminated and False:
@@ -158,8 +158,12 @@ class State(metaclass=abc.ABCMeta):
                                                response)
             self.logger.info("Client getting 'unavailable', no leader")
             await server.post_message(reply)
-
         
+    @abc.abstractmethod
+    async def get_term(self):  # pragma: no cover abstract
+        """ Get the current term value """
+        raise NotImplementedError
+
     @abc.abstractmethod
     async def on_vote_request(self, message):  # pragma: no cover abstract
         """Called when there is a vote request"""

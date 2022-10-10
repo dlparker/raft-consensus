@@ -5,7 +5,6 @@ import logging
 import traceback
 
 from .base_state import State
-from .event import TimerEvent, MessageEvent, BaseEvent
 from .candidate import Candidate
 from .follower import Follower
 from .leader import Leader
@@ -49,7 +48,7 @@ class StateMap(metaclass=abc.ABCMeta):
     def switch_to_leader(self, old_state: Optional[State] = None) -> Leader:
         raise NotImplementedError
     
-
+    
 class StandardStateMap(StateMap):
 
     server = None
@@ -60,15 +59,8 @@ class StandardStateMap(StateMap):
     async def activate(self, server) -> State:
         self.server = server
         self.state = None
-        self.queue = asyncio.Queue()
         return await self.switch_to_follower()
-    
-    async def add_event(self, event):
-        self.queue.put(event)
 
-    async def next_event(self):
-        return await self.queue.get()
-        
     def get_server(self):
         return self.server
     

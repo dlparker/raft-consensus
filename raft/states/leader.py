@@ -31,6 +31,7 @@ class Leader(State):
         self.server = server
         server.set_state(self)
         log = self.server.get_log()
+        self.term = log.get_term()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index + 1
@@ -38,7 +39,7 @@ class Leader(State):
             # no log records yet
             last_index = -1
         self.logger.info('Leader on %s in term %s', self.server.endpoint,
-                         log.get_term())
+                         self.term)
         self.followers = {}
         for other in self.server.other_nodes:
             # Assume follower is in sync, meaning we only send on new
@@ -48,13 +49,17 @@ class Leader(State):
         
         # Notify others of term start, just to make it official
         self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
-                                                      self.heartbeat_timeout,
-                                                      self.send_heartbeat)
+                                                     self.term,
+                                                     self.heartbeat_timeout,
+                                                     self.send_heartbeat)
         self.heartbeat_timer.start()
         asyncio.create_task(self.on_start())
 
     def __str__(self):
         return "leader"
+
+    def get_term(self):
+        return self.term
 
     async def on_start(self):
         await self.send_term_start()
