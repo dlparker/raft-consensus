@@ -49,8 +49,14 @@ class Timer:
                 return
             if self.source_state.server.get_state() != self.source_state:
                 return
-        asyncio.create_task(self.callback())
-        
+        asyncio.create_task(self.cb_wrapper())
+
+    async def cb_wrapper(self):
+        try:
+            await self.callback()
+        except:
+            self.logger.error("timer %s callback raised exception\n%s",
+                              self.name, traceback.format_exc())
     async def run(self):
         while self.keep_running:
             self.start_time = time.time()
@@ -69,6 +75,8 @@ class Timer:
                     break
             except:
                 self.logger.error(traceback.format_exc())
+                pass
+            
         if not self.keep_running:
             self.logger.info("timer %s run method exiting on stop", self.name)
         else:

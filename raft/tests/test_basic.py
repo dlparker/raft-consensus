@@ -5,6 +5,8 @@ import logging
 import traceback
 import os
 
+import pytest
+
 from raft.tests.timer import get_timer_set, ControlledTimer
 from raft.log.log_api import LogRec
 from raft.log.memory_log import MemoryLog
@@ -12,13 +14,20 @@ from raft.states.timer import Timer
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
 
-#LOGGING_TYPE = "devel_one_proc" when using Mem comms and thread based servers
-#LOGGING_TYPE = "devel_mp" when using UDP comms and MP process based servers
 #LOGGING_TYPE = "silent" for no log at all
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 
 if LOGGING_TYPE != "silent":
-    LOGGING_TYPE = "devel_one_proc" 
+    logging.root.handlers = []
+    logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
+                        level=logging.DEBUG)
+
+    # set up logging to console
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+
+    
+    
 
 class TestUtils(unittest.TestCase):
 
@@ -154,7 +163,10 @@ class TestMemoryLog(unittest.TestCase):
         self.assertEqual(mlog.get_term(), 10)
         mlog.incr_term()
         self.assertEqual(mlog.get_term(), 11)
-        
+
+
+    
+      
 class TestTimer(unittest.TestCase):
 
     def setUp(self):
@@ -295,10 +307,11 @@ class TestTimer(unittest.TestCase):
                             await self.one_pass()
                         except:
                             self.logger.error(traceback.format_exc())
-
+                            
                         while self.runner:
                             await asyncio.sleep(0.01)
                         self.task = None
+
 
         t5 = Runaway('boom', 0, 0.05, self.target)
         # first pass should work
@@ -306,10 +319,13 @@ class TestTimer(unittest.TestCase):
         self.counter = 0
         await asyncio.sleep(0.06)
         self.assertEqual(self.counter, 1)
+        # if we do it this way, pytest thinks it should print the
+        # exception traceback:
         with self.assertRaises(Exception) as context:
             await t5.stop()
         # cleanup
         t5.runner = False
+        await asyncio.sleep(0.01)
         await t5.stop()
         await t5.terminate()
 

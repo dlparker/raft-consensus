@@ -181,7 +181,7 @@ class TestStepControls(unittest.TestCase):
         self.assertEqual(found_paused, 2)
         # give it a bit more to catch both
         from pprint import pprint
-        pprint(self.pause_states)
+        #pprint(self.pause_states)
         for port, rec in self.pause_states.items():
             if rec is None:
                 continue
@@ -224,7 +224,7 @@ class TestStepControls(unittest.TestCase):
         get_timer_set().pause_all()
         await asyncio.sleep(.01)
         from pprint import pprint
-        pprint(self.pause_states)
+        #pprint(self.pause_states)
         # all should be paused on after
         for port, rec in self.pause_states.items():
             if rec is None:
