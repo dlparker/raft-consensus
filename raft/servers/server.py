@@ -22,6 +22,7 @@ class Server:
         self.state = None # needed because activate will call set_state
         self.app = app
         self.comms_task = None
+        self.running = False
         asyncio.create_task(self.start())
 
     async def start(self):
@@ -31,10 +32,12 @@ class Server:
             self.comms.start(self, self.endpoint)
         )
         self.logger.info('Server on %s', self.endpoint)
+        self.running = True
         
     async def stop(self):
         self.comms_task.cancel()
         await self.state.stop()
+        self.running = False
         
     def get_log(self):
         return self.log

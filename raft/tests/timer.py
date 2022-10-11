@@ -92,7 +92,7 @@ class ControlledTimer(Timer):
         try:
             await super().one_pass()
         except asyncio.exceptions.CancelledError:
-            return
+            self.keep_running = False
         
     async def pause(self):
         self.logger.debug("Pausing timer %s", self.eye_d)
@@ -105,7 +105,9 @@ class ControlledTimer(Timer):
             while self.task and time.time() - start_time < 1:
                 await asyncio.sleep(0.01)
             if self.task:
-                raise Exception(f"timer {self.eye_d} would not cancel")
+                print(f"\n\n\t\t\t\timer {self.eye_d} would not cancel\n\n")
+                breakpoint()
+                #raise Exception(f"timer {self.eye_d} would not cancel")
         self.logger.debug("Paused timer %s", self.eye_d)
 
     async def reset(self):

@@ -92,7 +92,10 @@ class TestStepControls(unittest.TestCase):
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self.inner_test_pause_at_first_election())
+        passes = 1
+        for i in range(passes):
+            print(f"pass {i}")
+            self.loop.run_until_complete(self.inner_test_pause_at_first_election())
         
     async def inner_test_pause_at_first_election(self):
         self.cluster = Cluster(server_count=3,
@@ -118,6 +121,7 @@ class TestStepControls(unittest.TestCase):
             while self.pause:
                 await asyncio.sleep(0.01)
             await get_timer_set().resume_all_this_thread()
+            self.pause_states[my_id[1]] = None
             return True
         
         async def pause_after(state, message):
@@ -129,6 +133,7 @@ class TestStepControls(unittest.TestCase):
             while self.pause:
                 await asyncio.sleep(0.01)
             await get_timer_set().resume_all_this_thread()
+            self.pause_states[my_id[1]] = None
             return True
 
         async def pause_on_substate(state, substate):
@@ -158,6 +163,7 @@ class TestStepControls(unittest.TestCase):
                 await asyncio.sleep(0.01)
             self.logger.debug("pause_on %s %s returning", state, substate)
             await get_timer_set().resume_all_this_thread()
+            self.pause_states[my_id[1]] = None
             return True
             
         self.cluster.prep_mem_servers()
@@ -190,9 +196,17 @@ class TestStepControls(unittest.TestCase):
         # the pause methods return true, which should clear the
         # pause settings
         self.pause = False
+        pending = 2
+        while pending:
+            await asyncio.sleep(0.01)
+            pending = 0
+            for port in self.pause_states.keys():
+                if self.pause_states[port] is not None:
+                    pending += 1
         get_timer_set().resume_all()
-        for port in self.pause_states.keys():
-            self.pause_states[port] = None
+        for name,rec in self.cluster.server_recs.items():
+            mserver = rec['memserver']
+            mserver.state_map.clear_pauses()
         await asyncio.sleep(0.01)
             
         client1 =  self.get_client(5000)
@@ -220,8 +234,16 @@ class TestStepControls(unittest.TestCase):
             await asyncio.sleep(.01)
         # expecting both followers to pause after on_message for heartbeat
         # and leader for heartbeat response sent before the pause
+        if found_paused < 3:
+            from pprint import pprint
+            pprint(self.pause_states)
+            await get_timer_set().pause_all()
+            await asyncio.sleep(1)
+            pprint(self.pause_states)
+            breakpoint()
+            
         self.assertEqual(found_paused, 3)
-        get_timer_set().pause_all()
+        await get_timer_set().pause_all()
         await asyncio.sleep(.01)
         from pprint import pprint
         #pprint(self.pause_states)

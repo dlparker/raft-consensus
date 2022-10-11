@@ -1,11 +1,11 @@
 # TODO: Fix name, it is messed up
 
 import asyncio
-from asyncio import Task
 from pathlib import Path
 import traceback
 import logging
 import threading
+import time
 from logging.config import dictConfig
 
 import raft
@@ -96,7 +96,7 @@ class UDPBankTellerServer:
         try:
             # run_forever() returns after calling loop.stop()
             loop.run_forever()
-            tasks = Task.all_tasks()
+            tasks = asyncio.all_tasks()
             for t in [t for t in tasks if not (t.done() or t.cancelled())]:
                 # give canceled tasks the last chance to run
                 loop.run_until_complete(t)
@@ -151,6 +151,7 @@ class ServerThread(threading.Thread):
         self.bt_server = bt_server
         self.host = "localhost"
         self.keep_running = True
+        self.running = False
         self.other_servers = []
 
     def add_other_server(self, other):
@@ -179,14 +180,18 @@ class ServerThread(threading.Thread):
             asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(self._run())
-            tasks = Task.all_tasks()
-            for t in [t for t in tasks if not (t.done() or t.cancelled())]:
-                # give canceled tasks the last chance to run
-                loop.run_until_complete(t)
+            try:
+                tasks = asyncio.all_tasks()
+                for t in [t for t in tasks if not (t.done() or t.cancelled())]:
+                    # give canceled tasks the last chance to run
+                    loop.run_until_complete(t)
+            except RuntimeError:
+                pass
         finally:
             loop.close()        
         
     async def _run(self):
+        self.running = True
         try:
             logger = logging.getLogger(__name__)
             logger.info("memory comms bank teller server starting")
@@ -211,7 +216,12 @@ class ServerThread(threading.Thread):
         except:
             print("\n\n!!!!!!Server thread failed!!!!")
             traceback.print_exc()
+        self.running = False
         
     def stop(self):
-        self.server.stop()
         self.keep_running = False
+        start_time = time.time()
+        while self.running and time.time() - start_time < 1:
+            time.sleep(0.001)
+        if self.running:
+            raise Exception("Server did not stop")

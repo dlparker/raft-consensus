@@ -12,6 +12,11 @@ if [ -z ${TEST_LOGGING+x} ]; then
 else
     $LOG_OPTION=""
 fi    
+if [ -z ${PYTEST_NO_STOP+x} ]; then
+    STOP_OPTION="-x --pdb --pdbcls=IPython.terminal.debugger:TerminalPdb"
+else
+    STOP_OPTION=""
+fi    
 
 if [[ `which pytest` != $VIRTUAL_ENV/bin/pytest ]]; then
    source .venv/bin/activate
@@ -20,7 +25,8 @@ rm -rf /tmp/raft_tests
 mkdir -p /tmp/raft_tests
  
 pytest --verbose --cov=raft --cov-config=`pwd`/raft/coverage.cfg --cov-report=html \
-       --cov-report=term  -x --pdb --pdbcls=IPython.terminal.debugger:TerminalPdb \
+       --cov-report=term  \
+       $STOP_OPTION \
        $LOG_OPTION \
       -s raft/tests 
 coverage combine --rcfile=`pwd`/raft/coverage.cfg --append
