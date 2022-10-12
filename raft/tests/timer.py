@@ -67,8 +67,8 @@ class TimerSet:
 
 class ControlledTimer(Timer):
 
-    def __init__(self, timer_name, term, interval, callback, source_state=None):
-        super().__init__(timer_name, term, interval, callback, source_state)
+    def __init__(self, timer_name, term, interval, callback):
+        super().__init__(timer_name, term, interval, callback)
         self.thread_id = threading.current_thread().ident
         self.eye_d = f"{self.name}_{self.thread_id}"
         self.logger = logging.getLogger(__name__)
@@ -101,13 +101,11 @@ class ControlledTimer(Timer):
             self.keep_running = False
             self.task.cancel()
             start_time = time.time()
-            
             while self.task and time.time() - start_time < 1:
                 await asyncio.sleep(0.01)
             if self.task:
                 print(f"\n\n\t\t\t\timer {self.eye_d} would not cancel\n\n")
-                breakpoint()
-                #raise Exception(f"timer {self.eye_d} would not cancel")
+                raise Exception(f"timer {self.eye_d} would not cancel")
         self.logger.debug("Paused timer %s", self.eye_d)
 
     async def reset(self):
@@ -116,7 +114,7 @@ class ControlledTimer(Timer):
 
     async def terminate(self):
         if self.terminated:
-            raise Exception("tried to stop terminate already terminated timer")
+            raise Exception("tried to terminate already terminated timer")
         self.logger.debug("terminating timer %s", self.eye_d)
         await super().terminate()
         timer_set.delete_timer(self)

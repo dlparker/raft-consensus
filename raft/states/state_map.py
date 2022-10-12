@@ -59,6 +59,7 @@ class StandardStateMap(StateMap):
     async def activate(self, server) -> State:
         self.server = server
         self.state = None
+        self.logger = logging.getLogger(__name__)
         return await self.switch_to_follower()
 
     def get_server(self):
@@ -72,22 +73,28 @@ class StandardStateMap(StateMap):
     async def switch_to_follower(self, old_state: Optional[State] = None) -> Follower:
         if not self.server:
             raise Exception('must call set_server before any other method!')
+        self.logger.info("switching state from %s to follower", self.state)
         follower =  Follower(server=self.server)
         self.server.set_state(follower)
+        self.state = follower
         return follower
     
     async def switch_to_candidate(self, old_state: Optional[State] = None) -> Candidate:
         if not self.server:
             raise Exception('must call set_server before any other method!')
+        self.logger.info("switching state from %s to candidate", self.state)
         candidate =  Candidate(server=self.server)
         self.server.set_state(candidate)
+        self.state = candidate
         return candidate
 
     async def switch_to_leader(self, old_state: Optional[State] = None) -> Leader:
         if not self.server:
             raise Exception('must call set_server before any other method!')
+        self.logger.info("switching state from %s to leader", self.state)
         leader =  Leader(server=self.server)
         self.server.set_state(leader)
+        self.state = leader
         return leader
 
     

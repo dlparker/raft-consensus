@@ -92,9 +92,10 @@ class TestStepControls(unittest.TestCase):
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-        passes = 1
+        passes = int(os.environ.get("TEST_LOOP_COUNT", 1))
         for i in range(passes):
-            print(f"pass {i}")
+            if passes > 1:
+                print(f"\n\n\t\tpass {i}\n\n")
             self.loop.run_until_complete(self.inner_test_pause_at_first_election())
         
     async def inner_test_pause_at_first_election(self):

@@ -21,3 +21,6 @@ class MemTestThreeServers(BaseCase.TestThreeServers):
     def get_client(self, port):
         return MemoryBankTellerClient("localhost", port)
         
+    def get_loop_limit(self):
+        loops = int(os.environ.get("TEST_LOOP_COUNT", 1))
+        return loops

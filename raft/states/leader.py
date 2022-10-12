@@ -4,13 +4,14 @@ import asyncio
 import logging
 from dataclasses import dataclass, field, asdict
 
-from .base_state import State, Substate
 from ..log.log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
 from ..messages.command import ClientCommandResultMessage
 from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
 from ..messages.termstart import TermStartMessage
 from ..messages.log_pull import LogPullResponseMessage
+from ..utils import task_logger
+from .base_state import State, Substate
 from .timer import Timer
 
 @dataclass
@@ -53,7 +54,9 @@ class Leader(State):
                                                      self.heartbeat_timeout,
                                                      self.send_heartbeat)
         self.heartbeat_timer.start()
-        asyncio.create_task(self.on_start())
+        self.task = task_logger.create_task(self.on_start(),
+                                            logger=self.logger,
+                                            message="leader start method")
 
     def __str__(self):
         return "leader"
@@ -291,6 +294,8 @@ class Leader(State):
         return self, None
         
     async def send_heartbeat(self):
+        if self.terminated or not self.heartbeat_timer.is_enabled():
+            return
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:

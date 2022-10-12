@@ -5,6 +5,7 @@ import logging
 import traceback
 
 from ..states.timer import Timer
+from ..utils import task_logger
 from ..app_api.app import App
 
 class Server:
@@ -23,13 +24,17 @@ class Server:
         self.app = app
         self.comms_task = None
         self.running = False
-        asyncio.create_task(self.start())
+        task_logger.create_task(self.start(),
+                                logger=self.logger,
+                                message="server start task")
 
     async def start(self):
         self.app.set_server(self)
         self.state = await self.state_map.activate(self)
-        self.comms_task = asyncio.create_task(
-            self.comms.start(self, self.endpoint)
+        self.comms_task = task_logger.create_task(
+            self.comms.start(self, self.endpoint),
+            logger=self.logger,
+            message="server comms listener task"
         )
         self.logger.info('Server on %s', self.endpoint)
         self.running = True
@@ -54,8 +59,8 @@ class Server:
     def get_timer(self, name, term, interval, callback):
         self.logger.info("creating timer %s", name)
         if not self.timer_class:
-            return Timer(name, term, interval, callback, self.state)
-        return self.timer_class(name, term, interval, callback, self.state)
+            return Timer(name, term, interval, callback)
+        return self.timer_class(name, term, interval, callback)
 
     def set_timer_class(self, cls):
         self.timer_class = cls

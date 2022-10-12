@@ -5,7 +5,7 @@ import traceback
 
 from dataclasses import dataclass, field, asdict
 
-from raft.utils import task_logger 
+from ..utils import task_logger 
 from ..messages.serializer import Serializer
 from .comms_api import CommsAPI
 
@@ -46,13 +46,9 @@ class MemoryComms(CommsAPI):
         queues[endpoint] = self.queue
         self.logger.debug("starting %s full set is %s",
                           endpoint, list(queues.keys()))
-        if True:
-            self.task = task_logger.create_task(self.listen(),
-                                                logger=self.logger,
-                                                message="comms listener error",
-                                                loop=asyncio.get_event_loop())
-        else:
-            self.task = asyncio.create_task(self.listen())
+        self.task = task_logger.create_task(self.listen(),
+                                            logger=self.logger,
+                                            message="comms listener error")
         self.keep_running = True
 
     async def stop(self):

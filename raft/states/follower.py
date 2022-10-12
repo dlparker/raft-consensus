@@ -5,11 +5,12 @@ from dataclasses import asdict
 import logging
 import traceback
 
-from .base_state import Substate
-from .voter import Voter
+from ..utils import task_logger
 from ..log.log_api import LogRec
 from ..messages.append_entries import AppendResponseMessage
 from ..messages.log_pull import LogPullMessage
+from .base_state import Substate
+from .voter import Voter
 
 # Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
@@ -63,6 +64,8 @@ class Follower(Voter):
         return await self.start_election()
     
     async def start_election(self):
+        if not self.leaderless_timer.is_enabled() or self.terminated:
+            return
         if (self.last_vote_time and time.time() - self.last_vote_time <
             self.timeout):
             self.logger.error("timing problem")
@@ -71,12 +74,13 @@ class Follower(Voter):
                 return
         try:
             self.terminated = True
-            await self.leaderless_timer.terminate()
+            self.leaderless_timer.disable()
             self.logger.debug("starting election")
             self.logger.debug("doing switch to candidate")
             sm = self.server.get_state_map()
             self.switched = True
             candidate = await sm.switch_to_candidate(self)
+            await self.leaderless_timer.terminate()
         except:
             self.logger.error(traceback.format_exc())
             raise
@@ -84,7 +88,8 @@ class Follower(Voter):
     async def on_heartbeat(self, message):
         # reset timeout
         self.logger.info("resetting leaderless_timer on heartbeat")
-        await self.leaderless_timer.reset()
+        if self.leaderless_timer.is_enabled():
+            await self.leaderless_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
@@ -100,7 +105,8 @@ class Follower(Voter):
             await self.set_substate(Substate.synced)
 
     async def on_log_pull_response(self, message):
-        await self.leaderless_timer.reset()
+        if self.leaderless_timer.is_enabled():
+            await self.leaderless_timer.reset()
         data = message.data
         log = self.server.get_log()
         if len(data["entries"]) == 0:
@@ -241,7 +247,8 @@ class Follower(Voter):
             
     async def on_append_entries(self, message):
         self.logger.info("resetting leaderless_timer on append entries")
-        await self.leaderless_timer.reset()
+        if self.leaderless_timer.is_enabled():
+            await self.leaderless_timer.reset()
         log = self.server.get_log()
         data = message.data
         self.logger.debug("append %s %s", message, message.data)
@@ -327,13 +334,15 @@ class Follower(Voter):
 
     async def on_term_start(self, message):
         self.logger.info("resetting leaderless_timer on term start")
-        await self.leaderless_timer.reset()
+        if self.leaderless_timer.is_enabled():
+            await self.leaderless_timer.reset()
         log = self.server.get_log()
         self.logger.info("follower got term start: message.term = %s local_term = %s",
                          message.term, log.get_term())
         log.set_term(message.term)
         data = message.data
         self.term = message.term
+        self.last_vote = None
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
         if self.leader_addr != laddr:
             if self.leader_addr is None:
@@ -378,17 +387,24 @@ class Follower(Voter):
             and message.data["lastLogIndex"] >= last_index):
             self.logger.info("last vote None, logs match, voting true")
             approve = True
+        elif self.last_vote == message.sender:
+            self.logger.info("last vote matches sender %s", message.sender)
+            approve = True
         if approve:
             self.last_vote = message.sender
             self.last_vote_time = time.time()
             self.logger.info("voting true")
             await self.send_vote_response_message(message, votedYes=True)
+            self.logger.info("resetting leaderless_timer on vote done")
+            # election in progress, let it run
+            if self.leaderless_timer.is_enabled():
+                await self.leaderless_timer.reset() 
         else:
-            self.logger.info("voting false")
+            self.logger.info("voting false on message %s %s",
+                             message, message.data)
+            self.logger.info("my last vote = %s", self.last_vote)
             await self.send_vote_response_message(message, votedYes=False)
             self.last_vote_time = time.time()
-        self.logger.info("resetting leaderless_timer on vote received")
-        await self.leaderless_timer.reset() # election in progress, let it run
         return self, None
         
     async def on_client_command(self, message):
@@ -400,9 +416,10 @@ class Follower(Voter):
     
     async def on_vote_received(self, message): # pragma: no cover error
         log = self.server.get_log()
-        self.logger.info("follower unexpectedly got vote: message.term = %d local_term = %d",
+        self.logger.info("follower unexpectedly got vote:"\
+                         " message.term = %s local_term = %s",
                          message.term, log.get_term())
 
     async def on_heartbeat_response(self, message):  # pragma: no cover error
-        self.logger.warning("follower unexpectedly got heartbeat response from %s",
-                            message.sender)
+        self.logger.warning("follower unexpectedly got heartbeat"
+                            " response from %s",  message.sender)

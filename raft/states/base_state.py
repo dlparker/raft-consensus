@@ -72,7 +72,7 @@ class State(metaclass=abc.ABCMeta):
         
     async def on_message(self, message):
         logger = logging.getLogger(__name__)
-        if self.terminated and False:
+        if self.terminated:
             logger.info("got message but already terminated, returning False")
             return False
         

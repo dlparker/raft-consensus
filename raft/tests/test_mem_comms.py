@@ -7,7 +7,6 @@ import os
 from dataclasses import dataclass
 
 from raft.comms.memory_comms import MemoryComms
-from raft.states.timer import Timer
 from raft.messages.status import StatusQueryMessage, StatusQueryResponseMessage
 
 #LOGGING_TYPE = "silent" for no log at all
@@ -30,13 +29,9 @@ if LOGGING_TYPE != "silent":
 
 class FakeServer:
 
-    def __init__(self, timer_class=None):
-        self.timer_class = timer_class
+    def __init__(self):
         self.in_queue = asyncio.Queue()
         
-    def set_timer_class(self, timer_class):
-        self.timer_class = timer_class
-
     async def on_message(self, message):
         await self.in_queue.put(message)
         

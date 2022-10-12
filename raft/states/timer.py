@@ -3,19 +3,33 @@ import time
 import logging
 import traceback
 
+from ..utils import task_logger
+
+
 class Timer:
 
     """Scheduling periodic callbacks"""
-    def __init__(self, timer_name, term, interval, callback, source_state=None):
+    def __init__(self, timer_name, term, interval, callback):
         self.name = timer_name
         self.term = term
         self.interval = interval
         self.callback = callback
-        self.source_state = source_state
         self.task = None
+        # Enabled flag is used by timer owner to allow or prevent
+        # resets by setting and checking this state. It has no effect
+        # on timer code itself
+        self.enabled = False
+        # Keep running is the flag used by the control methods to tell
+        # the timer task when to exit. This logic around this supports
+        # stopping and restarting the timer. the reset method does exactly
+        # that, stops, then starts.
         self.keep_running = False
+        # Flag set to indicate that no further actions will be allowed
+        # with this timer. Task code will exit as soon as it sees this.
         self.terminated = False
         self.start_time = None
+        # Flag indicating that there is a wait for stop in progress
+        # so no other control operations will take place
         self.waiting = False
         self.logger = logging.getLogger(__name__)
 
@@ -29,27 +43,43 @@ class Timer:
         if self.waiting:
             print("\n\ncalled start while waiting for stop on timer" \
                             f" {self.name}")
-            breakpoint()
             raise Exception("called start while waiting for stop on timer" \
                             f" {self.name}")
+        self.enabled = True
         self.keep_running = True
-        self.task = asyncio.create_task(self.run())
+        self.task = task_logger.create_task(self.run(),
+                                            logger=self.logger,
+                                            message=f"{self.name} run error")
 
+    def disable(self):
+        self.enabled = False
+
+    def is_enabled(self):
+        return self.enabled
+    
+    def should_exit(self, mname):
+        if not self.keep_running:
+            self.logger.info("timer %s %s method exiting because" \
+                             " keep_running is false",
+                             self.name, mname)
+            return True
+        return False
+        
     async def one_pass(self):
         while time.time() - self.start_time < self.interval:
             try:
                 await asyncio.sleep(0.005)
+                if not self.keep_running:
+                    self.logger.info("timer %s one_pass method exiting because" \
+                                     " keep_running is false",
+                                     self.name)
+                    return True
             except RuntimeError:
                 # someone killed the loop while we were running
                 return
-            if not self.keep_running:
-                return
-        if self.source_state:
-            if self.source_state.is_terminated():
-                return
-            if self.source_state.server.get_state() != self.source_state:
-                return
-        asyncio.create_task(self.cb_wrapper())
+        self.task = task_logger.create_task(self.cb_wrapper(),
+                                            logger=self.logger,
+                                            message=f"{self.name} callback error")
 
     async def cb_wrapper(self):
         try:
@@ -62,15 +92,9 @@ class Timer:
             self.start_time = time.time()
             try:
                 await self.one_pass()
-                if self.source_state and self.source_state.is_terminated():
+                if not self.keep_running:
                     self.logger.info("timer %s run method exiting because" \
-                                     " source state is terminated",
-                                     self.name)
-                    break
-                if (self.source_state
-                    and self.source_state.server.get_state() != self.source_state):
-                    self.logger.info("timer %s run method exiting because" \
-                                     " source state is no longer current",
+                                     " keep_running is false",
                                      self.name)
                     break
             except:
@@ -107,12 +131,20 @@ class Timer:
                             f" after waiting {dur:.8f}")
         
     async def reset(self):
+        if not self.enabled:
+            raise Exception("tried to reset disabled timer"  \
+                            f" {self.name}")
+            
         if self.terminated:
             raise Exception("tried to reset already terminated timer"  \
                             f" {self.name}")
         if self.waiting:
-            raise Exception("called start while waiting for stop!"  \
-                            f" {self.name}")
+            while self.waiting:
+                await asyncio.sleep(0.01)
+            if self.terminated:
+                self.logger.warning("timer %s terminated during call to reset",
+                                    self.name)
+                return
         if not self.keep_running or self.task is None:
             self.start()
         else:

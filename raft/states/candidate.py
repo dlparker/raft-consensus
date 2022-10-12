@@ -3,9 +3,10 @@ import traceback
 import logging
 import asyncio
 
+from ..messages.request_vote import RequestVoteMessage
+from ..utils import task_logger
 from .voter import Voter
 from .leader import Leader
-from ..messages.request_vote import RequestVoteMessage
 from .timer import Timer
 
 
@@ -21,14 +22,16 @@ class Candidate(Voter):
         self.server = server
         server.set_state(self)
         self.votes = {}
-        self.switched = False
         log = server.get_log()
         self.term = log.get_term()
+        self.election_timeout = self.candidate_interval()
         self.candidate_timer = self.server.get_timer("candidate-interval",
                                                      self.term,
-                                                     self.candidate_interval(),
+                                                     self.election_timeout,
                                                      self.on_timer)
-        asyncio.create_task(self.start_election())
+        self.task = task_logger.create_task(self.start_election(),
+                                            logger=self.logger,
+                                            message="candidate election error")
                             
     def __str__(self):
         return "candidate"
@@ -52,7 +55,8 @@ class Candidate(Voter):
         await self.resign()
 
     async def on_heartbeat(self, message):
-        self.logger.info("candidate resigning because we got hearbeat from leader")
+        self.logger.info("candidate resigning because we" \
+                         "got hearbeat from leader")
         await self.resign()
         await self.on_heartbeat_common(message)
         self.logger.debug("sent heartbeat reply")
@@ -63,7 +67,8 @@ class Candidate(Voter):
 
     async def on_vote_received(self, message):
         # reset timer
-        await self.candidate_timer.reset()
+        if self.candidate_timer.is_enabled():
+            await self.candidate_timer.reset()
         self.logger.info("vote received from %s, response %s", message.sender,
                     message.data['response'])
         if message.sender[1] not in self.votes and message.data['response']:
@@ -82,9 +87,9 @@ class Candidate(Voter):
             # held by two out of three servers.
             # with one dead.
             if len(self.votes.keys()) + 1 > self.server.total_nodes / 2:
-                self.switched = True
                 sm = self.server.get_state_map()
                 leader = await sm.switch_to_leader(self)
+                self.terminated = True
                 await self.candidate_timer.terminate() # never run again
                 self.logger.info("changing to leader")
                 return leader, None
@@ -98,6 +103,9 @@ class Candidate(Voter):
 
     # start elections by increasing term, voting for itself and send out vote requests
     async def start_election(self):
+        self.candidate_timer.disable()
+        if self.terminated:
+            return
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -110,8 +118,8 @@ class Candidate(Voter):
         self.candidate_timer.start()
         log.incr_term()
         self.term = log.get_term()
-        self.logger.info("candidate starting election term is %d",
-                         self.term)
+        self.logger.info("candidate starting election term is %d, timeout is %f",
+                         self.term, self.election_timeout)
         
         election = RequestVoteMessage(
             self.server.endpoint,
@@ -123,16 +131,17 @@ class Candidate(Voter):
             }
         )
         await self.server.broadcast(election)
+        self.logger.info("send all endpoints %s", election)
         self.last_vote = self.server.endpoint
 
     # received append entry from leader or not enough votes -> step down
     async def resign(self):
-        if self.switched:
+        if self.terminated:
             # order in async makes race for server states
             # switch and new timer fire
             return
         try:
-            self.switched = True
+            self.terminated = True
             sm = self.server.get_state_map()
             follower = await sm.switch_to_follower(self)
             await self.candidate_timer.terminate() # never run again

@@ -223,49 +223,6 @@ class TestTimer(unittest.TestCase):
         self.assertTrue("terminate " in str(context.exception))
         self.assertTrue("terminated" in str(context.exception))
             
-        # test that terminated state prevents callback
-        # dummy objects to get follower to init enough
-        # to use it as for timer check of terminated state 
-        class ftimer:
-            def start(self):
-                return
-
-        class dserver:
-            def __init__(self):
-                self.log = MemoryLog()
-                self.state = None
-                
-            def get_log(self):
-                return self.log
-            
-            def get_timer(self, name, term, interval, function):
-                return ftimer()
-
-            def get_state(self):
-                return self.state
-
-            def set_state(self, state):
-                self.state = state
-
-        ds = dserver()
-        fo = Follower(ds)
-        ds.set_state(fo)
-        
-        t3 = Timer('on_term', 0, 0.05, self.target, fo)
-        # make sure it works once
-        t3.start()
-        await asyncio.sleep(0.06)
-        await t3.stop() 
-        self.assertTrue(self.counter > 0)
-
-        # now change follower state to terminated
-        fo.terminated = True
-        self.counter = 0
-        await t3.reset()
-        await asyncio.sleep(0.06)
-        await t3.terminate() 
-        self.assertEqual(self.counter, 0)
-
         # Now make sure that an exception in the execution of
         # the one_pass method will not break the timer
         class Exploder(Timer):

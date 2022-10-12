@@ -164,6 +164,7 @@ class Cluster:
                 del srec['server_thread']
             memserver = srec.get('memserver', None)
             if memserver:
+                memserver.stop()
                 del srec['memserver']
 
     def stop_all_servers(self):
