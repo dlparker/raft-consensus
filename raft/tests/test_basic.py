@@ -310,7 +310,7 @@ class TestTimer(unittest.TestCase):
         await asyncio.sleep(0.06)
         self.assertTrue(self.counter > 0)
 
-        gset.pause_all()
+        await gset.pause_all()
         name2 = "test2"
         t2 = ControlledTimer(name2, 0, 0.05, self.target)
         t2.start()

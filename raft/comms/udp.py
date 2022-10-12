@@ -1,8 +1,7 @@
 from socket import *
-import copy
+import time
 import asyncio
 import threading
-import errno
 import logging
 import traceback
 from collections import defaultdict
@@ -12,10 +11,10 @@ from .comms_api import CommsAPI
 
 class UDPComms(CommsAPI):
     
-    _started = False
+    started = False
 
     async def start(self, server, endpoint):
-        if self._started:   # pragma: no cover error
+        if self.started:   # pragma: no cover error
             raise Exception("can call start only once")
         self.logger = logging.getLogger(__name__)
         self.server = server
@@ -24,12 +23,13 @@ class UDPComms(CommsAPI):
         self.queue = asyncio.Queue()
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.sock.bind(self.endpoint)
+        self.protocol = None
         await self._start()
         self.logger.info('UDP Listening on %s', self.endpoint)
         self.started = True
 
     async def _start(self):
-        udp = UDP_Protocol(
+        self.protocol = UDP_Protocol(
             queue=self.queue,
             message_handler=self.on_message,
             logger = self.logger,
@@ -37,8 +37,8 @@ class UDPComms(CommsAPI):
         )
         try:
             loop = asyncio.get_event_loop()
-            self.transport, _ = await loop.create_datagram_endpoint(udp,
-                                                              sock=self.sock)
+            self.transport, _ = await loop.create_datagram_endpoint(self.protocol,
+                                                                    sock=self.sock)
             self.logger.debug("udp setup done")
         except Exception as e: # pragma: no cover error
             self.logger.error(traceback.format_exc())
@@ -47,6 +47,14 @@ class UDPComms(CommsAPI):
     async def stop(self):
         if self.transport:
             self.transport.close()
+            await self.queue.put("diediedie!")
+            start_time = time.time()
+            while self.protocol.running and time.time() - start_time < 1:
+                await asyncio.sleep(0.001)
+            if self.protocol.running:
+                raise Exception('protocol would not stop!')
+            self.transport = None
+            self.protocol = None
             
     async def post_message(self, message):
         if not isinstance(message, dict):
@@ -79,6 +87,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         self.message_handler = message_handler
         self.server = server
         self.logger = logger
+        self.running = False
         self.logger.info('UDP_protocol created')
         self.out_of_order = defaultdict(dict)
         self.seq_by_sender = defaultdict(int)
@@ -88,13 +97,16 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         return self
 
     async def start(self):
+        self.running = True
         self.logger.info('UDP_protocol started')
         while not self.transport.is_closing():
             try:
                 message = await self.queue.get()
+                if message == "diediedie!":
+                    break
             except RuntimeError: # pragma: no cover error
-                self.logger.warning("Runtime error on queue,"\
-                                    " possible event loop loss")
+                self.logger.info("Runtime error on queue get,"\
+                                    " might be because event loop was closed")
                 continue
             self.seq_by_target[message.receiver] += 1
             seq_number = self.seq_by_target[message.receiver]
@@ -114,6 +126,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
                 self.logger.error("error sending queued message %s", e)
             # git transport a chance to deliver before we dequeu another
             await asyncio.sleep(0.0001)
+        self.running = False
 
     def connection_made(self, transport):
         self.transport = transport

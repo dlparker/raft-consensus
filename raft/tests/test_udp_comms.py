@@ -94,7 +94,10 @@ class TestBasic(unittest.TestCase):
             reply_sent = await server_1.in_queue.get()
             self.assertEqual(reply_sent.data, msg1.data)
             await end_1.stop()
+            await asyncio.sleep(0.01)
             await end_2.stop()
+            await asyncio.sleep(0.01)
+
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

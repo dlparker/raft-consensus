@@ -255,6 +255,13 @@ class BaseCase:
             pass
     
         def setUp(self):
+            if self.logger is None:
+                self.logger = logging.getLogger(__name__)
+
+        def tearDown(self):
+            pass
+
+        def loop_setup(self):
             self.cluster = Cluster(server_count=3,
                                    use_processes=self.get_process_flag(),
                                    logging_type=self.get_logging_type(),
@@ -268,11 +275,15 @@ class BaseCase:
                 self.loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(self.loop)
 
-        def tearDown(self):
+        def loop_teardown(self):
             self.cluster.stop_all_servers()
             time.sleep(0.5)
             self.cluster.stop_logging_server()
+            self.loop.close()
 
+        def get_loop_limit(self):
+            return 1
+        
         def run_data_from_status(self, status):
             run_data = {}
             leader_addr = status.data['leader']
@@ -312,7 +323,7 @@ class BaseCase:
             self.assertIsNotNone(status.data['leader'])
             return self.run_data_from_status(status)
         
-        def test_client_ops(self, restart=False):
+        def inner_test_client_ops(self):
             client1 =  self.get_client(5000)
             run_data = self.wait_for_election_done(client1)
             self.logger.info("doing credit at %s", client1)
@@ -328,3 +339,10 @@ class BaseCase:
             self.logger.info("client ops via %s worked", client1)
 
             
+        def test_client_ops(self):
+            for i in range(self.get_loop_limit()):
+                if self.get_loop_limit() > 1:
+                    print(f"\n\n\t\tstarting test_leader_stop loop {i}\n\n")
+                self.loop_setup()
+                self.inner_test_client_ops()
+                self.loop_teardown()
