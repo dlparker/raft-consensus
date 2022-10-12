@@ -122,7 +122,7 @@ class MemoryBankTellerServer:
         self.name = f"{self.endpoint}"
         self.state_map = StandardStateMapWrapper()
         self.data_log = MemoryLog()
-        self.comms = MemoryComms(timer_class=ControlledTimer)
+        self.comms = MemoryComms()
         self.app = BankingApp()
         self.thread = ServerThread(self)
         self.thread.name = f"{self.port}"

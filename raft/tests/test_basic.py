@@ -26,8 +26,6 @@ if LOGGING_TYPE != "silent":
     console = logging.StreamHandler()
     console.setLevel(logging.DEBUG)
 
-    
-    
 
 class TestUtils(unittest.TestCase):
 

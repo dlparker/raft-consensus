@@ -20,16 +20,17 @@ class UDPComms(CommsAPI):
         self.logger = logging.getLogger(__name__)
         self.server = server
         self.endpoint = endpoint
-        self._queue = asyncio.Queue()
-        self._sock = socket(AF_INET, SOCK_DGRAM)
-        self._sock.bind(self.endpoint)
+        self.transport = None
+        self.queue = asyncio.Queue()
+        self.sock = socket(AF_INET, SOCK_DGRAM)
+        self.sock.bind(self.endpoint)
         await self._start()
         self.logger.info('UDP Listening on %s', self.endpoint)
-        self._started = True
+        self.started = True
 
     async def _start(self):
         udp = UDP_Protocol(
-            queue=self._queue,
+            queue=self.queue,
             message_handler=self.on_message,
             logger = self.logger,
             server=self
@@ -37,17 +38,21 @@ class UDPComms(CommsAPI):
         try:
             loop = asyncio.get_event_loop()
             self.transport, _ = await loop.create_datagram_endpoint(udp,
-                                                              sock=self._sock)
+                                                              sock=self.sock)
             self.logger.debug("udp setup done")
         except Exception as e: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             raise
 
+    async def stop(self):
+        if self.transport:
+            self.transport.close()
+            
     async def post_message(self, message):
         if not isinstance(message, dict):
             self.logger.debug("posting %s to %s",
                               message, message.receiver)
-        await self._queue.put(message)
+        await self.queue.put(message)
 
     async def on_message(self, data, addr):
         try:
@@ -70,14 +75,14 @@ class UDPComms(CommsAPI):
 class UDP_Protocol(asyncio.DatagramProtocol):
 
     def __init__(self, queue, message_handler, logger, server):
-        self._queue = queue
+        self.queue = queue
         self.message_handler = message_handler
-        self._server = server
+        self.server = server
         self.logger = logger
         self.logger.info('UDP_protocol created')
-        self._out_of_order = defaultdict(dict)
-        self._seq_by_sender = defaultdict(int)
-        self._seq_by_target = defaultdict(int)
+        self.out_of_order = defaultdict(dict)
+        self.seq_by_sender = defaultdict(int)
+        self.seq_by_target = defaultdict(int)
 
     def __call__(self):
         return self
@@ -85,9 +90,14 @@ class UDP_Protocol(asyncio.DatagramProtocol):
     async def start(self):
         self.logger.info('UDP_protocol started')
         while not self.transport.is_closing():
-            message = await self._queue.get()
-            self._seq_by_target[message.receiver] += 1
-            seq_number = self._seq_by_target[message.receiver]
+            try:
+                message = await self.queue.get()
+            except RuntimeError: # pragma: no cover error
+                self.logger.warning("Runtime error on queue,"\
+                                    " possible event loop loss")
+                continue
+            self.seq_by_target[message.receiver] += 1
+            seq_number = self.seq_by_target[message.receiver]
             message.set_msg_number(seq_number)
             try:
                 data = Serializer.serialize(message)
@@ -110,7 +120,12 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         self.logger.info("connection made %s", transport)
         asyncio.ensure_future(self.start())
 
-    def a_datagram_received(self, data, addr):
+    def do_not_use_datagram_received(self, data, addr): # pragma: no cover
+        raise Exception("do not use this")
+        # TODO: use or remove
+        # Tried this code to solve some out of order issues,
+        # but then decided to fix it other ways. Keeping this
+        # until I am sure it is not needed.
         self.logger.debug("protocol got message from %s %s", addr, data[:30])
         msg = Serializer.deserialize(data)
         if msg.msg_number is None:
@@ -119,7 +134,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             asyncio.ensure_future(self.message_handler(data, addr))
             return
         # will never actually send a zero, always 1+
-        last = self._seq_by_sender[addr]
+        last = self.seq_by_sender[addr]
         if last == 0:
             # we have never gotten a message, so set to
             # allow delivery
@@ -132,13 +147,13 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             self.logger.info("simple delivery of msg.number %d %s",
                               msg.msg_number, msg.code)
             asyncio.ensure_future(self.message_handler(data, addr))
-            self._seq_by_sender[addr] = msg.msg_number
+            self.seq_by_sender[addr] = msg.msg_number
             return
         # If the message is after the expected number, it
         # arrived out of order, so save it
         if msg.msg_number > last + 1:
             # defer processing
-            saver = self._out_of_order[addr]
+            saver = self.out_of_order[addr]
             saver[msg.msg_number] = dict(msg_number=msg.msg_number,
                                          data=data,
                                          addr=addr)
@@ -149,11 +164,11 @@ class UDP_Protocol(asyncio.DatagramProtocol):
         # see if we have pending out of order messages
         # and see if it can help us clear those, or has to be
         # added to them.
-        if len(self._out_of_order[addr]) == 0:
+        if len(self.out_of_order[addr]) == 0:
             self.logger.error("Can't figure out ordering of message")
             breakpoint()
             return
-        my_set = self._out_of_order[addr]
+        my_set = self.out_of_order[addr]
         pending = list(my_set.keys())
         pending.sort()
         first = pending[0]
@@ -171,7 +186,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             # work through the rest until
             # caught up or another gap
             asyncio.ensure_future(self.message_handler(data, addr))
-            last = self._seq_by_sender[addr] = msg.msg_number
+            last = self.seq_by_sender[addr] = msg.msg_number
             for pend in pending:
                 if pend != last + 1:
                     # still missing something
@@ -180,7 +195,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
                 asyncio.ensure_future(
                     self.message_handler(rec['data'], rec['addr']))
                 del my_set[pend]
-                last = self._seq_by_sender[addr] = rec['msg_number']
+                last = self.seq_by_sender[addr] = rec['msg_number']
                 self.logger.info("\n\n!!! Finished deferred delivery of msg.number %d",
                                  rec['msg_number'])
             return

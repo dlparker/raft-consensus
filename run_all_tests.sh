@@ -8,9 +8,9 @@ if [ -z ${VIRTUAL_ENV+x} ]; then
    source .venv/bin/activate
 fi
 if [ -z ${TEST_LOGGING+x} ]; then
-    $LOG_OPTION=$(-p no:logging)
-else
     $LOG_OPTION=""
+else
+    $LOG_OPTION=$(-p no:logging)
 fi    
 if [ -z ${PYTEST_NO_STOP+x} ]; then
     STOP_OPTION="-x --pdb --pdbcls=IPython.terminal.debugger:TerminalPdb"
