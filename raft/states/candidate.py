@@ -29,13 +29,19 @@ class Candidate(Voter):
                                                      self.term,
                                                      self.election_timeout,
                                                      self.on_timer)
-        self.task = task_logger.create_task(self.start_election(),
-                                            logger=self.logger,
-                                            message="candidate election error")
+        self.task = None
                             
     def __str__(self):
         return "candidate"
     
+    def start(self):
+        if self.terminated:
+            raise Exception("cannot start a terminated state")
+
+        self.candidate_timer.start()
+        self.task = task_logger.create_task(self.start_election(),
+                                            logger=self.logger,
+                                            message="candidate election error")
     def get_term(self):
         return self.term
     

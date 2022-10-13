@@ -46,22 +46,23 @@ class Leader(State):
             # log entry. If they are not, they will tell us that on
             # first heartbeat, and we will catch them up
             self.followers[other] = FollowerCursor(other, last_index)
-        
-        # Notify others of term start, just to make it official
+
         self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
                                                      self.term,
                                                      self.heartbeat_timeout,
                                                      self.send_heartbeat)
-        self.heartbeat_timer.start()
-        self.task = task_logger.create_task(self.on_start(),
-                                            logger=self.logger,
-                                            message="leader start method")
+        self.task = None
 
     def __str__(self):
         return "leader"
 
-    def get_term(self):
-        return self.term
+    def start(self):
+        if self.terminated:
+            raise Exception("cannot start a terminated state")
+        self.heartbeat_timer.start()
+        self.task = task_logger.create_task(self.on_start(),
+                                            logger=self.logger,
+                                            message="leader start method")
 
     async def on_start(self):
         await self.send_term_start()
@@ -71,6 +72,9 @@ class Leader(State):
         self.terminated = True
         await self.heartbeat_timer.terminate()
         
+    def get_term(self):
+        return self.term
+
     def get_leader_addr(self):
         return self.server.endpoint
     

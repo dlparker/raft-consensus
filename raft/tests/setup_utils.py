@@ -146,7 +146,9 @@ class Cluster:
             if not memserver:
                 memserver = MemoryBankTellerServer(*args)
                 srec['memserver'] = memserver
-            server_thread = memserver.start()
+            server_thread = memserver.start_thread()
+            memserver.configure()
+            memserver.start()
             srec['server_thread'] = server_thread
             
     def stop_server(self, name):

@@ -275,6 +275,7 @@ class StandardStateMapWrapper(StandardStateMap):
         self.first_time = False
         self.server.set_state(follower)
         self.set_state(follower)
+        follower.start()
         return follower
 
     async def switch_to_candidate(self, old_state=None):
@@ -291,6 +292,7 @@ class StandardStateMapWrapper(StandardStateMap):
                                      server_wrapper=self.server_wrapper)
         self.server.set_state(candidate)
         self.set_state(candidate)
+        candidate.start()
         return candidate
 
     async def switch_to_leader(self, old_state=None):
@@ -308,5 +310,6 @@ class StandardStateMapWrapper(StandardStateMap):
 
         self.server.set_state(leader)
         self.set_state(leader)
+        leader.start()
         return leader
     

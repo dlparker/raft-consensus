@@ -20,6 +20,26 @@ class RunData:
     leader_addr: tuple
     first_follower: dict
     second_follower: dict
+
+def run_data_from_status(cluster, logger, status):
+    run_data = {}
+    leader_addr = status.data['leader']
+    leader = None
+    first_follower = None
+    second_follower = None
+    for name,sdef in cluster.server_recs.items():
+        if sdef['port'] == leader_addr[1]:
+            sdef['role'] = "leader"
+            leader = sdef
+        else:
+            if not first_follower:
+                first_follower = sdef
+            else:
+                second_follower = sdef
+            sdef['role'] = "follower"
+    logger.info("found leader %s", leader_addr)
+    run_data = RunData(leader, leader_addr, first_follower, second_follower)
+    return run_data
     
 class BaseCase:
 
@@ -100,25 +120,6 @@ class BaseCase:
                 self.inner_test_leader_stop(restart=True)
                 self.loop_teardown()
 
-        def run_data_from_status(self, status):
-            run_data = {}
-            leader_addr = status.data['leader']
-            leader = None
-            first_follower = None
-            second_follower = None
-            for name,sdef in self.cluster.server_recs.items():
-                if sdef['port'] == leader_addr[1]:
-                    sdef['role'] = "leader"
-                    leader = sdef
-                else:
-                    if not first_follower:
-                        first_follower = sdef
-                    else:
-                        second_follower = sdef
-                    sdef['role'] = "follower"
-            self.logger.info("found leader %s", leader_addr)
-            run_data = RunData(leader, leader_addr, first_follower, second_follower)
-            return run_data
             
         def wait_for_election_done(self, client, old_leader=None, timeout=3):
             self.logger.info("waiting for election results")
@@ -137,7 +138,7 @@ class BaseCase:
             
             self.assertIsNotNone(status)
             self.assertIsNotNone(status.data['leader'])
-            return self.run_data_from_status(status)
+            return run_data_from_status(self.cluster, self.logger, status)
 
         def do_op_seq_1(self, client1, client2):
             self.logger.info("doing credit at %s", client1)
@@ -284,25 +285,6 @@ class BaseCase:
         def get_loop_limit(self):
             return 1
         
-        def run_data_from_status(self, status):
-            run_data = {}
-            leader_addr = status.data['leader']
-            leader = None
-            first_follower = None
-            second_follower = None
-            for name,sdef in self.cluster.server_recs.items():
-                if sdef['port'] == leader_addr[1]:
-                    sdef['role'] = "leader"
-                    leader = sdef
-                else:
-                    if not first_follower:
-                        first_follower = sdef
-                    else:
-                        second_follower = sdef
-                    sdef['role'] = "follower"
-            self.logger.info("found leader %s", leader_addr)
-            run_data = RunData(leader, leader_addr, first_follower, second_follower)
-            return run_data
             
         def wait_for_election_done(self, client, old_leader=None, timeout=3):
             self.logger.info("waiting for election results")
@@ -321,7 +303,8 @@ class BaseCase:
             
             self.assertIsNotNone(status)
             self.assertIsNotNone(status.data['leader'])
-            return self.run_data_from_status(status)
+            return run_data_from_status(self.cluster, self.logger, status)
+
         
         def inner_test_client_ops(self):
             client1 =  self.get_client(5000)

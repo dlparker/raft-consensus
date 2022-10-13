@@ -82,6 +82,7 @@ class UDPBankTellerServer:
                             endpoint=endpoint,
                             comms=UDPComms(),
                             app=app)
+            self.server.start()
             logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
         except:
             logger.error(traceback.print_exc())
@@ -125,6 +126,7 @@ class MemoryBankTellerServer:
         self.comms = MemoryComms()
         self.app = BankingApp()
         self.thread = ServerThread(self)
+        self.thread_started = False
         self.thread.name = f"{self.port}"
 
     def add_other_server(self, other):
@@ -136,8 +138,20 @@ class MemoryBankTellerServer:
     async def resume_from_reason(self, reason_string, propogate=True):
         await self.thread.resume_from_reason(reason_string, propogate)
         
+    def start_thread(self):
+        if not self.thread_started:
+            self.thread.start()
+            self.thread_started = True
+        return self.thread
+
     def start(self):
-        self.thread.start()
+        if not self.thread_started:
+            self.thread.start()
+            self.thread_started = True
+        self.thread.go()
+
+    def configure(self):
+        self.thread.configure()
         return self.thread
         
     def stop(self):
@@ -150,10 +164,12 @@ class ServerThread(threading.Thread):
         threading.Thread.__init__(self)
         self.bt_server = bt_server
         self.host = "localhost"
+        self.ready = False
         self.keep_running = True
         self.running = False
         self.server = None
         self.other_servers = []
+        self.logger = logging.getLogger(__name__)
 
     def add_other_server(self, other):
         # this is so the pause operation can stop all servers
@@ -174,6 +190,13 @@ class ServerThread(threading.Thread):
                 other.resume_from_reason(reason_string, False)
 
     def run(self):
+        if not self.ready:
+            self.logger.info("memory comms bank teller server waiting for config")
+            while not self.ready:
+                time.sleep(0.001)
+        if self.server is None:
+            self.configure()
+        self.logger.info("memory comms bank teller server starting")
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -190,25 +213,31 @@ class ServerThread(threading.Thread):
                 pass
         finally:
             loop.close()        
+
+    def go(self):
+        self.ready = True
+        
+    def configure(self):
+        if self.server:
+            return
+        self.logger.info('creating server')
+        if hasattr(self.bt_server.state_map, "set_server_wrapper"):
+            self.bt_server.state_map.set_server_wrapper(self)
+        self.server = Server(name=self.bt_server.name,
+                             state_map=self.bt_server.state_map,
+                             log=self.bt_server.data_log,
+                             other_nodes=self.bt_server.other_nodes,
+                             endpoint=self.bt_server.endpoint,
+                             comms=self.bt_server.comms,
+                             app=self.bt_server.app)
+        self.server.set_timer_class(ControlledTimer)
+        self.server.get_endpoint()
         
     async def _run(self):
         self.running = True
         try:
-            logger = logging.getLogger(__name__)
-            logger.info("memory comms bank teller server starting")
-            logger.info('creating server')
-            if hasattr(self.bt_server.state_map, "set_server_wrapper"):
-                self.bt_server.state_map.set_server_wrapper(self)
-            self.server = Server(name=self.bt_server.name,
-                                 state_map=self.bt_server.state_map,
-                                 log=self.bt_server.data_log,
-                                 other_nodes=self.bt_server.other_nodes,
-                                 endpoint=self.bt_server.endpoint,
-                                 comms=self.bt_server.comms,
-                                 app=self.bt_server.app)
-            self.server.set_timer_class(ControlledTimer)
-            self.server.get_endpoint()
-            logger.info("started server on memory addr %s  with others at %s",
+            self.server.start()
+            self.logger.info("started server on memory addr %s  with others at %s",
                         self.bt_server.endpoint,
                         self.bt_server.other_nodes)
             while self.keep_running:
@@ -219,7 +248,7 @@ class ServerThread(threading.Thread):
             print("\n\n!!!!!!Server thread failed!!!!")
             traceback.print_exc()
         self.running = False
-        
+
     def stop(self):
         self.keep_running = False
         start_time = time.time()

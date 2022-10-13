@@ -35,7 +35,7 @@ class Follower(Voter):
                                                       self.term,
                                                       interval,
                                                       self.leader_lost)
-        self.leaderless_timer.start()
+        
         self.last_vote = None
         self.last_vote_time = None
         
@@ -48,6 +48,11 @@ class Follower(Voter):
     def get_leader_addr(self):
         return self.leader_addr
     
+    def start(self):
+        if self.terminated:
+            raise Exception("cannot start a terminated state")
+        self.leaderless_timer.start()
+
     async def stop(self):
         self.terminated = True
         await self.leaderless_timer.terminate()

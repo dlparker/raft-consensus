@@ -24,12 +24,17 @@ class Server:
         self.app = app
         self.comms_task = None
         self.running = False
-        task_logger.create_task(self.start(),
+
+    def start(self):
+        task_logger.create_task(self._start(),
                                 logger=self.logger,
                                 message="server start task")
-
-    async def start(self):
+        
+    async def _start(self):
+        if self.running:
+            raise Exception("cannot call start twice")
         self.app.set_server(self)
+        self.logger.info('Server on %s activating state map', self.endpoint)
         self.state = await self.state_map.activate(self)
         self.comms_task = task_logger.create_task(
             self.comms.start(self, self.endpoint),
