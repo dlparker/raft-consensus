@@ -285,8 +285,6 @@ class StandardStateMapWrapper(StandardStateMap):
         # so later the normal timeouts will decide
         # when an election is needed.
         self.election_counter += 1
-        if self.election_counter < 0:
-            breakpoint()
         self.logger.info("switching state from %s to candidate", self.state)
         candidate = CandidateWrapper(server=self.server,
                                      timeout=0.5,

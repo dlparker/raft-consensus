@@ -40,7 +40,7 @@ class Candidate(Voter):
         return self.term
     
     def candidate_interval(self):
-        return random.uniform(0, self.timeout)
+        return random.uniform(0.1, self.timeout)
 
     async def stop(self):
         self.terminated = True

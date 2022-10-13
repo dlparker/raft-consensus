@@ -71,7 +71,7 @@ class UDPBankTellerServer:
         try:
             logger = logging.getLogger(__name__)
             logger.info("bank teller server starting")
-            state_map = StandardStateMapWrapper()
+            state_map = StandardStateMap()
             data_log = MemoryLog()
             loop = asyncio.get_running_loop()
             logger.info('creating server')
@@ -152,6 +152,7 @@ class ServerThread(threading.Thread):
         self.host = "localhost"
         self.keep_running = True
         self.running = False
+        self.server = None
         self.other_servers = []
 
     def add_other_server(self, other):
@@ -196,7 +197,8 @@ class ServerThread(threading.Thread):
             logger = logging.getLogger(__name__)
             logger.info("memory comms bank teller server starting")
             logger.info('creating server')
-            self.bt_server.state_map.set_server_wrapper(self)
+            if hasattr(self.bt_server.state_map, "set_server_wrapper"):
+                self.bt_server.state_map.set_server_wrapper(self)
             self.server = Server(name=self.bt_server.name,
                                  state_map=self.bt_server.state_map,
                                  log=self.bt_server.data_log,

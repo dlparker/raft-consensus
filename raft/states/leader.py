@@ -1,5 +1,4 @@
 from collections import defaultdict
-import random
 import asyncio
 import logging
 from dataclasses import dataclass, field, asdict

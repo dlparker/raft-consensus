@@ -41,8 +41,6 @@ class Timer:
             raise Exception("tried to start on already terminated timer" \
                             f" {self.name}")
         if self.waiting:
-            print("\n\ncalled start while waiting for stop on timer" \
-                            f" {self.name}")
             raise Exception("called start while waiting for stop on timer" \
                             f" {self.name}")
         self.enabled = True
@@ -57,14 +55,6 @@ class Timer:
     def is_enabled(self):
         return self.enabled
     
-    def should_exit(self, mname):
-        if not self.keep_running:
-            self.logger.info("timer %s %s method exiting because" \
-                             " keep_running is false",
-                             self.name, mname)
-            return True
-        return False
-        
     async def one_pass(self):
         while time.time() - self.start_time < self.interval:
             try:
@@ -74,7 +64,7 @@ class Timer:
                                      " keep_running is false",
                                      self.name)
                     return True
-            except RuntimeError:
+            except RuntimeError: # pragma: no cover error
                 # someone killed the loop while we were running
                 return
         self.task = task_logger.create_task(self.cb_wrapper(),
@@ -92,28 +82,18 @@ class Timer:
             self.start_time = time.time()
             try:
                 await self.one_pass()
-                if not self.keep_running:
-                    self.logger.info("timer %s run method exiting because" \
-                                     " keep_running is false",
-                                     self.name)
-                    break
             except:
                 self.logger.error(traceback.format_exc())
                 pass
             
-        if not self.keep_running:
-            self.logger.info("timer %s run method exiting on stop", self.name)
-        else:
-            self.keep_running = False
+        self.logger.info("timer %s run method exiting on stop", self.name)
         self.task = None
         
     async def stop(self):
         if self.terminated:
             raise Exception("tried to stop already terminated timer"  \
                             f" {self.name}")
-        if not self.keep_running:
-            return
-        if not self.task:
+        if not self.keep_running or not self.task:
             return
         self.waiting = True
         self.keep_running = False
@@ -139,12 +119,17 @@ class Timer:
             raise Exception("tried to reset already terminated timer"  \
                             f" {self.name}")
         if self.waiting:
-            while self.waiting:
+            wait_start = time.time()
+            wait_limit = self.interval + (0.1 * self.interval)
+            while self.waiting and time.time() - wait_start < wait_limit:
                 await asyncio.sleep(0.01)
+            if self.waiting:
+                dur = time.time() - wait_start
+                raise Exception(f"Timer {self.name} task did not exit" \
+                                f" after waiting {dur:.8f}")
             if self.terminated:
-                self.logger.warning("timer %s terminated during call to reset",
-                                    self.name)
-                return
+                raise Exception(f"Timer {self.name} terminated during" \
+                                " call to reset")
         if not self.keep_running or self.task is None:
             self.start()
         else:

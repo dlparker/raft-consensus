@@ -14,17 +14,20 @@ from raft.states.timer import Timer
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
 
-#LOGGING_TYPE = "silent" for no log at all
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
-
 if LOGGING_TYPE != "silent":
     logging.root.handlers = []
-    logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s',
+    lfstring = '%(process)s %(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    logging.basicConfig(format=lfstring,
                         level=logging.DEBUG)
 
     # set up logging to console
     console = logging.StreamHandler()
     console.setLevel(logging.DEBUG)
+    root = logging.getLogger()
+    root.setLevel(logging.WARNING)
+    raft_log = logging.getLogger("raft")
+    raft_log.setLevel(logging.DEBUG)
 
 
 class TestUtils(unittest.TestCase):
@@ -169,9 +172,16 @@ class TestTimer(unittest.TestCase):
 
     def setUp(self):
         self.counter = 0
-
+        self.exploded = False
+        
     async def target(self):
         self.counter += 1
+
+    async def exploder_target(self):
+        self.counter += 1
+        if self.counter == 1:
+            self.exploded = True
+            raise Exception("boom!")
 
     async def inner_test_timer_1(self):
         self.counter = 0
@@ -183,6 +193,7 @@ class TestTimer(unittest.TestCase):
         
         self.counter = 0
         t2 = Timer('bar', 0, 0.05, self.target)
+        self.assertEqual(str(t2), "bar")
         start_time = time.time()
         t2.start()
         while time.time() - start_time < 0.06:
@@ -204,6 +215,11 @@ class TestTimer(unittest.TestCase):
             await asyncio.sleep(0.01)
         self.assertTrue(self.counter > 0)
 
+        # make sure reset raises if timer is disabled
+        t2.disable()
+        self.assertFalse(t2.is_enabled())
+        with self.assertRaises(Exception) as context:
+            await t2.reset()
         
         await t2.terminate()
         with self.assertRaises(Exception) as context:
@@ -255,18 +271,20 @@ class TestTimer(unittest.TestCase):
         class Runaway(Timer):
 
             runner = True
+            do_terminate = False
             async def run(self):
-                    while self.keep_running:
-                        self.start_time = time.time()
-                        try:
-                            await self.one_pass()
-                        except:
-                            self.logger.error(traceback.format_exc())
-                            
-                        while self.runner:
-                            await asyncio.sleep(0.01)
-                        self.task = None
-
+                while self.keep_running:
+                    self.start_time = time.time()
+                    try:
+                        await self.one_pass()
+                    except:
+                        self.logger.error(traceback.format_exc())
+                        
+                    while self.runner:
+                        await asyncio.sleep(0.01)
+                    self.task = None
+                    if self.do_terminate:
+                        self.terminated = True
 
         t5 = Runaway('boom', 0, 0.05, self.target)
         # first pass should work
@@ -274,8 +292,6 @@ class TestTimer(unittest.TestCase):
         self.counter = 0
         await asyncio.sleep(0.06)
         self.assertEqual(self.counter, 1)
-        # if we do it this way, pytest thinks it should print the
-        # exception traceback:
         with self.assertRaises(Exception) as context:
             await t5.stop()
         # cleanup
@@ -284,6 +300,70 @@ class TestTimer(unittest.TestCase):
         await t5.stop()
         await t5.terminate()
 
+        
+        t6 = Runaway('boom2', 0, 0.05, self.target)
+        # first pass should work
+        t6.start()
+        self.counter = 0
+        await asyncio.sleep(0.06)
+        self.assertEqual(self.counter, 1)
+        # make the interval longer so stop waits a long time
+        t6.interval = 1.0
+        asyncio.create_task(t6.stop())
+        start_time = time.time()
+        while time.time() - start_time < 0.5 and not t6.waiting:
+            await asyncio.sleep(0.01)
+        self.assertTrue(t6.waiting,
+                        msg="runaway timer stop did not show waiting")
+
+        # make the interval shorter so reset waits a short time
+        t6.interval = 0.1
+        with self.assertRaises(Exception) as context:
+            await t6.reset()
+        with self.assertRaises(Exception) as context:
+            await t6.start()
+        # cleanup
+        t6.runner = False
+        await asyncio.sleep(0.01)
+        await t6.stop()
+        await t6.terminate()
+
+        t7 = Runaway('boom3', 0, 0.05, self.target)
+        # first pass should work
+        t7.start()
+        self.counter = 0
+        await asyncio.sleep(0.06)
+        self.assertEqual(self.counter, 1)
+        asyncio.create_task(t7.stop())
+        start_time = time.time()
+        while time.time() - start_time < 0.5 and not t7.waiting:
+            await asyncio.sleep(0.01)
+        self.assertTrue(t7.waiting,
+                        msg="runaway timer stop did not show waiting")
+
+        # make it look like terminate was called before reset
+        # waiting task could start again
+        t7.do_terminate = True
+        t7.runner = False
+        with self.assertRaises(Exception) as context:
+            await t7.reset()
+
+        # Now make sure that an exception in the execution of
+        # the callback will not break the timer
+        t8 = Timer('boomer', 0, 0.05, self.exploder_target)
+        t8.start()
+        self.counter = 0
+        await asyncio.sleep(0.06)
+        self.assertEqual(self.counter, 1)
+        self.assertTrue(self.exploded)
+        self.exploded = False
+        await asyncio.sleep(0.06)
+        self.assertEqual(self.counter, 2)
+        self.assertFalse(self.exploded)
+        
+        # cleanup
+        await t8.terminate()
+        
         
     def test_timer_1(self):
         try:

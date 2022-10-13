@@ -7,6 +7,7 @@ import traceback
 from collections import defaultdict
 
 from ..messages.serializer import Serializer
+from ..utils import task_logger
 from .comms_api import CommsAPI
 
 class UDPComms(CommsAPI):
@@ -51,7 +52,7 @@ class UDPComms(CommsAPI):
             start_time = time.time()
             while self.protocol.running and time.time() - start_time < 1:
                 await asyncio.sleep(0.001)
-            if self.protocol.running:
+            if self.protocol.running: # pragma: no cover error
                 raise Exception('protocol would not stop!')
             self.transport = None
             self.protocol = None
@@ -131,97 +132,15 @@ class UDP_Protocol(asyncio.DatagramProtocol):
     def connection_made(self, transport):
         self.transport = transport
         self.logger.info("connection made %s", transport)
-        asyncio.ensure_future(self.start())
+        task_logger.create_task(self.start(),
+                                logger=self.logger,
+                                message="starting tranport thread")
 
-    def do_not_use_datagram_received(self, data, addr): # pragma: no cover
-        raise Exception("do not use this")
-        # TODO: use or remove
-        # Tried this code to solve some out of order issues,
-        # but then decided to fix it other ways. Keeping this
-        # until I am sure it is not needed.
-        self.logger.debug("protocol got message from %s %s", addr, data[:30])
-        msg = Serializer.deserialize(data)
-        if msg.msg_number is None:
-            # must be a client message
-            self.logger.debug("delivery of client message")
-            asyncio.ensure_future(self.message_handler(data, addr))
-            return
-        # will never actually send a zero, always 1+
-        last = self.seq_by_sender[addr]
-        if last == 0:
-            # we have never gotten a message, so set to
-            # allow delivery
-            last = msg.msg_number - 1
-        # If the message is directly after the last one
-        # order is good. If the message is before the last
-        # one, other process must have rebooted, so reset
-        if (msg.msg_number == last + 1 or
-            msg.msg_number < last):
-            self.logger.info("simple delivery of msg.number %d %s",
-                              msg.msg_number, msg.code)
-            asyncio.ensure_future(self.message_handler(data, addr))
-            self.seq_by_sender[addr] = msg.msg_number
-            return
-        # If the message is after the expected number, it
-        # arrived out of order, so save it
-        if msg.msg_number > last + 1:
-            # defer processing
-            saver = self.out_of_order[addr]
-            saver[msg.msg_number] = dict(msg_number=msg.msg_number,
-                                         data=data,
-                                         addr=addr)
-            self.logger.info("\n\n!! defering delivery of msg.number %d, not last %d + 1",
-                              msg.msg_number, last)
-            return
-        # If we still haven't figured out the message,
-        # see if we have pending out of order messages
-        # and see if it can help us clear those, or has to be
-        # added to them.
-        if len(self.out_of_order[addr]) == 0:
-            self.logger.error("Can't figure out ordering of message")
-            breakpoint()
-            return
-        my_set = self.out_of_order[addr]
-        pending = list(my_set.keys())
-        pending.sort()
-        first = pending[0]
-        last = pending[-1]
-        if msg.msg_number > last:
-            my_set[msg.msg_number] = dict(msg_number=msg.msg_number,
-                                          data=data,
-                                          addr=addr)
-            self.logger.info("\n\n!!! defering delivery of msg.number %d, > %d ",
-                              msg.msg_number, last)
-            return
-        if msg.msg_number == last + 1:
-            # this is the first of the late
-            # arrivalsm,  handle it, then
-            # work through the rest until
-            # caught up or another gap
-            asyncio.ensure_future(self.message_handler(data, addr))
-            last = self.seq_by_sender[addr] = msg.msg_number
-            for pend in pending:
-                if pend != last + 1:
-                    # still missing something
-                    break
-                rec = my_set[pend]
-                asyncio.ensure_future(
-                    self.message_handler(rec['data'], rec['addr']))
-                del my_set[pend]
-                last = self.seq_by_sender[addr] = rec['msg_number']
-                self.logger.info("\n\n!!! Finished deferred delivery of msg.number %d",
-                                 rec['msg_number'])
-            return
-        # another out of order, save it
-        self.logger.info("defered delivery of msg.number %d, inside pending ",
-                          msg.msg_number)
-        my_set[msg.msg_number] = dict(msg_number=msg.msg_number,
-                                      data=data,
-                                      addr=addr)
-        
     def datagram_received(self, data, addr):
         self.logger.debug("protocol got message from %s %s", addr, data[:30])
-        asyncio.ensure_future(self.message_handler(data, addr))
+        task_logger.create_task(self.message_handler(data, addr),
+                                logger=self.logger,
+                                message=f"delivering message from {addr}")
 
     def error_received(self, exc):  # pragma: no cover error
         self.logger.error("got error %s", exc)
