@@ -28,11 +28,13 @@ class Monitor1(StateChangeMonitor):
         import threading
         this_id = threading.Thread.ident
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
-        if len(self.state_history) > 0:
-            if str(new_state) == str(self.state_history[-1]):
-                raise Exception("change is no change")
         self.state_history.append(new_state)
         return new_state
+
+    def get_state(self):
+        if len(self.state_history) == 0:
+            return None
+        return self.state_history[-1]
     
 class TestMonitors(unittest.TestCase):
 
@@ -66,11 +68,13 @@ class TestMonitors(unittest.TestCase):
     
     def test_callabacks(self):
         self.cluster.prep_mem_servers()
+        monitors = []
         for name,sdef in self.cluster.server_recs.items():
             mserver = sdef['memserver']
             state_map = StandardStateMap()
             mserver.state_map = state_map
             monitor = Monitor1(name, self.logger)
+            monitors.append(monitor)
             state_map.add_state_change_monitor(monitor)
 
         for name,sdef in self.cluster.server_recs.items():
@@ -79,7 +83,6 @@ class TestMonitors(unittest.TestCase):
         self.cluster.start_all_servers()
         self.logger.info("waiting for election results")
         client = MemoryBankTellerClient("localhost", 5000)
-
         start_time = time.time()
         while time.time() - start_time < 2:
             # servers are in their own threads, so
@@ -93,6 +96,22 @@ class TestMonitors(unittest.TestCase):
             
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.data['leader'])
+        leader = None
+        alt1 = None
+        alt2 = None
+        for monitor in monitors:
+            if monitor.get_state is None:
+                continue
+            if str(monitor.get_state()) == "leader":
+                leader = monitor
+            elif alt1 is None:
+                alt1 = monitor
+            else:
+                alt2 = monitor
+        self.assertIsNotNone(leader)
+        self.assertIsNotNone(alt1)
+        self.assertIsNotNone(alt2)
+            
         run_data = run_data_from_status(self.cluster, self.logger, status)
 
         
