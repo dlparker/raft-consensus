@@ -63,14 +63,16 @@ class Leader(State):
         self.task = task_logger.create_task(self.on_start(),
                                             logger=self.logger,
                                             message="leader start method")
-
-    async def on_start(self):
-        await self.send_term_start()
-        await self.set_substate(Substate.became_leader)
-        
     async def stop(self):
         self.terminated = True
         await self.heartbeat_timer.terminate()
+        if self.task:
+            self.task.cancel()
+            await asyncio.sleep(0)
+            
+    async def on_start(self):
+        await self.send_term_start()
+        await self.set_substate(Substate.became_leader)
         
     def get_term(self):
         return self.term

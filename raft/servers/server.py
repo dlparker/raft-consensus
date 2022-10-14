@@ -111,6 +111,4 @@ class Server:
             send_message._receiver = n
             self.logger.debug("%s sending message %s to %s", self.state,
                    send_message, n)
-            task_logger.create_task(self.comms.post_message(send_message),
-                                    logger=self.logger,
-                                    message="post messsage")
+            await self.comms.post_message(send_message)                

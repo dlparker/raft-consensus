@@ -73,7 +73,7 @@ class TestMonitors(unittest.TestCase):
                 
     def tearDown(self):
         self.cluster.stop_all_servers()
-        time.sleep(0.5)
+        time.sleep(0.1)
         self.cluster.stop_logging_server()
         self.loop.close()
     

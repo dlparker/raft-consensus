@@ -42,15 +42,18 @@ class Candidate(Voter):
         self.task = task_logger.create_task(self.start_election(),
                                             logger=self.logger,
                                             message="candidate election error")
+    async def stop(self):
+        self.terminated = True
+        await self.candidate_timer.terminate()
+        if self.task:
+            self.task.cancel()
+            await asyncio.sleep(0)
+            
     def get_term(self):
         return self.term
     
     def candidate_interval(self):
         return random.uniform(0.1, self.timeout)
-
-    async def stop(self):
-        self.terminated = True
-        await self.candidate_timer.terminate()
         
     async def on_term_start(self, message):
         self.logger.info("candidate resigning because we got a term start message")
@@ -139,6 +142,7 @@ class Candidate(Voter):
         await self.server.broadcast(election)
         self.logger.info("send all endpoints %s", election)
         self.last_vote = self.server.endpoint
+        self.task = None
 
     # received append entry from leader or not enough votes -> step down
     async def resign(self):
