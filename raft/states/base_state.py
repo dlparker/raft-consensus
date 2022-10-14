@@ -66,6 +66,7 @@ class State(metaclass=abc.ABCMeta):
         
     async def set_substate(self, substate: Substate):
         self.substate = substate
+        await self.server.get_state_map().set_substate(self, substate)
 
     def is_terminated(self):
         return self.terminated

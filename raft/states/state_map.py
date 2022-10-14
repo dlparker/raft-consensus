@@ -1,10 +1,11 @@
+from __future__ import annotations
 import abc
-from typing import Optional
+from typing import Optional, Union
 import asyncio
 import logging
 import traceback
 
-from .base_state import State
+from .base_state import State, Substate
 from .candidate import Candidate
 from .follower import Follower
 from .leader import Leader
@@ -13,7 +14,15 @@ from .leader import Leader
 class StateChangeMonitor(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
-    async def new_state(self, state_map, old_state, new_state) -> State:
+    async def new_state(self, state_map: StateMap,
+                        old_state: Union[State, None],
+                        new_state: Substate) -> State:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def new_substate(self, state_map: StateMap,
+                            state: State,
+                            substate: Substate) -> None:
         raise NotImplementedError
 
 # abstract class for all states
@@ -75,6 +84,7 @@ class StandardStateMap(StateMap):
             self.monitors = []
         self.server = server
         self.state = None
+        self.substate = None
         self.logger = logging.getLogger(__name__)
         self.logger.info("activating state map for server %s", server)
         return await self.switch_to_follower()
@@ -90,19 +100,38 @@ class StandardStateMap(StateMap):
     
     def get_state(self) -> Optional[State]:
         if not self.server:
-            raise Exception('must call set_server before any other method!')
+            raise Exception('must call activate before this method!')
         return self.state
 
+    def get_substate(self) -> Optional[State]:
+        if not self.server:
+            raise Exception('must call activate before this method!')
+        return self.substate
+    
+    async def set_substate(self, state, substate):
+        if not self.server:
+            raise Exception('must call activate before this method!')
+        if state != self.state:
+            raise Exception('set_substate call on non-current state!')
+        for monitor in self.monitors:
+            try:
+                await monitor.new_substate(self, state, substate)
+            except:
+                self.logger.error("Monitor new_substate call got" \
+                                  " exception \n\t%s",
+                                  traceback.format_exc())
+        self.substate = substate
+        
     async def switch_to_follower(self, old_state: Optional[State] = None) -> Follower:
         if not self.server:
-            raise Exception('must call set_server before any other method!')
+            raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to follower", self.state)
         follower =  Follower(server=self.server)
         for monitor in self.monitors:
             try:
                 await monitor.new_state(self, self.state, follower)
             except:
-                self.logger.error("Monitor new_state call got exception \n%s",
+                self.logger.error("Monitor new_state call got exception \n\t%s",
                                   traceback.format_exc())
         self.server.set_state(follower)
         self.state = follower
@@ -111,7 +140,7 @@ class StandardStateMap(StateMap):
     
     async def switch_to_candidate(self, old_state: Optional[State] = None) -> Candidate:
         if not self.server:
-            raise Exception('must call set_server before any other method!')
+            raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to candidate", self.state)
         candidate =  Candidate(server=self.server)
         for monitor in self.monitors:
@@ -127,7 +156,7 @@ class StandardStateMap(StateMap):
 
     async def switch_to_leader(self, old_state: Optional[State] = None) -> Leader:
         if not self.server:
-            raise Exception('must call set_server before any other method!')
+            raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to leader", self.state)
         leader =  Leader(server=self.server)
         for monitor in self.monitors:

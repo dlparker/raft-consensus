@@ -23,13 +23,22 @@ class Monitor1(StateChangeMonitor):
         self.name = name
         self.logger = logger
         self.state_history = []
+        self.substate_history = []
 
     async def new_state(self, state_map, old_state, new_state):
         import threading
         this_id = threading.Thread.ident
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
         self.state_history.append(new_state)
+        self.substate_history = []
         return new_state
+
+    async def new_substate(self, state_map, state, substate):
+        import threading
+        this_id = threading.Thread.ident
+        self.logger.info(f"{self.name} {state} to substate {substate}")
+        self.substate_history.append(substate)
+        return 
 
     def get_state(self):
         if len(self.state_history) == 0:
@@ -66,7 +75,7 @@ class TestMonitors(unittest.TestCase):
         self.cluster.stop_logging_server()
         self.loop.close()
     
-    def test_callabacks(self):
+    def test_callbacks(self):
         self.cluster.prep_mem_servers()
         monitors = []
         for name,sdef in self.cluster.server_recs.items():

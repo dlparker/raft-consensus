@@ -66,6 +66,7 @@ class UDPBankTellerServer:
         self.working_dir = working_dir
         self.others = others
         self.vote_at_start = vote_at_start
+        self.running = False
         
     async def _run(self):
         try:
@@ -82,10 +83,10 @@ class UDPBankTellerServer:
                             endpoint=endpoint,
                             comms=UDPComms(),
                             app=app)
-            self.server.start()
+            server.start()
             logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
-        except:
-            logger.error(traceback.print_exc())
+        except :
+            logger.error(traceback.format_exc())
 
     def start(self):
         try:
@@ -103,6 +104,7 @@ class UDPBankTellerServer:
                 loop.run_until_complete(t)
         finally:
             loop.close()        
+            self.running = False
 
         
 class MemoryBankTellerServer:

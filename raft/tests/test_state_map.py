@@ -10,6 +10,8 @@ from pathlib import Path
 from raft.tests.bt_server import MemoryBankTellerServer
 from raft.tests.bt_client import MemoryBankTellerClient
 from raft.states.state_map import StandardStateMap, StateChangeMonitor
+from raft.states.base_state import Substate
+
 from raft.tests.common_test_code import RunData, run_data_from_status
 from raft.tests.setup_utils import Cluster
 
@@ -45,15 +47,52 @@ class TestMap(unittest.TestCase):
         bt_server = MemoryBankTellerServer(0, Path('.'), "foo", (1,2),
                                         None, False)
         smap = bt_server.state_map = StandardStateMap()
+        # make sure all errors raise when calls made
+        # before activate call
         with self.assertRaises(Exception) as context:
             smap.get_state()
+        self.assertTrue("must call activate" in str(context.exception))
+        with self.assertRaises(Exception) as context:
+            await smap.set_substate("","")
+        self.assertTrue("must call activate" in str(context.exception))
+        with self.assertRaises(Exception) as context:
+            smap.get_substate()
+        self.assertTrue("must call activate" in str(context.exception))
         with self.assertRaises(Exception) as context:
             await smap.switch_to_follower()
+        self.assertTrue("must call activate" in str(context.exception))
         with self.assertRaises(Exception) as context:
             await smap.switch_to_candidate()
+        self.assertTrue("must call activate" in str(context.exception))
         with self.assertRaises(Exception) as context:
             await smap.switch_to_leader()
-            
+        self.assertTrue("must call activate" in str(context.exception))
+
+        # make sure add_state_change_monitor works even
+        # if no activate call yet
+        class FakeMonitor(StateChangeMonitor):
+            state = None
+            substate = None
+            async def new_state(self, state_map, old_state, new_state):
+                self.state = new_state
+                return new_state
+            async def new_substate(self, state_map, state, substate):
+                self.substate = substate
+
+        class BadMonitor(StateChangeMonitor):
+            state = None
+            substate = None
+            async def new_state(self, state_map, old_state, new_state):
+                raise Exception("testing error capture in state map")
+            async def new_substate(self, state_map, state, substate):
+                raise Exception("testing error capture in state map")
+
+        fake_mon = FakeMonitor()
+        bad_mon = BadMonitor()
+        smap.add_state_change_monitor(fake_mon)
+        self.assertTrue(len(smap.monitors) > 0)
+        smap.add_state_change_monitor(bad_mon)
+        self.assertTrue(len(smap.monitors) > 1)
         bt_server.start()
         start_time = time.time()
         while time.time() - start_time < 0.5 and smap.state is None:
@@ -67,10 +106,31 @@ class TestMap(unittest.TestCase):
         self.assertEqual(smap.get_server(), server)
         self.assertEqual(smap.get_state(), follower)
         self.assertEqual(server.get_state(), follower)
+        self.assertEqual(fake_mon.state, follower)
+        with self.assertRaises(Exception) as context:
+            await smap.set_substate(None, Substate.starting)
+        self.assertTrue("non-current state" in str(context.exception))
+        await smap.set_substate(follower, Substate.starting)
+        self.assertEqual(smap.get_substate(), Substate.starting)
+        self.assertEqual(fake_mon.substate, Substate.starting)
         candidate = await smap.switch_to_candidate()
         await candidate.candidate_timer.terminate()
         leader = await smap.switch_to_leader()
         await leader.heartbeat_timer.stop()
         bt_server.stop()
 
+        # Just a little sequence to excersize the normal
+        # path of activate being called before adding state change
+        # monitors
+        bt_server_2 = MemoryBankTellerServer(1, Path('.'), "foo", (1,2),
+                                             None, False)
+        bt_server_2.start()
+        smap2 = bt_server_2.state_map
+        start_time = time.time()
+        while time.time() - start_time < 0.5 and smap2.state is None:
+            await asyncio.sleep(0.0001)
+        self.assertIsNotNone(smap2.state)
+        smap2.add_state_change_monitor(fake_mon)
+        self.assertTrue(len(smap2.monitors) > 0)
+        bt_server_2.stop()
         
