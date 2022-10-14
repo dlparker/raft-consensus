@@ -22,28 +22,30 @@ class Monitor1(StateChangeMonitor):
     def __init__(self, name, logger):
         self.name = name
         self.logger = logger
+        self.state_map = None
         self.state_history = []
         self.substate_history = []
+        self.state = None
+        self.substate = None
 
     async def new_state(self, state_map, old_state, new_state):
         import threading
         this_id = threading.Thread.ident
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
-        self.state_history.append(new_state)
+        self.state_history.append(old_state)
         self.substate_history = []
+        self.state = new_state
+        self.state_map = state_map
         return new_state
 
     async def new_substate(self, state_map, state, substate):
         import threading
         this_id = threading.Thread.ident
         self.logger.info(f"{self.name} {state} to substate {substate}")
-        self.substate_history.append(substate)
-        return 
+        self.substate_history.append(self.substate)
+        self.substate = substate
+        self.state_map = state_map
 
-    def get_state(self):
-        if len(self.state_history) == 0:
-            return None
-        return self.state_history[-1]
     
 class TestMonitors(unittest.TestCase):
 
@@ -105,22 +107,39 @@ class TestMonitors(unittest.TestCase):
             
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.data['leader'])
-        leader = None
-        alt1 = None
-        alt2 = None
+        leader_mon = None
+        first_mon = None
+        second_mon = None
         for monitor in monitors:
-            if monitor.get_state is None:
+            if monitor.state is None:
                 continue
-            if str(monitor.get_state()) == "leader":
-                leader = monitor
-            elif alt1 is None:
-                alt1 = monitor
+            if str(monitor.state) == "leader":
+                leader_mon = monitor
+            elif first_mon is None:
+                first_mon = monitor
             else:
-                alt2 = monitor
-        self.assertIsNotNone(leader)
-        self.assertIsNotNone(alt1)
-        self.assertIsNotNone(alt2)
+                second_mon = monitor
+        self.assertIsNotNone(leader_mon)
+        self.assertIsNotNone(first_mon)
+        self.assertIsNotNone(second_mon)
             
         run_data = run_data_from_status(self.cluster, self.logger, status)
+        leader = run_data.leader
+        first = run_data.first_follower
+        second = run_data.second_follower
+        addr = leader_mon.state_map.server.endpoint
+        self.assertEqual(addr, leader['addr'])
+        leader['monitor'] = leader_mon
+        addr = first_mon.state_map.server.endpoint
+        if addr == first['addr']:
+            first['monitor'] = first_mon
+            second['monitor'] = second_mon
+        else:
+            first['monitor'] = second_mon
+            second['monitor'] = first_mon
+            second_mon = first_mon
+            first_mon = first['monitor']
+        
 
+        
         
