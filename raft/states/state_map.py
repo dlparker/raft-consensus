@@ -5,25 +5,12 @@ import asyncio
 import logging
 import traceback
 
+from raft.app_api.app import StateChangeMonitor
 from .base_state import State, Substate
 from .candidate import Candidate
 from .follower import Follower
 from .leader import Leader
 
-# abstract class for all states
-class StateChangeMonitor(metaclass=abc.ABCMeta):
-
-    @abc.abstractmethod
-    async def new_state(self, state_map: StateMap,
-                        old_state: Union[State, None],
-                        new_state: Substate) -> State:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    async def new_substate(self, state_map: StateMap,
-                            state: State,
-                            substate: Substate) -> None:
-        raise NotImplementedError
 
 # abstract class for all states
 class StateMap(metaclass=abc.ABCMeta):
