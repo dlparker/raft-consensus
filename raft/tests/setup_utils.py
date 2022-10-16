@@ -7,18 +7,21 @@ import raft
 
 from log_control import servers_as_procs_log_setup, stop_logging_server 
 from log_control import one_proc_log_setup
-from bt_server import UDPBankTellerServer, MemoryBankTellerServer
+from bt_server import (UDPBankTellerServer,
+                       MemoryBankTellerServer,
+                       PausingBankTellerServer)
 
 
 class Cluster:
 
     def __init__(self, server_count, use_processes=True,
-                 logging_type=None, base_port=5000):
+                 logging_type=None, base_port=5000, use_pauser=False):
         self.base_dir = Path("/tmp/raft_tests")
         self.server_count = server_count
         self.use_procs = use_processes
         self.logging_type = logging_type
         self.base_port = base_port
+        self.use_pauser = use_pauser
         self.server_recs = {}
         self.dirs_ready = False
         self.setup_dirs()
@@ -118,7 +121,10 @@ class Cluster:
         if srec.get('server_thread'):
             raise Exception(f"server {name} server_thread already running")
         if not srec.get("memserver"):
-            memserver = MemoryBankTellerServer(*args)
+            if self.use_pauser:
+                memserver = PausingBankTellerServer(*args)
+            else:
+                memserver = MemoryBankTellerServer(*args)
             srec['memserver'] = memserver
             
     def start_one_server(self, name, vote_at_start=True):
@@ -144,7 +150,10 @@ class Cluster:
                 raise Exception(f"server {name} server_thread already running")
             memserver = srec.get("memserver", None)
             if not memserver:
-                memserver = MemoryBankTellerServer(*args)
+                if self.use_pauser:
+                    memserver = PausingBankTellerServer(*args)
+                else:
+                    memserver = MemoryBankTellerServer(*args)
                 srec['memserver'] = memserver
             server_thread = memserver.start_thread()
             memserver.configure()

@@ -116,7 +116,7 @@ class StandardStateMap(StateMap):
         follower =  Follower(server=self.server)
         for monitor in self.monitors:
             try:
-                await monitor.new_state(self, self.state, follower)
+                follower = await monitor.new_state(self, self.state, follower)
             except:
                 self.logger.error("Monitor new_state call got exception \n\t%s",
                                   traceback.format_exc())
@@ -132,7 +132,7 @@ class StandardStateMap(StateMap):
         candidate =  Candidate(server=self.server)
         for monitor in self.monitors:
             try:
-                await monitor.new_state(self, self.state, candidate)
+                candidate = await monitor.new_state(self, self.state, candidate)
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
@@ -148,7 +148,7 @@ class StandardStateMap(StateMap):
         leader =  Leader(server=self.server)
         for monitor in self.monitors:
             try:
-                await monitor.new_state(self, self.state, leader)
+                leader = await monitor.new_state(self, self.state, leader)
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())

@@ -272,6 +272,12 @@ class StandardStateMapWrapper(StandardStateMap):
                                    timeout=0.5,
                                    vote_at_start=False,
                                    server_wrapper=self.server_wrapper)
+        for monitor in self.monitors:
+            try:
+                await monitor.new_state(self, self.state, follower)
+            except:
+                self.logger.error("Monitor new_state call got exception \n\t%s",
+                                  traceback.format_exc())
         self.first_time = False
         self.server.set_state(follower)
         self.set_state(follower)
@@ -290,6 +296,12 @@ class StandardStateMapWrapper(StandardStateMap):
         candidate = CandidateWrapper(server=self.server,
                                      timeout=0.5,
                                      server_wrapper=self.server_wrapper)
+        for monitor in self.monitors:
+            try:
+                await monitor.new_state(self, self.state, candidate)
+            except:
+                self.logger.error("Monitor new_state call got exception \n%s",
+                                  traceback.format_exc())
         self.server.set_state(candidate)
         self.set_state(candidate)
         candidate.start()
@@ -308,6 +320,12 @@ class StandardStateMapWrapper(StandardStateMap):
                                heartbeat_timeout=0.5,
                                server_wrapper=self.server_wrapper)
 
+        for monitor in self.monitors:
+            try:
+                await monitor.new_state(self, self.state, leader)
+            except:
+                self.logger.error("Monitor new_state call got exception \n%s",
+                                  traceback.format_exc())
         self.server.set_state(leader)
         self.set_state(leader)
         leader.start()
