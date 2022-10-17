@@ -57,9 +57,6 @@ class Follower(Voter):
         self.terminated = True
         await self.leaderless_timer.terminate()
         
-    async def set_substate(self, substate: Substate):
-        self.substate = substate
-        
     def election_interval(self):
         return random.uniform(self.timeout, 2 * self.timeout)
 
@@ -342,7 +339,8 @@ class Follower(Voter):
         if self.leaderless_timer.is_enabled():
             await self.leaderless_timer.reset()
         log = self.server.get_log()
-        self.logger.info("follower got term start: message.term = %s local_term = %s",
+        self.logger.info("follower got term start: message.term = %s"\
+                         " local_term = %s",
                          message.term, log.get_term())
         log.set_term(message.term)
         data = message.data
@@ -351,11 +349,15 @@ class Follower(Voter):
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
         if self.leader_addr != laddr:
             if self.leader_addr is None:
+                self.logger.debug("follower setting new substate %s",
+                                 Substate.joined)
                 await self.set_substate(Substate.joined)
             else:
+                self.logger.debug("follower setting new substate %s",
+                                 Substate.new_leader)
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
-            
+
     async def on_vote_request(self, message): 
         # If this node has not voted,
         # and if lastLogIndex in message

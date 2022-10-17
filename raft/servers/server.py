@@ -45,8 +45,10 @@ class Server:
         self.running = True
         
     async def stop(self):
-        self.comms_task.cancel()
-        await self.state.stop()
+        if self.comms_task:
+            self.comms_task.cancel()
+        if self.state:
+            await self.state.stop()
         self.running = False
         
     def get_log(self):
@@ -104,11 +106,16 @@ class Server:
         if len(n) > 0:
             await self.comms.post_message(message)
         
-    async def broadcast(self, message):
+    async def broadcast(self, message, wait=False):
         for n in self.other_nodes:
             # Have to create a deep copy of message to have different receivers
             send_message = copy.deepcopy(message)
             send_message._receiver = n
             self.logger.debug("%s sending message %s to %s", self.state,
                    send_message, n)
-            await self.comms.post_message(send_message)                
+            await self.comms.post_message(send_message)
+        if wait:
+            while not self.comms.are_out_queues_empty():
+                await asyncio.sleep(0.001)
+            self.logger.debug("%s out queues empty after broadcast",
+                              self.state)

@@ -4,6 +4,7 @@ import logging
 import traceback
 import abc
 
+from typing import Union
 from dataclasses import dataclass, field, asdict
 
 from ..utils import task_logger 
@@ -60,6 +61,9 @@ class MemoryComms(CommsAPI):
 
     def set_interceptor(self, interceptor: MessageInterceptor):
         self.interceptor = interceptor
+
+    def get_interceptor(self) -> Union[MessageInterceptor, None]:
+        return self.interceptor
         
     async def start(self, server, endpoint):
         self.endpoint = endpoint
@@ -131,6 +135,9 @@ class MemoryComms(CommsAPI):
                 if not deliver:
                     # don't unpause in case was paused excplicitly
                     self.paused = True
+                    self.logger.debug("pausing after send to %s", target)
+                    while self.paused:
+                        await asyncio.sleep(0.001)   
         except Exception: # pragma: no cover error
             self.logger.error(traceback.format_exc())
 

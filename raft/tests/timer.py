@@ -72,7 +72,6 @@ class ControlledTimer(Timer):
         self.thread_id = threading.current_thread().ident
         self.eye_d = f"{self.name}_{self.thread_id}"
         self.logger = logging.getLogger(__name__)
-        self.terminated = False
         global timer_set
         if timer_set is None:
             timer_set = TimerSet()

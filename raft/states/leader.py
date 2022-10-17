@@ -350,7 +350,8 @@ class Leader(State):
             log.get_term(),
             data
         )
-        await self.server.broadcast(message)
+        # lets wait for messages to go out before noting change
+        await self.server.broadcast(message, wait=True)
         self.logger.info("sent term start message to all %s %s", message, data)
         await self.set_substate(Substate.sent_term_start)
 

@@ -102,7 +102,10 @@ class Timer:
         self.logger.debug("timer %s waiting %.8f for task exit",
                           self.name, wait_limit)
         while self.task and time.time() - wait_start < wait_limit:
-            await asyncio.sleep(0.001)
+            try:
+                await asyncio.sleep(0.001)
+            except asyncio.exceptions.CancelledError:
+                pass
         self.logger.debug("timer %s done waiting for task exit", self.name)
         self.waiting = False
         if self.task:

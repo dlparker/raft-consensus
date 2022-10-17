@@ -57,6 +57,11 @@ class UDPComms(CommsAPI):
             self.transport = None
             self.protocol = None
             
+    def are_out_queues_empty(self):
+        if self.queue.empty():
+            return True
+        return False
+    
     async def post_message(self, message):
         if not isinstance(message, dict):
             self.logger.debug("posting %s to %s",

@@ -24,3 +24,6 @@ class CommsAPI(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
+    @abc.abstractmethod
+    def are_out_queues_empty(self):
+        raise NotImplementedError
