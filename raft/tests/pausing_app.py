@@ -43,7 +43,7 @@ class PausingMonitor(StateChangeMonitor):
                 clear = True
             if clear:
                 self.logger.warning("removing state pause for %s",
-                                 state)
+                                    new_state)
                 del self.pause_on_states[str(state)] 
         self.state_history.append(old_state)
         self.substate_history = []

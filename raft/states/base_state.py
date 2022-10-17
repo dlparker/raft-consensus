@@ -37,32 +37,44 @@ class Substate(str, Enum):
     """ Last call from leader had new records """
     log_appending = "log_appending"
 
+    """ Starting election """
+    voting = "VOTING"
+    
 
 
 # abstract class for all server states
 class State(metaclass=abc.ABCMeta):
-    _type = "base"
-    substate = Substate.starting
-    terminated = False
+
+    def __init__(self, server, my_type):
+        self._type = my_type
+        self.substate = Substate.starting
+        self.server = server
+        self.terminated = False
     
     @classmethod
     def __subclasshook__(cls, subclass):  # pragma: no cover abstract
         return (hasattr(subclass, 'on_vote_request') and 
                 callable(subclass.on_vote_request) and
-                hasattr(subclass, 'on_term_start') and 
-                callable(subclass.on_term_start) and
                 hasattr(subclass, 'on_vote_received') and 
                 callable(subclass.on_vote_received) and
+                hasattr(subclass, 'on_term_start') and 
+                callable(subclass.on_term_start) and
                 hasattr(subclass, 'on_append_entries') and 
                 callable(subclass.on_append_entries) and
                 hasattr(subclass, 'on_append_response') and 
                 callable(subclass.on_append_response) and
                 hasattr(subclass, 'on_client_command') and 
-                callable(subclass.on_client_command) or
+                callable(subclass.on_client_command) and
+                hasattr(subclass, 'get_term') and 
+                callable(subclass.get_term) and
+                hasattr(subclass, 'get_leader_addr') and 
+                callable(subclass.get_leader_addr) and
+                hasattr(subclass, 'on_heartbeat') and 
+                callable(subclass.on_heartbeat) and
+                hasattr(subclass, 'on_heartbeat_response') and 
+                callable(subclass.on_heartbeat_response) or
                 NotImplemented)
             
-    def set_server(self, server):
-        self.server = server
         
     async def set_substate(self, substate: Substate):
         self.substate = substate
@@ -162,19 +174,10 @@ class State(metaclass=abc.ABCMeta):
             await server.post_message(reply)
         
     @abc.abstractmethod
-    async def get_term(self):  # pragma: no cover abstract
-        """ Get the current term value """
-        raise NotImplementedError
-
-    @abc.abstractmethod
     async def on_vote_request(self, message):  # pragma: no cover abstract
         """Called when there is a vote request"""
         raise NotImplementedError
 
-    @abc.abstractmethod
-    async def get_leader_addr(self):  # pragma: no cover abstract
-        raise NotImplementedError
-    
     @abc.abstractmethod
     async def on_vote_received(self, message):  # pragma: no cover abstract
         """Called when this node receives a vote"""
@@ -195,6 +198,15 @@ class State(metaclass=abc.ABCMeta):
         """Called when there is a client request"""
         raise NotImplementedError
 
+    @abc.abstractmethod
+    async def get_term(self):  # pragma: no cover abstract
+        """ Get the current term value """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_leader_addr(self):  # pragma: no cover abstract
+        raise NotImplementedError
+    
     @abc.abstractmethod
     async def on_heartbeat(self, message): # pragma: no cover abstract
         raise NotImplementedError

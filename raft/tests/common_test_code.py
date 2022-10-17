@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from raft.tests.setup_utils import Cluster
 from raft.tests.bt_client import UDPBankTellerClient, MemoryBankTellerClient
+from raft.comms.memory_comms import reset_queues
 
 async def do_wait(seconds):
     start_time = time.time()
@@ -62,6 +63,7 @@ class BaseCase:
             pass
         
         def loop_setup(self):
+            reset_queues()
             self.cluster = Cluster(server_count=3,
                                    use_processes=self.get_process_flag(),
                                    logging_type=self.get_logging_type(),
@@ -263,6 +265,7 @@ class BaseCase:
             pass
 
         def loop_setup(self):
+            reset_queues()
             self.cluster = Cluster(server_count=3,
                                    use_processes=self.get_process_flag(),
                                    logging_type=self.get_logging_type(),
@@ -284,7 +287,6 @@ class BaseCase:
 
         def get_loop_limit(self):
             return 1
-        
             
         def wait_for_election_done(self, client, old_leader=None, timeout=3):
             self.logger.info("waiting for election results")
@@ -305,8 +307,8 @@ class BaseCase:
             self.assertIsNotNone(status.data['leader'])
             return run_data_from_status(self.cluster, self.logger, status)
 
-        
         def inner_test_client_ops(self):
+            time.sleep(0.1)
             client1 =  self.get_client(5000)
             run_data = self.wait_for_election_done(client1)
             self.logger.info("doing credit at %s", client1)
@@ -320,7 +322,6 @@ class BaseCase:
             result = client1.do_query()
             self.assertEqual(result['balance'], 5)
             self.logger.info("client ops via %s worked", client1)
-
             
         def test_client_ops(self):
             for i in range(self.get_loop_limit()):

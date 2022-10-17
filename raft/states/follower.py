@@ -12,14 +12,12 @@ from ..messages.log_pull import LogPullMessage
 from .base_state import Substate
 from .voter import Voter
 
-# Raft follower. Turns to candidate when it timeouts without receiving heartbeat from leader
 class Follower(Voter):
 
-    _type = "follower"
+    my_type = "follower"
     
     def __init__(self, server, timeout=0.75):
-        Voter.__init__(self)
-        self.server = server
+        super().__init__(server, self.my_type)
         self.timeout = timeout
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)

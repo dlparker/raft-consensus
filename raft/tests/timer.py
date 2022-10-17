@@ -101,7 +101,10 @@ class ControlledTimer(Timer):
             self.task.cancel()
             start_time = time.time()
             while self.task and time.time() - start_time < 1:
-                await asyncio.sleep(0.01)
+                try:
+                    await asyncio.sleep(0.01)
+                except asyncio.exceptions.CancelledError:
+                    pass
             if self.task:
                 print(f"\n\n\t\t\t\timer {self.eye_d} would not cancel\n\n")
                 raise Exception(f"timer {self.eye_d} would not cancel")

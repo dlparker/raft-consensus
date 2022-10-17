@@ -121,7 +121,7 @@ class MemoryBankTellerServer:
         self.working_dir = working_dir
         self.other_nodes = others
         self.endpoint = (self.host, self.port)
-        self.name = f"{self.endpoint}"
+        self.name = name
         self.state_map = StandardStateMap()
         self.data_log = MemoryLog()
         self.comms = MemoryComms()

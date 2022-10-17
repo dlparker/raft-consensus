@@ -32,6 +32,14 @@ class MessageInterceptor(metaclass=abc.ABCMeta):
         
 queues = {}
 
+def reset_queues():
+    global queues
+    queues = {}
+
+def get_queues():
+    global queues
+    return queues
+    
 @dataclass
 class Wrapper:
     data: bytes = field(repr=False)
@@ -46,7 +54,6 @@ class MemoryComms(CommsAPI):
         self.endpoint = None
         self.server = None
         self.queue = asyncio.Queue()
-        self.out_message_pending = False
         self.task = None
         self.keep_running = False
         self.logger = logging.getLogger(__name__)
@@ -99,17 +106,9 @@ class MemoryComms(CommsAPI):
             # this can happen at startup, waiting for
             # other server threads to start
             if target not in queues:
-                self.logger.debug("target queue %s not found, waiting", target)
-                self.out_message_pending = True
-                start_time = time.time()
-                while time.time() - start_time < 0.25:
-                    await asyncio.sleep(0.001)
-                    if target in queues:
-                        break
-                if target not in queues: # pragma: no cover error
-                    self.logger.debug("%s not connected to %s", self.endpoint,
-                                      target)
-                    return
+                self.logger.info("%s not connected to %s", self.endpoint,
+                                 target)
+                return
             if self.interceptor:
                 # let test code decide to pause things before
                 # delivering
@@ -127,7 +126,6 @@ class MemoryComms(CommsAPI):
             self.logger.debug("%s posted %s to %s",
                               self.endpoint, message.code, target)
             await queue.put(w)
-            self.out_message_pending = False
             if self.interceptor:
                 # let test code decide to pause things after
                 # delivering

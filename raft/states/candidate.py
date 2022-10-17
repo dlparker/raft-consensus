@@ -8,15 +8,15 @@ from ..utils import task_logger
 from .voter import Voter
 from .leader import Leader
 from .timer import Timer
+from .base_state import Substate
 
 
-# Raft Candidate. Transition state between Follower and Leader
 class Candidate(Voter):
 
-    _type = "candidate"
+    my_type = "candidate"
     
     def __init__(self, server, timeout=0.5):
-        Voter.__init__(self)
+        super().__init__(server, self.my_type)
         self.timeout = timeout
         self.logger = logging.getLogger(__name__)
         self.server = server
@@ -125,6 +125,9 @@ class Candidate(Voter):
             last_index = None
             last_term = None
         self.candidate_timer.start()
+        # important to do this after starting the timer so that
+        # test code can control execution by pausing timer
+        await self.set_substate(Substate.voting)
         log.incr_term()
         self.term = log.get_term()
         self.logger.info("candidate starting election term is %d, timeout is %f",

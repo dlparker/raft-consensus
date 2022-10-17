@@ -6,7 +6,7 @@ import random
 from raft.messages.status import StatusQueryMessage
 from raft.messages.command import ClientCommandMessage
 from raft.messages.serializer import Serializer
-from raft.comms.memory_comms import queues, Wrapper
+from raft.comms.memory_comms import get_queues, Wrapper
 
 def get_internal_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -70,23 +70,29 @@ class UDPBankTellerClient:
 class MemoryBankTellerClient:
     
     def __init__(self, server_host, server_port):
-
-
         self.server_addr = server_host, server_port
         self.queue = asyncio.Queue()
-        global queues
-        self.queues = queues
         poss = int(random.uniform(0, server_port - 100))
-        while poss in self.queues:
+        while poss in get_queues():
             poss = int(random.uniform(0, server_port - 100))
         self.addr = ('localhost', poss)
-        self.queues[self.addr] = self.queue
-        self.queues[self.addr] = self.queue
+        get_queues()[self.addr] = self.queue
+        get_queues()[self.addr] = self.queue
         self.channel = None
 
-    def get_channel(self):
+    async def get_channel(self):
+        # need to not blow up if server is not running
         if self.channel is None:
-            self.channel = queues[self.server_addr]
+            self.channel = get_queues().get(self.server_addr, None)
+        if self.channel is None:
+            start_time = time.time()
+            while time.time() - start_time < 2:
+                self.channel = get_queues().get(self.server_addr, None)
+                if self.channel:
+                    break
+                await asyncio.sleep(0.01)
+        if self.channel is None:
+            raise Exception("timeout")
         return self.channel
 
     def do_credit(self, amount):
@@ -151,7 +157,7 @@ class MemoryBankTellerClient:
         sqm = StatusQueryMessage(self.addr, self.server_addr, None, None)
         data = Serializer.serialize(sqm)
         w = Wrapper(data, self.addr)
-        await self.get_channel().put(w)
+        await (await self.get_channel()).put(w)
         return await self.a_get_result()
         
     async def a_do_query(self):
@@ -159,7 +165,7 @@ class MemoryBankTellerClient:
                                   None, "query")
         data = Serializer.serialize(qm)
         w = Wrapper(data, self.addr)
-        await self.get_channel().put(w)
+        await (await self.get_channel()).put(w)
         return await self.a_get_result()
 
     async def a_do_credit(self, amount):
@@ -167,7 +173,7 @@ class MemoryBankTellerClient:
                                   None, f"credit {amount}")
         data = Serializer.serialize(cm)
         w = Wrapper(data, self.addr)
-        await self.get_channel().put(w)
+        await (await self.get_channel()).put(w)
         return await self.a_get_result()
 
     async def a_do_debit(self, amount):
@@ -175,7 +181,7 @@ class MemoryBankTellerClient:
                                   None, f"debit {amount}")
         data = Serializer.serialize(dm)
         w = Wrapper(data, self.addr)
-        await self.get_channel().put(w)
+        await (await self.get_channel()).put(w)
         return await self.a_get_result()
         
                           

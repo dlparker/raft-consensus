@@ -1,5 +1,6 @@
 import os
 from raft.tests.bt_client import MemoryBankTellerClient
+from raft.tests.bt_client import UDPBankTellerClient
 from raft.tests.common_test_code import BaseCase
 
     
@@ -20,7 +21,7 @@ class MemTestClientOps(BaseCase.TestClientOps):
     def get_loop_limit(self):
         loops = int(os.environ.get("TEST_LOOP_COUNT", 1))
         return loops
-    
+
 class UDPTestClientOps(BaseCase.TestClientOps):
 
     def get_logging_type(self):
@@ -30,10 +31,10 @@ class UDPTestClientOps(BaseCase.TestClientOps):
         return LOGGING_TYPE
 
     def get_process_flag(self):
-        return False
+        return True
 
     def get_client(self, port):
-        return MemoryBankTellerClient("localhost", port)
+        return UDPBankTellerClient("localhost", port)
         
     def get_loop_limit(self):
         loops = int(os.environ.get("TEST_LOOP_COUNT", 1))

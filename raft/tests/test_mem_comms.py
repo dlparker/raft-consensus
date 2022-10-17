@@ -8,6 +8,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 from raft.comms.memory_comms import MemoryComms, MessageInterceptor
+from raft.comms.memory_comms import reset_queues
 from raft.messages.status import StatusQueryMessage, StatusQueryResponseMessage
 
 #LOGGING_TYPE = "silent" for no log at all
@@ -48,7 +49,7 @@ class TestBasic(unittest.TestCase):
         pass
     
     def setUp(self):
-        pass
+        reset_queues()
     
     def tearDown(self):
         pass
@@ -119,16 +120,7 @@ class TestBasic(unittest.TestCase):
             await end_1.start(server_1, (0, 0))
             msg1 = StatusQueryMessage(end_1.endpoint, (0, 1),
                                       term=0, data=dict(foo="bar"))
-            # The post message method will wait for the target endpoint
-            # to show up, so we don't want to wait for it. Give it a
-            # bit to start checking and then launch the target
             task = asyncio.create_task(end_1.post_message(msg1))
-            start_time = time.time()
-            while time.time() - start_time < 0.1:
-                await asyncio.sleep(0)
-                if end_1.out_message_pending:
-                    break
-            self.assertTrue(end_1.out_message_pending)
             await end_2.start(server_2, (0, 1))
 
             start_time = time.time()
@@ -286,7 +278,7 @@ class TestDebugControls(unittest.TestCase):
         pass
     
     def setUp(self):
-        pass
+        reset_queues()
     
     def tearDown(self):
         pass
@@ -304,7 +296,6 @@ class TestDebugControls(unittest.TestCase):
             await end_2.start(server_2, (0, 1))
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
-            self.assertFalse(end_1.out_message_pending)
             # if we set pause, outgoing should be pending but
             # not sent
             end_1.pause()
@@ -341,7 +332,6 @@ class TestDebugControls(unittest.TestCase):
             await end_2.start(server_2, (0, 1))
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
-            self.assertFalse(end_1.out_message_pending)
             # if we set pause on end_2, outgoing from end_1 should go
             # to queue, but incomming on end_2 should deuque
             end_2.pause()
@@ -402,7 +392,6 @@ class TestDebugControls(unittest.TestCase):
             await end_2.start(server_2, (0, 1))
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
-            self.assertFalse(end_1.out_message_pending)
             asyncio.create_task(end_1.post_message(msg1))
             await asyncio.sleep(.01)
             self.assertEqual(len(pauses), 1)

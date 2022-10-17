@@ -24,9 +24,7 @@ def set_levels(handler_names):
     #log_loggers['raft.states.leader:heartbeat'] = debug_log
     log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests'] = debug_log
-    log_loggers['raft.tests.timer'] = info_log
-    log_loggers['test_step_controls'] = debug_log
-    log_loggers['FollowerWrapper'] = debug_log
+    #log_loggers['raft.tests.timer'] = debug_log
     #log_loggers['raft.comms.memory_comms'] = debug_log
     return log_loggers
     

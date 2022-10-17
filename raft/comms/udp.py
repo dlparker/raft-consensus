@@ -119,7 +119,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             message.set_msg_number(seq_number)
             try:
                 data = Serializer.serialize(message)
-                self.logger.info("sending dequed message %d %s (%s) to %s",
+                self.logger.debug("sending dequed message %d %s (%s) to %s",
                                   seq_number, message,
                                   message.code, message.receiver)
             except Exception as e:  # pragma: no cover error

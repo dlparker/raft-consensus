@@ -14,6 +14,7 @@ from raft.states.base_state import Substate
 from raft.tests.common_test_code import run_data_from_status
 from raft.tests.setup_utils import Cluster
 from raft.tests.timer import get_timer_set
+from raft.comms.memory_comms import reset_queues
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -34,6 +35,7 @@ class TestPausing(unittest.TestCase):
     def setUp(self):
         if self.logger is None:
             self.logger = logging.getLogger(__name__)
+        reset_queues()
         self.cluster = Cluster(server_count=3,
                                use_processes=False,
                                logging_type=LOGGING_TYPE,

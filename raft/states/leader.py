@@ -19,16 +19,15 @@ class FollowerCursor:
     next_index: int
     last_index: int = field(default=0)
 
-# Raft leader. Currently does not support step down -> leader will stay forever until terminated
 class Leader(State):
 
-    _type = "leader"
+    my_type = "leader"
     
     def __init__(self, server, heartbeat_timeout=0.5):
+        super().__init__(server, self.my_type)
         self.heartbeat_timeout = heartbeat_timeout
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        self.server = server
         server.set_state(self)
         log = self.server.get_log()
         self.term = log.get_term()
@@ -71,7 +70,9 @@ class Leader(State):
             await asyncio.sleep(0)
             
     async def on_start(self):
+        self.logger.debug("in on_start")
         await self.send_term_start()
+        self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
         
     def get_term(self):

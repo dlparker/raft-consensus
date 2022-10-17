@@ -13,6 +13,7 @@ from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.tests.common_test_code import RunData, run_data_from_status
 from raft.tests.setup_utils import Cluster
+from raft.comms.memory_comms import reset_queues
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -62,6 +63,7 @@ class TestMonitors(unittest.TestCase):
     def setUp(self):
         if self.logger is None:
             self.logger = logging.getLogger(__name__)
+        reset_queues()
         self.cluster = Cluster(server_count=3,
                                use_processes=False,
                                logging_type=LOGGING_TYPE,

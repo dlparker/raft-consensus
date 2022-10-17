@@ -2,11 +2,10 @@ import logging
 from .base_state import State
 from ..messages.request_vote import RequestVoteResponseMessage
 
-
-# Base class for follower and candidate states
 class Voter(State):
 
-    def __init__(self):
+    def __init__(self, server, my_type):
+        super().__init__(server, my_type)
         self.last_vote = None
         # this will be overriden by child states, prolly, s'fine
         self.logger = logging.getLogger(__name__) 
