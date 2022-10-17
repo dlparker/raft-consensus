@@ -7,49 +7,17 @@ import os
 from pathlib import Path
 
 
-from raft.tests.bt_server import PausingBankTellerServer
 from raft.tests.bt_client import MemoryBankTellerClient
-from raft.states.state_map import StandardStateMap
-from raft.app_api.app import StateChangeMonitor
-from raft.tests.common_test_code import RunData, run_data_from_status
+from raft.tests.common_test_code import run_data_from_status
 from raft.tests.setup_utils import Cluster
-from raft.tests.timer import ControlledTimer, get_timer_set
+from raft.tests.timer import get_timer_set
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-class Monitor1(StateChangeMonitor):
-
-    def __init__(self, name, logger):
-        self.name = name
-        self.logger = logger
-        self.state_map = None
-        self.state_history = []
-        self.substate_history = []
-        self.state = None
-        self.substate = None
-
-    async def new_state(self, state_map, old_state, new_state):
-        import threading
-        this_id = threading.Thread.ident
-        self.logger.info(f"{self.name} from {old_state} to {new_state}")
-        self.state_history.append(old_state)
-        self.substate_history = []
-        self.state = new_state
-        self.state_map = state_map
-        return new_state
-
-    async def new_substate(self, state_map, state, substate):
-        import threading
-        this_id = threading.Thread.ident
-        self.logger.info(f"{self.name} {state} to substate {substate}")
-        self.substate_history.append(self.substate)
-        self.substate = substate
-        self.state_map = state_map
-
     
-class TestMonitors(unittest.TestCase):
+class TestPausing(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -85,11 +53,6 @@ class TestMonitors(unittest.TestCase):
         monitors = []
         for name,sdef in self.cluster.server_recs.items():
             mserver = sdef['memserver']
-            #state_map = StandardStateMap()
-            #mserver.state_map = state_map
-            #from raft.tests.bt_server import PausingMonitor
-            #monitor = PausingMonitor(name, self.logger)
-            #state_map.add_state_change_monitor(monitor)
             monitor = mserver.monitor
             monitors.append(monitor)
 

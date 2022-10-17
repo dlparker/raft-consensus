@@ -7,9 +7,8 @@ import raft
 
 from log_control import servers_as_procs_log_setup, stop_logging_server 
 from log_control import one_proc_log_setup
-from bt_server import (UDPBankTellerServer,
-                       MemoryBankTellerServer,
-                       PausingBankTellerServer)
+from bt_server import UDPBankTellerServer, MemoryBankTellerServer
+from pausing_app import PausingBankTellerServer
 
 
 class Cluster:
