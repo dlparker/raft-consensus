@@ -19,8 +19,6 @@ from raft.states.follower import Follower
 from bank_teller.bank_app import BankingApp
 
 from raft.tests.timer import ControlledTimer, get_timer_set
-from raft.tests.wrappers import FollowerWrapper
-from raft.tests.wrappers import StandardStateMapWrapper
 
     
 class UDPBankTellerServer:
@@ -124,7 +122,7 @@ class MemoryBankTellerServer:
         self.other_nodes = others
         self.endpoint = (self.host, self.port)
         self.name = f"{self.endpoint}"
-        self.state_map = StandardStateMapWrapper()
+        self.state_map = StandardStateMap()
         self.data_log = MemoryLog()
         self.comms = MemoryComms()
         self.app = BankingApp()
@@ -224,8 +222,6 @@ class ServerThread(threading.Thread):
         if self.server:
             return
         self.logger.info('creating server')
-        if hasattr(self.bt_server.state_map, "set_server_wrapper"):
-            self.bt_server.state_map.set_server_wrapper(self)
         self.server = Server(name=self.bt_server.name,
                              state_map=self.bt_server.state_map,
                              log=self.bt_server.data_log,
