@@ -125,9 +125,6 @@ class Candidate(Voter):
             last_index = None
             last_term = None
         self.candidate_timer.start()
-        # important to do this after starting the timer so that
-        # test code can control execution by pausing timer
-        await self.set_substate(Substate.voting)
         log.incr_term()
         self.term = log.get_term()
         self.logger.info("candidate starting election term is %d, timeout is %f",
@@ -143,6 +140,7 @@ class Candidate(Voter):
             }
         )
         await self.server.broadcast(election)
+        await self.set_substate(Substate.voting)
         self.logger.info("send all endpoints %s", election)
         self.last_vote = self.server.endpoint
         self.task = None

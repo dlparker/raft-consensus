@@ -1,5 +1,4 @@
 
 
-Change the location of serialize/deserialize calls to the comms system, from
-the current server location.
+Build something to collect and clear unhandled errors in server.py
 

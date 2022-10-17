@@ -24,6 +24,7 @@ class Server:
         self.app = app
         self.comms_task = None
         self.running = False
+        self.unhandled_errors = []
 
     def start(self):
         task_logger.create_task(self._start(),
@@ -93,6 +94,9 @@ class Server:
                         raise Exception("already recursed, not doing it again" \
                                         " to avoid loop")
                     await self.on_message(message, recursed=True)
+                else:
+                    self.unhandled_errors.append(dict(code="message_rejected",
+                                                      details=message))
         except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("State %s got exception %s on message %s",

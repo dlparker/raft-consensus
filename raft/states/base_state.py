@@ -92,11 +92,14 @@ class State(metaclass=abc.ABCMeta):
         # If the message.term < currentTerm -> tell the sender to update term
         log = self.server.get_log()
         set_term = False
-        if not log.get_term():
+        if log.get_term() is None:
             if message.term:
                 # empty log locally
                 set_term = True
-        elif message.term and message.term > log.get_term():
+        if message.term is not None and  log.get_term() is not None:
+            if message.term > log.get_term():
+                set_term = True
+        if set_term:
             logger.info("updating term from %d to %s", log.get_term(),
                         message.term)
             log.set_term(message.term)
@@ -108,7 +111,7 @@ class State(metaclass=abc.ABCMeta):
             await handler(message)
             return True
         else:
-            logger.debug("state %s has no handler for message %s",
+            logger.info("state %s has no handler for message %s",
                          self, message)
             return False
         

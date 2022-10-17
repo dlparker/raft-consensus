@@ -80,6 +80,10 @@ class PausingMonitor(StateChangeMonitor):
         await self.server.pause_all(TriggerType.state,
                                     dict(old_state=old_state,
                                          new_state=new_state))
+
+    def clear_pause_on_substate(self, state):
+        if str(state) in self.pause_on_substates:
+            del self.pause_on_states[str(state)]
         
     async def substate_pause_method(self, state, old_substate, new_substate):
         await self.server.pause_all(TriggerType.substate,
@@ -92,6 +96,10 @@ class PausingMonitor(StateChangeMonitor):
         if method is None:
             method = self.substate_pause_method
         self.pause_on_substates[substate] = method
+
+    def clear_pause_on_substate(self, substate: Substate):
+        if substate in self.pause_on_substates:
+            del self.pause_on_substates[substate]
 
 class InterceptorMode(str, Enum):
     in_before = "IN_BEFORE"

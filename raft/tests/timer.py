@@ -18,23 +18,35 @@ class TimerSet:
 
     def __init__(self):
         self.recs = {}
+        self.logger = logging.getLogger(__name__)
         self.ids_by_name = defaultdict(list)
         self.ids_by_thread = defaultdict(list)
 
     def register_timer(self, timer):
         if timer.eye_d in self.recs:
+            self.logger.debug("deleting and re-registering %s", timer.eye_d)
             del self.recs[timer.eye_d]
         self.recs[timer.eye_d] = timer
         self.ids_by_name[timer.name].append(timer.eye_d)
         self.ids_by_thread[threading.get_ident()].append(timer.eye_d)
-
+        self.logger.debug("registering %s in thread %s",
+                          timer.eye_d, threading.get_ident())
+        self.logger.debug("thread %s list now %s",
+                          threading.get_ident(),
+                          self.ids_by_thread[threading.get_ident()])
+        
     def delete_timer(self, timer):
         if timer.eye_d in self.recs:
+            self.logger.debug("deleting %s in thread %s",
+                              timer.eye_d, threading.get_ident())
             del self.recs[timer.eye_d]
             self.ids_by_name[timer.name].remove(timer.eye_d)
             for th_id, rec in self.ids_by_thread.items():
                 if timer.eye_d in rec:
                     rec.remove(timer.eye_d)
+        self.logger.debug("thread %s list now %s",
+                          threading.get_ident(),
+                          self.ids_by_thread[threading.get_ident()])
         
     async def pause_all(self):
         for timer in self.recs.values():
@@ -50,9 +62,20 @@ class TimerSet:
             await timer.pause()
         
     async def pause_all_this_thread(self):
+        self.logger.debug("pausing all for thread %s",
+                          threading.get_ident())
+        # timer pause be interrupted by a timer delete, so
+        # make an independent list
+        targs = []
         for timer_id in self.ids_by_thread[threading.get_ident()]:
             timer = self.recs[timer_id]
-            await timer.pause()
+            targs.append(timer)
+        for targ in targs:
+            # make sure it is still valid
+            if not targ.terminated:
+                self.logger.debug("calling pause on timer %s",
+                                  timer_id)
+                await timer.pause()
         
     async def resume_all_this_thread(self):
         for timer_id in self.ids_by_thread[threading.get_ident()]:
@@ -73,10 +96,8 @@ class ControlledTimer(Timer):
         self.eye_d = f"{self.name}_{self.thread_id}"
         self.logger = logging.getLogger(__name__)
         global timer_set
-        if timer_set is None:
-            timer_set = TimerSet()
-        timer_set.register_timer(self)
-        self.timer_set = timer_set
+        self.timer_set = get_timer_set()
+        self.timer_set.register_timer(self)
 
     def start(self):
         self.logger.debug("Starting timer %s", self.eye_d)

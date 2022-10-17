@@ -127,6 +127,14 @@ class MemoryBankTellerClient:
             asyncio.set_event_loop(loop)
         return loop.run_until_complete(self.a_get_status())
 
+    def direct_message(self, message):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(self.a_direct_message(message))
+        
     def get_result(self):
         try:
             loop = asyncio.get_running_loop()
@@ -183,5 +191,10 @@ class MemoryBankTellerClient:
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)
         return await self.a_get_result()
+
+    async def a_direct_message(self, message):
+        data = Serializer.serialize(message)
+        w = Wrapper(data, self.addr)
+        await (await self.get_channel()).put(w)
         
                           
