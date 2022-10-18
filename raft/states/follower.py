@@ -136,74 +136,101 @@ class Follower(Voter):
         last_rec = log.read()
         local_commit = log.get_commit_index()
 
-        # The simplest case is that the local log and the leader log match. Look
-        # for that first
+        # before comparing log index and commit index, we need
+        # to make sure we are operating in the same term as the
+        # leader
+        local_term = log.get_term()
+        if local_term != message.term:
+            if local_term is None:
+                self.logger.info("changing local term to match leader %d",
+                                 message.term)
+                log.set_term(message.term)
+            elif message.term is None:
+                self.logger.warning("Leader says term is %d but we think %d," \
+                                    " doing rollback",
+                                    message.term, local_term)
+                await self.do_rollback_to_leader(message)
+                return False
+            elif message.term > local_term:
+                self.logger.info("changing local term to match leader %d",
+                                 message.term)
+                log.set_term(message.term)
+            else:
+                self.logger.warning("Leader says term is %d but we think %d," \
+                                    " doing rollback",
+                                    message.term, local_term)
+                await self.do_rollback_to_leader(message)
+                return False
+        
         if not last_rec:
             # local log is empty
-            if leader_commit is None:
-                # all logs are empty (ish), that's in sync, just return a hearbeat response
+            if leader_last_rec_index is None:
+                # all logs are empty (ish), that's in sync,
+                # just return a hearbeat response
                 return True
             # we got nothing, leader got something, get it all
-            self.logger.debug("leader sent commit for %d, but our log is empty, asking for pull",
+            self.logger.debug("leader sent index %d, but our" \
+                              " log is empty, asking for pull",
                               leader_commit)
             await self.do_log_pull(message)
             return False
-        elif leader_commit is not None:
-            if last_rec.index >= leader_commit:
-                if local_commit is None or local_commit < leader_commit:
-                    # leader committed last record, and we didn't
-                    # get the memo, so just apply it
-                    await self.set_substate(Substate.syncing_commit)
-                    if local_commit is None:
-                        start = 0
-                    else:
-                        start = local_commit
-                    self.logger.debug("leader sent commit for %d, local is %s committing from %d",
-                                      leader_commit, local_commit, start)
-                    for i in range(start, leader_commit + 1):
-                        log.commit(i)
-                    return True
-        last_index = last_rec.index
-        last_term = last_rec.term
-        # Next simplest case is that our term is out of sync with the
-        # leader. If so, we need to backout our local log records to match
-        local_term = log.get_term()
-        if local_term is not None and message.term < local_term:
-            self.logger.warning("Leader says term is %d but we think %d, doing rollback",
-                                message.term, local_term)
+        if leader_last_rec_index is None:
+            # we have something, leader has nothing,
+            # we have a problem, so rollback
             await self.do_rollback_to_leader(message)
             return False
-
-        # Next simplest case is that we have the same term as leader, there is stuff
-        # in both logs, and our last record matches the leader's commit index. The
-        # leader might have an additional record that is not committed yet, so we
-        # do not key off of leader's index
-        if leader_commit is not None and last_index < leader_commit:
-            self.logger.info("Leader says commit is %d our last index is %d, asking for pull",
-                                leader_commit, last_index)
+        # can trust last_rec.index and leader_last_rec_index for comparisons
+        # at this point after null tests above
+        if (last_rec.index == leader_last_rec_index
+            and leader_commit == local_commit):
+            # all same, just heartbeat
+            return True
+        # no matter what the commit indexes say, the
+        # record indexes can tell us we need pull or rollback
+        if last_rec.index < leader_last_rec_index:
+            self.logger.info("Leader says last index %d our last index is" \
+                             " %d, asking for pull",
+                             leader_last_rec_index, last_rec.index)
             await self.do_log_pull(message)
             return False
-
-        # At this point we know that the term at leader matches ours,
-        # that the last committed record at the leader is present in our
-        # local log. Now check and see that we have the same commit index
-        # locally. If our commit is behind, just update it. If it is
-        # ahead,  some complex failover and restart scenario
-        # got us out of sync and ahead of the leader, so
-        # do a rollback.
-        if local_commit is not None and leader_commit is not None:
-            if local_commit > leader_commit:
-                self.logger.warning("Leader says commit is %d but ours is  %d, doing rollback",
-                                    leader_commit, log.get_commit_index())
-                self.logger.warning("message = %s %s", message, message.data)
-                await self.do_rollback_to_leader(message)
-                return False
-            if local_commit < leader_commit:
-                self.logger.info("Leader says commit is %d ours is %d, updating",
-                                 leader_commit, log.get_commit_index())
-                for i in range(local_commit, leader_commit + 1):
-                    log.commit(i)
-
+        if last_rec.index > leader_last_rec_index:
+            self.logger.info("Leader says last index %d our last index is" \
+                             " %d, doing rollback",
+                             leader_last_rec_index, last_rec.index)
+            await self.do_rollback_to_leader(message)
+            return False
+        #
+        # We didn't get a direction from the indexes, see if
+        # the commit indexes say something clear
+        # this could be None == None or int == int
+        if leader_commit == local_commit:
+            # nothing needs recording
+            return True
+        if leader_commit is None:
+            # local_commit cannot be None or above would match
+            self.logger.warning("Leader says commit is %d but " \
+                                " we think %d," \
+                                " doing rollback",
+                                leader_commit, local_commit)
+            await self.do_rollback_to_leader(message)
+            return False
+        if leader_commit < local_commit:
+            self.logger.warning("Leader says commit is %d but " \
+                                " we think %d," \
+                                " doing rollback",
+                                leader_commit, local_commit)
+            await self.do_rollback_to_leader(message)
+            return False
+        if leader_commit <= last_rec.index:
+            # we have the committed record, so commit from
+            # wherever we are up to the leader_commit index
+            self.logger.info("updating local commit index to match " \
+                             " leader %d",
+                             leader_commit)
+            await self.set_substate(Substate.syncing_commit)
+            for i in range(local_commit, leader_commit + 1):
+                log.commit(i)
+                return True
         # At this point there are no more out of sync conditions to
         # detect, so just reply with a hearbeat
         return True
@@ -218,7 +245,8 @@ class Follower(Voter):
             start_index = 0
         else:
             start_index = last_rec.index + 1
-        self.logger.info("asking leader for log pull starting at %d", start_index)
+        self.logger.info("asking leader for log pull starting at %d",
+                         start_index)
         message = LogPullMessage(
             self.server.endpoint,
             message.sender,
