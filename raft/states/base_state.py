@@ -16,6 +16,9 @@ class Substate(str, Enum):
     """ Before any connections """
     starting = "STARTING"
 
+    """ Follower has not received timely leader contact """
+    leader_lost = "LEADER_LOST"
+
     """ Leader has called us at least once """
     joined = "JOINED"                  
 
@@ -76,6 +79,10 @@ class State(metaclass=abc.ABCMeta):
                 NotImplemented)
             
         
+    def get_term(self):
+        log = self.server.get_log()
+        return log.get_term()
+    
     async def set_substate(self, substate: Substate):
         self.substate = substate
         await self.server.get_state_map().set_substate(self, substate)
@@ -199,11 +206,6 @@ class State(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     async def on_client_command(self, message):  # pragma: no cover abstract
         """Called when there is a client request"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    async def get_term(self):  # pragma: no cover abstract
-        """ Get the current term value """
         raise NotImplementedError
 
     @abc.abstractmethod

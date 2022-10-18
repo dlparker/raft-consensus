@@ -22,11 +22,10 @@ class Candidate(Voter):
         self.server = server
         server.set_state(self)
         self.votes = {}
-        log = server.get_log()
-        self.term = log.get_term()
         self.election_timeout = self.candidate_interval()
+        log = server.get_log()
         self.candidate_timer = self.server.get_timer("candidate-interval",
-                                                     self.term,
+                                                     log.get_term(),
                                                      self.election_timeout,
                                                      self.on_timer)
         self.task = None
@@ -49,9 +48,6 @@ class Candidate(Voter):
             self.task.cancel()
             await asyncio.sleep(0)
             
-    def get_term(self):
-        return self.term
-    
     def candidate_interval(self):
         return random.uniform(0.1, self.timeout)
         

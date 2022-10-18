@@ -25,23 +25,19 @@ class Follower(Voter):
         self.leaderless_timer = None
         self.switched = False
         self.leader_addr = None
+        self.heartbeat_count = 0
         self.substate = Substate.starting
         interval = self.election_interval()
         log = server.get_log()
-        self.term = log.get_term()
         self.leaderless_timer = self.server.get_timer("follower-election",
-                                                      self.term,
+                                                      log.get_term(),
                                                       interval,
                                                       self.leader_lost)
-        
         self.last_vote = None
         self.last_vote_time = None
         
     def __str__(self):
         return "follower"
-
-    def get_term(self):
-        return self.term
     
     def get_leader_addr(self):
         return self.leader_addr
@@ -52,6 +48,8 @@ class Follower(Voter):
         self.leaderless_timer.start()
 
     async def stop(self):
+        if self.terminated:
+            return
         self.terminated = True
         await self.leaderless_timer.terminate()
         
@@ -59,6 +57,7 @@ class Follower(Voter):
         return random.uniform(self.timeout, 2 * self.timeout)
 
     async def leader_lost(self):
+        await self.set_substate(Substate.leader_lost)
         if self.terminated:
             return
         return await self.start_election()
@@ -93,12 +92,14 @@ class Follower(Voter):
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
+        self.heartbeat_count += 1
         if self.leader_addr != laddr:
             if self.leader_addr is None:
                 await self.set_substate(Substate.joined)
             else:
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
+            self.heartbeat_count = 0
         if await self.do_sync_action(message):
             await self.on_heartbeat_common(message)
             self.heartbeat_logger.debug("heartbeat reply send")
@@ -342,7 +343,6 @@ class Follower(Voter):
                          message.term, log.get_term())
         log.set_term(message.term)
         data = message.data
-        self.term = message.term
         self.last_vote = None
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
         if self.leader_addr != laddr:

@@ -30,7 +30,6 @@ class Leader(State):
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         server.set_state(self)
         log = self.server.get_log()
-        self.term = log.get_term()
         last_rec = log.read()
         if last_rec:
             last_index = last_rec.index + 1
@@ -38,7 +37,7 @@ class Leader(State):
             # no log records yet
             last_index = -1
         self.logger.info('Leader on %s in term %s', self.server.endpoint,
-                         self.term)
+                         log.get_term())
         self.followers = {}
         for other in self.server.other_nodes:
             # Assume follower is in sync, meaning we only send on new
@@ -47,7 +46,7 @@ class Leader(State):
             self.followers[other] = FollowerCursor(other, last_index)
 
         self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
-                                                     self.term,
+                                                     log.get_term(),
                                                      self.heartbeat_timeout,
                                                      self.send_heartbeat)
         self.task = None
@@ -75,9 +74,6 @@ class Leader(State):
         self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
         
-    def get_term(self):
-        return self.term
-
     def get_leader_addr(self):
         return self.server.endpoint
     

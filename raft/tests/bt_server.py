@@ -129,6 +129,7 @@ class MemoryBankTellerServer:
         self.thread = ServerThread(self)
         self.thread_started = False
         self.thread.name = f"{self.port}"
+        self.thread_ident = None
 
     def add_other_server(self, other):
         self.thread.add_other_server(other)
@@ -159,6 +160,11 @@ class MemoryBankTellerServer:
         self.thread.stop()
         self.thread.keep_running = False
 
+    async def in_loop_check(self):
+        # override this to do something from inside the thread
+        # main loop
+        pass
+        
 class ServerThread(threading.Thread):
 
     def __init__(self, bt_server):
@@ -191,6 +197,7 @@ class ServerThread(threading.Thread):
                 other.resume_from_reason(reason_string, False)
 
     def run(self):
+        self.bt_server.thread_ident = threading.get_ident()
         if not self.ready:
             self.logger.info("memory comms bank teller server waiting for config")
             while not self.ready:
@@ -241,6 +248,7 @@ class ServerThread(threading.Thread):
                         self.bt_server.other_nodes)
             while self.keep_running:
                 await asyncio.sleep(0.01)
+                await self.bt_server.in_loop_check()
             await self.bt_server.comms.stop()
             await self.server.stop()
         except:

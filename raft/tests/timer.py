@@ -62,12 +62,15 @@ class TimerSet:
             await timer.pause()
         
     async def pause_all_this_thread(self):
+        return await self.pause_all_by_thread(threading.get_ident())
+    
+    async def pause_all_by_thread(self, thread_ident):
         self.logger.debug("pausing all for thread %s",
-                          threading.get_ident())
+                          thread_ident)
         # timer pause be interrupted by a timer delete, so
         # make an independent list
         targs = []
-        for timer_id in self.ids_by_thread[threading.get_ident()]:
+        for timer_id in self.ids_by_thread[thread_ident]:
             timer = self.recs[timer_id]
             targs.append(timer)
         for targ in targs:
@@ -78,8 +81,15 @@ class TimerSet:
                 await timer.pause()
         
     async def resume_all_this_thread(self):
-        for timer_id in self.ids_by_thread[threading.get_ident()]:
+        return await self.resume_all_by_thread(threading.get_ident())
+    
+    async def resume_all_by_thread(self, thread_ident):
+        self.logger.debug("resuming for thread %s",
+                              thread_ident)
+        for timer_id in self.ids_by_thread[thread_ident]:
             timer = self.recs[timer_id]
+            self.logger.debug("calling reset on timer %s",
+                              timer_id)
             await timer.reset()
         
     def resume_by_name(self, name):

@@ -67,6 +67,7 @@ class TestUtils(unittest.TestCase):
         class dserver:
             def __init__(self):
                 self.log = MemoryLog()
+                self.log.set_term(0)
                 
             def get_log(self):
                 return self.log
@@ -75,6 +76,7 @@ class TestUtils(unittest.TestCase):
                 return ftimer()
 
         fo = Follower(dserver())
+        self.assertEqual(fo.get_term(), 0)
         mh = regy.get_handler(msg, fo)
         self.assertIsNotNone(mh)
         expected_codes = ['heartbeat', 'heartbeat_response', 

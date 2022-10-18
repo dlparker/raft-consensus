@@ -1,5 +1,8 @@
 import logging
+import time
+import asyncio
 import traceback
+import threading
 from enum import Enum
 
 from raft.states.base_state import State, Substate
@@ -34,6 +37,10 @@ class PausingMonitor(StateChangeMonitor):
         import threading
         this_id = threading.Thread.ident
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
+        self.state_history.append(old_state)
+        self.substate_history = []
+        self.state = new_state
+        self.state_map = state_map
         method = self.pause_on_states.get(str(new_state), None)
         if method:
             try:
@@ -45,31 +52,28 @@ class PausingMonitor(StateChangeMonitor):
                 self.logger.warning("removing state pause for %s",
                                     new_state)
                 del self.pause_on_states[str(state)] 
-        self.state_history.append(old_state)
-        self.substate_history = []
-        self.state = new_state
-        self.state_map = state_map
         return new_state
 
     async def new_substate(self, state_map, state, substate):
         import threading
         this_id = threading.Thread.ident
         self.logger.info(f"{self.name} {state} to substate {substate}")
+        self.substate_history.append(self.substate)
+        old_substate = self.substate
+        self.substate = substate
+        self.state_map = state_map
         method = self.pause_on_substates.get(substate, None)
         if method:
             try:
                 self.logger.info(f"{self.name} calling substate method")
-                clear = await method(self.state, self.substate, substate)
+                clear = await method(self.state, old_substate, substate)
             except:
                 traceback.print_exc()
                 clear = True
             if clear:
-                self.logger.warning("removing substate pause from %s to %s",
-                                 self.state.substate, substate)
+                self.logger.warning("removing substate pause from  %s",
+                                    substate)
                 del self.pause_on_substates[substate] 
-        self.substate_history.append(self.substate)
-        self.substate = substate
-        self.state_map = state_map
 
     def set_pause_on_state(self, state: State, method=None):
         if method is None:
@@ -227,6 +231,7 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.state_map.add_state_change_monitor(self.monitor)
         self.timer_set = get_timer_set()
         self.paused = False
+        self.do_resume = False
 
     async def pause_all(self, trigger_type, trigger_data):
         if trigger_type == TriggerType.interceptor:
@@ -251,10 +256,23 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.paused = True
         self.logger.info("%s paused all timers this thread and comms",
                          self.port)
-        
+        while self.paused:
+            await asyncio.sleep(0.01)
 
     async def resume_all(self):
-        await self.timer_set.resume_all_this_thread()
-        self.comms.resume()
-        self.paused = False
+        if not self.paused:
+            return
+        self.do_resume = True
+        start_time = time.time()
+        while time.time() - start_time < 1 and self.paused:
+            await asyncio.sleep(0.01)
+        if self.paused:
+            raise Exception('resume did not happen!')
         self.logger.info("%s resumed", self.port)
+
+    async def in_loop_check(self):
+        if self.do_resume:
+            await get_timer_set().resume_all_this_thread()
+            self.comms.resume()
+            self.paused = False
+            self.do_resume = False
