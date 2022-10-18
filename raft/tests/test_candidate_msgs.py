@@ -81,9 +81,12 @@ class TestDelayedStart(unittest.TestCase):
             if monitor.state is not None:
                 if str(monitor.state) == "candidate":
                     if monitor.substate == Substate.voting:
-                        break
+                        if monitor.server.paused:
+                            break
 
         self.assertEqual(monitor.substate, Substate.voting)
+        self.assertTrue(monitor.server.paused)
+        # leave the timer off but allow comms again
         servers[0].comms.resume()
         client =  MemoryBankTellerClient("localhost", 5000)
         status = client.get_status()

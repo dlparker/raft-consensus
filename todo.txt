@@ -2,3 +2,5 @@
 
 Build something to collect and clear unhandled errors in server.py
 
+Add paging to log pull protocol
+

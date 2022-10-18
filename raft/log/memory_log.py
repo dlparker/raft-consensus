@@ -45,6 +45,10 @@ class MemoryLog(Log):
             last_rec = self.entries[index]
             self.commit_index = index
         self.logger.debug("trimmed log to %s", last_rec.index)
+
+    def clear_all(self):
+        self.entries = []
+        self.commit_index = None
         
     def commit(self, index: int) -> None:
         if index > len(self.entries) - 1 or index < 0:

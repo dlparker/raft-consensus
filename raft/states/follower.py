@@ -65,12 +65,6 @@ class Follower(Voter):
     async def start_election(self):
         if not self.leaderless_timer.is_enabled() or self.terminated:
             return
-        if (self.last_vote_time and time.time() - self.last_vote_time <
-            self.timeout):
-            self.logger.error("timing problem")
-            await asyncio.sleep(time.time() - self.last_vote_time)
-            if self.switched or self.leader_addr is not None:
-                return
         try:
             self.terminated = True
             self.leaderless_timer.disable()
@@ -80,7 +74,7 @@ class Follower(Voter):
             self.switched = True
             candidate = await sm.switch_to_candidate(self)
             await self.leaderless_timer.terminate()
-        except:
+        except: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             raise
 
@@ -106,11 +100,23 @@ class Follower(Voter):
             await self.set_substate(Substate.synced)
 
     async def on_log_pull_response(self, message):
+        self.logger.debug("in log pull response")
         if self.leaderless_timer.is_enabled():
             await self.leaderless_timer.reset()
         data = message.data
         log = self.server.get_log()
+        last_rec = log.read()
         if len(data["entries"]) == 0:
+            self.logger.warning("log pull response containted no entries!")
+            if data.get('code', None) == "reset":
+                self.logger.warning("log pull response requires reset of log")
+                last_index = data['prevLogIndex']
+                if last_index is None:
+                    self.logger.warning("Leader says log is empty!")
+                    log.clear_all()
+                elif last_index < last_rec.index:
+                    self.logger.warning("Trimming log back to %s", last_index)
+                    log.trim_after(last_index)
             return
         self.logger.debug("updating log with %d entries",
                           len(data["entries"]))

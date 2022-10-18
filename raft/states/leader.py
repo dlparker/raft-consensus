@@ -81,62 +81,6 @@ class Leader(State):
         self.heartbeat_logger.debug("got heartbeat response from %s",
                                     message.sender)
 
-    async def on_log_pull(self, message):
-        # Follower is asking for log records
-        # for now we continue with the older walkback algo until
-        # we get this new logic working, then we'll fix the alqo
-        # so that the follower tells us were to start. This message
-        # comes in after a heartbeat or append entry when the
-        # follower examins the leader's log state, so the follower
-        # knows how far behind it is
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec is None:
-            # special case, log is empty
-            self.logger.error("follower %s thinks there log records" \
-                              "to pull but log is empty",
-                              message.sender, prev_index)
-            return self, None
-        fc = self.followers[message.sender]
-        if fc.next_index == 0:
-            # special case, first log record
-            prev_term = None
-            prev_index = None
-        else:
-            prev_index = fc.next_index - 1
-            prev_rec = log.read(prev_index)
-            if not prev_rec:
-                self.logger.error("cannot find last log message %d" \
-                                  " for follower %s",
-                                  prev_index, message.sender)
-                return self, None
-            # this helps the follower validate the log position
-            prev_term = prev_rec.user_data['term']
-        # get the next record that they don't have
-        current_rec = log.read(fc.next_index)
-        if not current_rec:
-            self.logger.error("follower %s thinks there are more log records "\
-                              "after %d, but we don't",
-                              message.sender, fc.next_index - 1)
-            return self, None
-
-        # Tell the follower which log record should proceed the one we are sending
-        # so the follower can check to see if they have it.
-        append_entry = AppendEntriesMessage(
-            self.server.endpoint,
-            message.sender,
-            log.get_term(),
-            {
-                "leaderId": self.server.name,
-                "leaderPort": self.server.endpoint,
-                "prevLogIndex": prev_index,
-                "prevLogTerm": prev_term,
-                "entries": [asdict(current_rec),],
-                "leaderCommit": log.get_commit_index(),
-            })
-        self.logger.debug("sending log entry prev at %s term %s to %s",
-                          prev_index, prev_term, message.sender)
-        await self.server.post_message(append_entry)
         
     async def on_append_response(self, message):
         log = self.server.get_log()

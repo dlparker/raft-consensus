@@ -126,7 +126,8 @@ class Cluster:
             else:
                 memserver = MemoryBankTellerServer(*args)
             srec['memserver'] = memserver
-            
+        return srec
+    
     def start_one_server(self, name, vote_at_start=True):
         # vote_at_start True means that server starts with
         # a follower that does not wait for timeout, which

@@ -155,8 +155,8 @@ class TestStateEdges(unittest.TestCase):
             if mserver.paused:
                 break
         self.assertTrue(mserver.paused)
-        # now terminate it and resume, which should not result in an
-        # election
+        # Now terminate it and resume, which should not result in an
+        # election because of the terminated flag
         pre_state = monitor.state
         monitor.state.terminated = True
         async def resume():
@@ -165,11 +165,22 @@ class TestStateEdges(unittest.TestCase):
         time.sleep(0.25)
         # if election started, state will have changed to candidate
         self.assertEqual(pre_state, monitor.state)
+
+        # Now try to force the election to start and ensure it does
+        # not due to the terminated flag
+        async def start_election():
+            await monitor.state.start_election()
+        self.loop.run_until_complete(start_election())
+        self.assertEqual(pre_state, monitor.state)
+
+        # Now make sure trying to start it raises
         with self.assertRaises(Exception) as context:
             monitor.state.start()
         self.assertTrue("terminated" in str(context.exception))
+
         async def do_stop():
             await monitor.state.stop()
+            
         # Since already terminated, stop should no-op.
         # Since stop terminates the timer, no-op should leave it running
         self.loop.run_until_complete(do_stop())
