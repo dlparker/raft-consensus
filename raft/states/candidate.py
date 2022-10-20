@@ -54,10 +54,12 @@ class Candidate(Voter):
     async def on_term_start(self, message):
         self.logger.info("candidate resigning because we got a term start message")
         await self.resign()
-        
+        return False
+    
     async def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
         await self.resign()
+        return True
 
     async def on_heartbeat(self, message):
         self.logger.info("candidate resigning because we" \
@@ -65,10 +67,12 @@ class Candidate(Voter):
         await self.resign()
         await self.on_heartbeat_common(message)
         self.logger.debug("sent heartbeat reply")
+        return True
 
     async def on_timer(self):
         self.logger.info("candidate resigning because timer ended")
         await self.resign()
+        return True
 
     async def on_vote_received(self, message):
         # reset timer
@@ -76,6 +80,13 @@ class Candidate(Voter):
             await self.candidate_timer.reset()
         self.logger.info("vote received from %s, response %s", message.sender,
                     message.data['response'])
+        if message.data.get('already_leader', None):
+            self.logger.info("candidate resigning because" \
+                             " leader %s answered vote",
+                             message.sender)
+            await self.resign()
+            return True
+            
         if message.sender[1] not in self.votes and message.data['response']:
             self.votes[message.sender[1]] = message.data['response']
 
@@ -93,18 +104,16 @@ class Candidate(Voter):
             # with one dead.
             if len(self.votes.keys()) + 1 > self.server.total_nodes / 2:
                 sm = self.server.get_state_map()
-                leader = await sm.switch_to_leader(self)
-                self.terminated = True
                 await self.candidate_timer.terminate() # never run again
                 self.logger.info("changing to leader")
-                return leader, None
-
+                leader = await sm.switch_to_leader(self)
+                self.terminated = True
+                return True
         # check if received all the votes -> resign
         if len(self.votes) == len(self.server.other_nodes):
             self.logger.info("candidate resigning because all votes are in but we didn't win")
             await self.resign()
-        else:
-            return self, None
+        return True
 
     # start elections by increasing term, voting for itself and send out vote requests
     async def start_election(self):
@@ -135,9 +144,15 @@ class Candidate(Voter):
                 "lastLogTerm": last_term,
             }
         )
-        await self.server.broadcast(election)
         await self.set_substate(Substate.voting)
-        self.logger.info("send all endpoints %s", election)
+        # can happen anytime we await
+        if self.terminated:
+            return
+        await self.server.broadcast(election)
+        if self.terminated:
+            return
+
+        self.logger.info("sent all endpoints %s", election)
         self.last_vote = self.server.endpoint
         self.task = None
 
@@ -149,11 +164,11 @@ class Candidate(Voter):
             return
         try:
             self.terminated = True
+            self.candidate_timer.disable()
+            await self.candidate_timer.terminate() # never run again
             sm = self.server.get_state_map()
             follower = await sm.switch_to_follower(self)
-            await self.candidate_timer.terminate() # never run again
             self.logger.info("candidate resigned")
-            return follower, None
         except:
             self.logger.error(traceback.format_exc())
 
@@ -162,14 +177,18 @@ class Candidate(Voter):
     
     async def on_vote_request(self, message):
         self.logger.info("ignoring vote request from %s", message.sender)
+        return True
         
     async def on_client_command(self, message):
         await self.dispose_client_command(message, self.server)
+        return True
 
     async def on_append_response(self, message): # pragma: no cover error
         self.logger.warning("candidate unexpectedly got append response from %s",
                             message.sender)
+        return True
 
     async def on_heartbeat_response(self, message):  # pragma: no cover error
         self.logger.warning("candidate unexpectedly got heartbeat response from %s",
                             message.sender)
+        return True

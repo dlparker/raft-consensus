@@ -51,7 +51,8 @@ class Timer:
 
     def disable(self):
         self.enabled = False
-
+        self.keep_running = False
+        
     def is_enabled(self):
         return self.enabled
     
@@ -73,7 +74,10 @@ class Timer:
 
     async def cb_wrapper(self):
         try:
-            await self.callback()
+            if self.keep_running and self.enabled and not self.terminated:
+                await self.callback()
+        except asyncio.exceptions.CancelledError: # pragma: no cover error 
+                pass
         except:
             self.logger.error("timer %s callback raised exception\n%s",
                               self.name, traceback.format_exc())
@@ -82,6 +86,8 @@ class Timer:
             self.start_time = time.time()
             try:
                 await self.one_pass()
+            except asyncio.exceptions.CancelledError: # pragma: no cover error 
+                pass
             except:
                 self.logger.error(traceback.format_exc())
                 pass

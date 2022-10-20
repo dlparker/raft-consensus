@@ -14,6 +14,7 @@ def set_levels(handler_names):
     log_loggers[''] = root_log
     info_log = dict(handlers=handler_names, level="INFO", propagate=False)
     log_loggers['raft'] = info_log
+    warn_log = dict(handlers=handler_names, level="WARNING", propagate=False)
     debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
     #log_loggers['raft.servers.server'] = debug_log
     log_loggers['raft.states.state_map'] = debug_log
@@ -24,7 +25,7 @@ def set_levels(handler_names):
     #log_loggers['raft.states.leader:heartbeat'] = debug_log
     #log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests'] = debug_log
-    #log_loggers['raft.tests.timer'] = debug_log
+    log_loggers['raft.tests.timer'] = debug_log
     #log_loggers['raft.comms.memory_comms'] = debug_log
     return log_loggers
     

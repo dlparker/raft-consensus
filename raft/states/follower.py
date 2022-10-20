@@ -23,7 +23,6 @@ class Follower(Voter):
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         self.leaderless_timer = None
-        self.switched = False
         self.leader_addr = None
         self.heartbeat_count = 0
         self.substate = Substate.starting
@@ -57,9 +56,9 @@ class Follower(Voter):
         return random.uniform(self.timeout, 2 * self.timeout)
 
     async def leader_lost(self):
-        await self.set_substate(Substate.leader_lost)
         if self.terminated:
             return
+        await self.set_substate(Substate.leader_lost)
         return await self.start_election()
     
     async def start_election(self):
@@ -68,12 +67,11 @@ class Follower(Voter):
         try:
             self.terminated = True
             self.leaderless_timer.disable()
+            await self.leaderless_timer.terminate()
             self.logger.debug("starting election")
             self.logger.debug("doing switch to candidate")
             sm = self.server.get_state_map()
-            self.switched = True
             candidate = await sm.switch_to_candidate(self)
-            await self.leaderless_timer.terminate()
         except: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             raise
@@ -98,6 +96,7 @@ class Follower(Voter):
             await self.on_heartbeat_common(message)
             self.heartbeat_logger.debug("heartbeat reply send")
             await self.set_substate(Substate.synced)
+        return True
 
     async def on_log_pull_response(self, message):
         self.logger.debug("in log pull response")
@@ -125,7 +124,7 @@ class Follower(Voter):
             if ent['committed']:
                 log.commit(ent['index'])
         leader_commit = data['leaderCommit']
-        return
+        return True
         
     async def do_sync_action(self, message):
         data = message.data
@@ -301,7 +300,7 @@ class Follower(Voter):
         if log.get_term() and message.term < log.get_term():
             await self.send_response_message(message, votedYes=False)
             self.logger.info("rejecting message because sender term is less than mine %s", message)
-            return
+            return True
         # log the records in the message
         if entry_count > 0:
             await self.set_substate(Substate.log_appending)
@@ -314,7 +313,7 @@ class Follower(Voter):
             await self.send_response_message(message)
             self.logger.info("Sent log update ack %s, local last rec = %d",
                              message, log.read().index)
-            return
+            return True
         # must be a commit trigger for an existing record
         leader_commit = data['leaderCommit']
         leader_last_rec_index = data["prevLogIndex"]
@@ -325,7 +324,7 @@ class Follower(Voter):
             if await self.do_sync_action(message):
                 await self.send_response_message(message)
                 self.logger.info("Sent log update ack %s", message)
-                return
+                return True
         local_commit = log.get_commit_index()
         self.logger.debug("append leader_commit %s, local_commit %s," \
                           " leader_last_index %s, last_rec.index %s",
@@ -342,12 +341,14 @@ class Follower(Voter):
                                       leader_commit, local_commit, start)
                     for i in range(start, leader_commit + 1):
                         log.commit(i)
-                    return
+                    return True
         # we are not in sync, fix that
         self.logger.debug("append entry empty and indexes and commits did not make sense against local log, trying to sync with leader")
         if await self.do_sync_action(message):
             await self.send_response_message(message)
             self.logger.info("Sent log update ack %s", message)
+
+        return True
     
     async def send_response_message(self, msg, votedYes=True):
         log = self.server.get_log()
@@ -389,6 +390,7 @@ class Follower(Voter):
                                  Substate.new_leader)
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
+        return True
 
     async def on_vote_request(self, message): 
         # If this node has not voted,
@@ -422,8 +424,9 @@ class Follower(Voter):
               and message.data["lastLogIndex"] is None and last_rec is None):
             self.logger.info("last vote None, logs empty, voting true")
             approve = True
-        elif (self.last_vote is None 
-            and message.data["lastLogIndex"] >= last_index):
+        elif (self.last_vote is None
+              and message.data["lastLogIndex"] is not None
+              and message.data["lastLogIndex"] >= last_index):
             self.logger.info("last vote None, logs match, voting true")
             approve = True
         elif self.last_vote == message.sender:
@@ -444,21 +447,25 @@ class Follower(Voter):
             self.logger.info("my last vote = %s", self.last_vote)
             await self.send_vote_response_message(message, votedYes=False)
             self.last_vote_time = time.time()
-        return self, None
+        return True
         
     async def on_client_command(self, message):
         await self.dispose_client_command(message, self.server)
+        return True
 
     async def on_append_response(self, message): # pragma: no cover error
         self.logger.warning("follower unexpectedly got append response from %s",
                             message.sender)
+        return True
     
     async def on_vote_received(self, message): # pragma: no cover error
         log = self.server.get_log()
         self.logger.info("follower unexpectedly got vote:"\
                          " message.term = %s local_term = %s",
                          message.term, log.get_term())
+        return True
 
     async def on_heartbeat_response(self, message):  # pragma: no cover error
         self.logger.warning("follower unexpectedly got heartbeat"
                             " response from %s",  message.sender)
+        return True

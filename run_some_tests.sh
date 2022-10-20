@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+#set -x
 export PYTHONBREAKPOINT=ipdb.set_trace
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 export PYTHONPATH=`pwd`
@@ -20,13 +20,22 @@ if [ -z ${PYTEST_NO_STOP+x} ]; then
 else
     STOP_OPTION=""
 fi    
+if [ -z ${DO_COVERAGE+x} ]; then
+    COVER_OPTION=""
+else
+    COVER_OPTION="--cov=raft --cov-config=`pwd`/raft/coverage.cfg --cov-report=html --cov-report=term"
+fi    
 
 
-pytest --verbose --cov=raft --cov-config=`pwd`/raft/coverage.cfg --cov-report=html \
-       --cov-report=term \
+pytest --verbose \
        $STOP_OPTION \
        $LOG_OPTION \
+       $COVER_OPTION \
        -s  $@
-coverage combine --rcfile=`pwd`/raft/coverage.cfg --append
-coverage html --rcfile=`pwd`/raft/coverage.cfg
-coverage report --rcfile=`pwd`/raft/coverage.cfg
+if [ -z ${DO_COVERAGE+x} ]; then
+    foo=""
+else
+    coverage combine --rcfile=`pwd`/raft/coverage.cfg --append
+    coverage html --rcfile=`pwd`/raft/coverage.cfg
+    coverage report --rcfile=`pwd`/raft/coverage.cfg
+fi    

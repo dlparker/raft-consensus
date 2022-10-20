@@ -4,9 +4,9 @@ import asyncio
 import traceback
 import threading
 from enum import Enum
-
+from typing import Union
 from raft.states.base_state import State, Substate
-from raft.states.state_map import StandardStateMap
+from raft.states.state_map import StandardStateMap, StateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.comms.memory_comms import MessageInterceptor
 
@@ -21,8 +21,8 @@ class TriggerType(str, Enum):
 
 class PausingMonitor(StateChangeMonitor):
 
-    def __init__(self, server, name, logger):
-        self.server = server
+    def __init__(self, pbt_server, name, logger):
+        self.pbt_server = pbt_server
         self.name = name
         self.logger = logger
         self.state_map = None
@@ -36,6 +36,12 @@ class PausingMonitor(StateChangeMonitor):
     async def new_state(self, state_map, old_state, new_state):
         import threading
         this_id = threading.Thread.ident
+        if self.pbt_server.paused:
+            msg = f"tryning {self.name} from {old_state}" \
+                f"to {new_state} but should be paused!"
+            self.logger.error(msg)
+            raise Exception(msg)
+            
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
         self.state_history.append(old_state)
         self.substate_history = []
@@ -57,6 +63,11 @@ class PausingMonitor(StateChangeMonitor):
     async def new_substate(self, state_map, state, substate):
         import threading
         this_id = threading.Thread.ident
+        if self.pbt_server.paused:
+            msg = f"trying {self.name} {state} to " \
+                f" substate {substate} but should be paused!"
+            self.logger.error(msg)
+            raise Exception(msg)
         self.logger.info(f"{self.name} {state} to substate {substate}")
         self.substate_history.append(self.substate)
         old_substate = self.substate
@@ -81,7 +92,7 @@ class PausingMonitor(StateChangeMonitor):
         self.pause_on_states[str(state)] = method
         
     async def state_pause_method(self, old_state, new_state):
-        await self.server.pause_all(TriggerType.state,
+        await self.pbt_server.pause_all(TriggerType.state,
                                     dict(old_state=old_state,
                                          new_state=new_state))
 
@@ -90,7 +101,7 @@ class PausingMonitor(StateChangeMonitor):
             del self.pause_on_states[str(state)]
         
     async def substate_pause_method(self, state, old_substate, new_substate):
-        await self.server.pause_all(TriggerType.substate,
+        await self.pbt_server.pause_all(TriggerType.substate,
                                     dict(state=state,
                                          old_substate=old_substate,
                                          new_substate=new_substate))
@@ -113,8 +124,8 @@ class InterceptorMode(str, Enum):
 
 class PausingInterceptor(MessageInterceptor):
 
-    def __init__(self, server, logger):
-        self.server = server
+    def __init__(self, pbt_server, logger):
+        self.pbt_server = pbt_server
         self.logger = logger
         self.in_befores = {}
         self.in_afters = {}
@@ -190,7 +201,7 @@ class PausingInterceptor(MessageInterceptor):
         return go_on
 
     async def pause_method(self, mode, code, message):
-        await self.server.pause_all(TriggerType.interceptor,
+        await self.pbt_server.pause_all(TriggerType.interceptor,
                                     dict(mode=mode,
                                          code=code))
         return True
@@ -200,6 +211,20 @@ class PausingInterceptor(MessageInterceptor):
         self.in_afters = {}
         self.out_befores = {}
         self.out_afters = {}
+
+    def clear_trigger(self, mode, message_code):
+        if mode == InterceptorMode.in_before:
+            if message_code in self.in_befores:
+                del self.in_befores[message_code]
+        elif mode == InterceptorMode.in_after:
+            if message_code in self.in_afters:
+                del self.in_afters[message_code]
+        elif mode == InterceptorMode.out_before:
+            if message_code in self.out_befores:
+                del self.out_befores[message_code]
+        elif mode == InterceptorMode.out_after:
+            if message_code in self.out_afters:
+                del self.out_afters[message_code]
 
     def add_trigger(self, mode, message_code, method=None):
         if method is None:
@@ -215,6 +240,26 @@ class PausingInterceptor(MessageInterceptor):
         else:
             raise Exception(f"invalid mode {mode}")
 
+class NewStateMonitor(StateChangeMonitor):
+
+    def __init__(self):
+        self.quick_start = True
+        
+    def disable_quick_start(self):
+        self.quick_start = False
+        
+    async def new_state(self, state_map: StateMap,
+                        old_state: Union[State, None],
+                        new_state: Substate) -> State:
+        if old_state is None and new_state._type == "follower":
+            asyncio.create_task(new_state.start_election())
+        return new_state
+        
+
+    async def new_substate(self, state_map: StateMap,
+                            state: State,
+                            substate: Substate) -> None:
+        return substate
 
     
 class PausingBankTellerServer(MemoryBankTellerServer):
@@ -228,10 +273,17 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.interceptor = PausingInterceptor(self, self.logger)
         self.comms.set_interceptor(self.interceptor)
         self.monitor = PausingMonitor(self, f"{port}", self.logger)
+        self.new_state_monitor = NewStateMonitor()
+        self.state_map.add_state_change_monitor(self.new_state_monitor)
         self.state_map.add_state_change_monitor(self.monitor)
-        self.timer_set = get_timer_set()
+        # use the thread local timer set, let it manage the
+        # global one
+        self.timer_set = get_timer_set()[1]
         self.paused = False
         self.do_resume = False
+
+    def disable_vote_at_start(self):
+        self.monitor
 
     async def pause_all(self, trigger_type, trigger_data):
         if trigger_type == TriggerType.interceptor:
@@ -251,8 +303,18 @@ class PausingBankTellerServer(MemoryBankTellerServer):
                              trigger_data['old_substate'],
                              trigger_data['new_substate'])
             
-        await self.timer_set.pause_all_this_thread()
-        self.comms.pause()
+        await self.timer_set.pause_all()
+        try:
+            start_time = time.time()
+            while (time.time() - start_time < 2 and
+                   not self.comms.queue.empty()):
+                await asyncio.sleep(0.01)
+            if not self.comms.queue.empty():
+                self.logger.error("comms queue never emptied, runnaway")
+            #await self.comms.pause()
+        except:
+            self.logger.error(traceback.format_exc())
+            raise
         self.paused = True
         self.logger.info("%s paused all timers this thread and comms",
                          self.port)
@@ -272,7 +334,10 @@ class PausingBankTellerServer(MemoryBankTellerServer):
 
     async def in_loop_check(self):
         if self.do_resume:
-            await get_timer_set().resume_all_this_thread()
+            timer_sets = get_timer_set()
+            if timer_sets[1] is None:
+                breakpoint()
+            await timer_sets[1].resume_all()
             self.comms.resume()
             self.paused = False
             self.do_resume = False

@@ -183,15 +183,15 @@ class ServerThread(threading.Thread):
         self.other_servers.append(other)
 
     async def pause_on_reason(self, reason_string, propogate=True):
-        self.bt_server.comms.pause()
-        await get_timer_set().pause_all_this_thread()
+        await self.bt_server.comms.pause()
+        await get_timer_set()[1].pause_all()
         if propogate:
             for other in self.other_servers:
                 other.pause_on_reason(reason_string, False)
 
     async def resume_from_reason(self, reason_string, propogate=True):
         self.bt_server.comms.resume()
-        await get_timer_set().resume_all_this_thread()
+        await get_timer_set()[1].resume()
         if propogate:
             for other in self.other_servers:
                 other.resume_from_reason(reason_string, False)

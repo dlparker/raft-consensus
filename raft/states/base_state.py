@@ -93,7 +93,8 @@ class State(metaclass=abc.ABCMeta):
     async def on_message(self, message):
         logger = logging.getLogger(__name__)
         if self.terminated:
-            logger.info("got message but already terminated, returning False")
+            logger.info("%s got message %s but already terminated, " \
+                        "returning False", self._type, message.code)
             return False
         
         # If the message.term < currentTerm -> tell the sender to update term
@@ -115,8 +116,8 @@ class State(metaclass=abc.ABCMeta):
         regy = get_message_registry()
         handler = regy.get_handler(message, self)
         if handler:
-            await handler(message)
-            return True
+            res = await handler(message)
+            return res
         else:
             logger.info("state %s has no handler for message %s",
                          self, message)

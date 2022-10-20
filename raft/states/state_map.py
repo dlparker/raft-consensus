@@ -58,12 +58,16 @@ class StateMap(metaclass=abc.ABCMeta):
     
 class StandardStateMap(StateMap):
 
-    server = None
-    state = None
-    queue = None
-    logger = None
-    monitors = None
-    
+    def __init__(self):
+        self.server = None
+        self.state = None
+        self.queue = None
+        self.logger = None
+        self.monitors = None
+        self.follower_leaderless_timeout = 0.75
+        self.candidate_voting_timeout = 0.5
+        self.leader_heartbeat_timeout = 0.5
+        
     # can't be done with init because instance
     # of this class required for server class init
     async def activate(self, server) -> State:
@@ -113,7 +117,8 @@ class StandardStateMap(StateMap):
         if not self.server:
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to follower", self.state)
-        follower =  Follower(server=self.server)
+        follower =  Follower(server=self.server,
+                             timeout=self.follower_leaderless_timeout)
         for monitor in self.monitors:
             try:
                 follower = await monitor.new_state(self, self.state, follower)
@@ -129,7 +134,8 @@ class StandardStateMap(StateMap):
         if not self.server:
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to candidate", self.state)
-        candidate =  Candidate(server=self.server)
+        candidate =  Candidate(server=self.server,
+                               timeout=self.candidate_voting_timeout)
         for monitor in self.monitors:
             try:
                 candidate = await monitor.new_state(self, self.state, candidate)
@@ -145,7 +151,8 @@ class StandardStateMap(StateMap):
         if not self.server:
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to leader", self.state)
-        leader =  Leader(server=self.server)
+        leader =  Leader(server=self.server,
+                         heartbeat_timeout=self.leader_heartbeat_timeout)
         for monitor in self.monitors:
             try:
                 leader = await monitor.new_state(self, self.state, leader)

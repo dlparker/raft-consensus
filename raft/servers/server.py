@@ -3,6 +3,7 @@ import asyncio
 import errno
 import logging
 import traceback
+import time
 
 from ..states.timer import Timer
 from ..utils import task_logger
@@ -119,7 +120,13 @@ class Server:
                    send_message, n)
             await self.comms.post_message(send_message)
         if wait:
-            while not self.comms.are_out_queues_empty():
+            self.logger.debug("broadcast waiting for message out "\
+                              "queues to empty")
+            start_time = time.time()
+            while (time.time() - start_time < 1
+                   and not self.comms.are_out_queues_empty()):
                 await asyncio.sleep(0.001)
+            if not self.comms.are_out_queues_empty():
+                raise Exception("timeout waiting for send queue to empty")
             self.logger.debug("%s out queues empty after broadcast",
                               self.state)

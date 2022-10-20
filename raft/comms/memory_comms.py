@@ -60,8 +60,9 @@ class MemoryComms(CommsAPI):
         self.paused = False
         self.interceptor = None
 
-    def pause(self):
+    async def pause(self):
         self.paused = True
+        return
 
     def resume(self):
         self.paused = False
@@ -99,7 +100,7 @@ class MemoryComms(CommsAPI):
                 any_full = True
         return not any_full
             
-    async def post_message(self, message):
+    async def post_message(self, message, wait=False):
         global queues
         try:
             target = message.receiver
@@ -125,10 +126,13 @@ class MemoryComms(CommsAPI):
             w = Wrapper(data, self.endpoint)
             self.logger.debug("%s posted %s to %s",
                               self.endpoint, message.code, target)
+            before_size = queue.qsize()
             await queue.put(w)
             if self.interceptor:
                 # let test code decide to pause things after
                 # delivering
+                while queue.qsize() > before_size:
+                    await asyncio.sleep(0.001)   
                 deliver = await self.interceptor.after_out_msg(message)
                 if not deliver:
                     # don't unpause in case was paused excplicitly
@@ -157,8 +161,10 @@ class MemoryComms(CommsAPI):
                         if not deliver:
                             self.paused = True
                             # don't unpause in case was paused excplicitly
-                        while self.paused:
-                            await asyncio.sleep(0.001)
+                            self.logger.debug("pausing before delivery of %s",
+                                              message)
+                            while self.paused:
+                                await asyncio.sleep(0.001)
                 except Exception as e:  # pragma: no cover error
                     self.logger.error(traceback.format_exc())
                     self.logger.error("cannot deserialze incoming data '%s...'",
@@ -174,9 +180,13 @@ class MemoryComms(CommsAPI):
                     # let test code decide to pause things after
                     # delivering
                     keep_going = await self.interceptor.after_in_msg(message)
+                    # don't unpause in case was paused excplicitly
                     if not keep_going:
                         self.paused = True
-                        # don't unpause in case was paused excplicitly
+                        self.logger.debug("pausing after delivery of %s",
+                                              message)
+                        while self.paused:
+                            await asyncio.sleep(0.001)
             except Exception as e: # pragma: no cover error
                 self.logger.error(traceback.format_exc())
 

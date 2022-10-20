@@ -383,7 +383,7 @@ class TestTimer(unittest.TestCase):
         await asyncio.sleep(0.06)
         self.assertTrue(self.counter > 0)
         # now "pause" it through the controller api
-        gset = get_timer_set()
+        gset = get_timer_set()[0]
         await gset.pause_by_name(name1)
         self.counter = 0
         await asyncio.sleep(0.1)

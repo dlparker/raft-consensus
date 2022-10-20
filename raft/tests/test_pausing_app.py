@@ -89,7 +89,7 @@ class TestPausing(unittest.TestCase):
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-            loop.run_until_complete(get_timer_set().pause_all())
+            loop.run_until_complete(get_timer_set()[0].pause_all())
             #do_pause()
         for monitor in monitors:
             if monitor.state is None:
