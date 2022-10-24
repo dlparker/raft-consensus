@@ -260,6 +260,10 @@ class Follower(Voter):
             }
         )
         await self.server.send_message_response(message)
+        # getting here might have been slow, let's reset the
+        # timer
+        if self.leaderless_timer.is_enabled():
+            await self.leaderless_timer.reset()
 
     async def do_rollback_to_leader(self, message):
         # figure out what the leader's actual
@@ -275,6 +279,12 @@ class Follower(Voter):
         log.set_term(message.term)
         if last_rec is None:
             self.logger.warning("in call to rollback, we have nothing in the log, nothing to do")
+            return
+        if leader_commit is None:
+            # our whole log is bogus?!!!
+            self.logger.warning("Leader log is empty, ours is not, discarding"\
+                                " everything")
+            log.clear_all()
             return
         if last_rec.index <= leader_commit:
             self.logger.warning("in call to rollback, our log matches leader commit, nothing to do")

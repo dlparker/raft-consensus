@@ -214,7 +214,11 @@ class PausingInterceptor(MessageInterceptor):
         except:
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
-            del self.in_befores[message.code]
+            try:
+                del self.in_befores[message.code]
+            except KeyError:
+                # might have been cleared by test code
+                pass
         return go_on
 
     async def after_in_msg(self, message) -> bool:
@@ -360,7 +364,10 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.logger.info("%s paused all timers this thread and comms",
                          self.port)
         while self.paused:
-            await asyncio.sleep(0.01)
+            try:
+                await asyncio.sleep(0.01)
+            except asyncio.exceptions.CancelledError:
+                pass
 
     async def resume_all(self):
         if not self.paused:

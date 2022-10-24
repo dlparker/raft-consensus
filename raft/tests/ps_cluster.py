@@ -3,7 +3,6 @@ import asyncio
 import time
 import shutil
 from pathlib import Path
-from multiprocessing import Process
 import logging
 import dataclasses
 from dataclasses import dataclass, field
@@ -11,7 +10,6 @@ from typing import Tuple, List, Union
 from enum import Enum
 import abc
 
-from raft.servers.server import Server
 from raft.states.base_state import Substate
 from raft.messages.log_pull import LogPullMessage, LogPullResponseMessage
 from raft.comms.memory_comms import reset_queues
@@ -191,6 +189,7 @@ class PausingServerCluster:
         self.logging_type = logging_type
         self.base_port = base_port
         self.server_specs = {}
+        self.dir_recs = {}
         self.all_server_addrs = []
         self.pause_stepper = None
         if self.logging_type == "devel_one_proc":
@@ -215,35 +214,41 @@ class PausingServerCluster:
             await self.timer_set.pause_all()
             for name, spec in self.server_specs.items():
                 spec.pbt_server.comms.pause()
+
+    def prepare_one(self, name, restart=False, timeout_basis=1.0):
+        if restart:
+            self.setup_server_dir(name)
+        others = []
+        dir_rec = self.dir_recs[name]
+        for addr in self.all_server_addrs:
+            if addr[1] != dir_rec['port']:
+                others.append(addr)
+        args = [dir_rec['port'], dir_rec['working_dir'],
+                dir_rec['name'], others, self.log_config]
+        pbt_server = PausingBankTellerServer(*args)
+        smap = pbt_server.state_map
+        smap.follower_leaderless_timeout=0.75 * timeout_basis
+        smap.candidate_voting_timeout=0.5 * timeout_basis
+        smap.leader_heartbeat_timeout=0.5 * timeout_basis
+        
+        spec = ServerSpec(dir_rec['name'], dir_rec['port'],
+                          dir_rec['addr'], dir_rec['working_dir'],
+                          run_args=args,
+                          pbt_server=pbt_server,
+                          pbt_server_thread=pbt_server.thread,
+                          monitor=pbt_server.monitor,
+                          interceptor=pbt_server.interceptor)
+        self.server_specs[spec.name] = spec
+        return spec
         
     def prepare(self, timeout_basis=1.0):
         if len(self.server_specs) > 0:
             raise Exception("cannot call prepare more than once")
-        dir_recs = self.setup_dirs()
-        self.all_server_addrs = [ sdef['addr'] for sdef in  dir_recs.values() ]
-        for name, dir_rec in dir_recs.items():
-            if dir_rec.get("server_thread"):
-                raise Exception(f"server {name} server_thread already running")
-            others = []
-            for addr in self.all_server_addrs:
-                if addr[1] != dir_rec['port']:
-                    others.append(addr)
-            args = [dir_rec['port'], dir_rec['working_dir'],
-                    dir_rec['name'], others, self.log_config]
-            pbt_server = PausingBankTellerServer(*args)
-            smap = pbt_server.state_map
-            smap.follower_leaderless_timeout=0.75 * timeout_basis
-            smap.candidate_voting_timeout=0.5 * timeout_basis
-            smap.leader_heartbeat_timeout=0.5 * timeout_basis
-            
-            spec = ServerSpec(dir_rec['name'], dir_rec['port'],
-                              dir_rec['addr'], dir_rec['working_dir'],
-                              run_args=args,
-                              pbt_server=pbt_server,
-                              pbt_server_thread=pbt_server.thread,
-                              monitor=pbt_server.monitor,
-                              interceptor=pbt_server.interceptor)
-            self.server_specs[spec.name] = spec
+        self.dir_recs = self.setup_dirs()
+        self.all_server_addrs = [ sdef['addr'] for sdef in 
+                                  self.dir_recs.values() ]
+        for name, dir_rec in self.dir_recs.items():
+            self.prepare_one(name, timeout_basis=timeout_basis)
         return self.server_specs
 
     def add_pause_point(self, pause_point: PausePoint,
@@ -303,13 +308,25 @@ class PausingServerCluster:
         for name, spec in self.server_specs.items():
             orig.resume(spec)
         
-    def resume_from_pause(self):
+    def resume_from_stepper_pause(self):
         if not self.pause_stepper:
             raise Exception('you must add a pause point before calling')
         for name, spec in self.server_specs.items():
             self.pause_stepper.resume(spec)
         self.pause_stepper = None
-            
+
+    def resume_all_paused_servers(self):
+        async def do_resume():
+            for name, spec in self.server_specs.items():
+                if spec.running:
+                    await spec.pbt_server.resume_all()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.run_until_complete(do_resume())
+        
     def start_all_servers(self):
         for name in self.server_specs.keys():
             self.start_one_server(name)
@@ -321,6 +338,13 @@ class PausingServerCluster:
         spec.pbt_server.start()
         spec.running = True
 
+    def setup_server_dir(self, name):
+        wdir = Path(self.base_dir, name)
+        if wdir.exists():
+            shutil.rmtree(wdir)
+        wdir.mkdir()
+        return wdir
+    
     def setup_dirs(self):
         if self.base_dir.exists():
             shutil.rmtree(self.base_dir)
@@ -328,12 +352,9 @@ class PausingServerCluster:
         result = {}
         for i in range(self.server_count):
             name = f"server_{i}"
-            wdir = Path(self.base_dir, name)
-            if wdir.exists():
-                shutil.rmtree(wdir)
-            wdir.mkdir()
             port = self.base_port + i
             addr = ('localhost', port)
+            wdir = self.setup_server_dir(name)
             result[name] = dict(name=name, working_dir=wdir,
                                 port=port, addr=addr)
         return result

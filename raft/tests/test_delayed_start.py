@@ -9,18 +9,16 @@ from pathlib import Path
 
 from raft.messages.termstart import TermStartMessage
 from raft.tests.bt_client import MemoryBankTellerClient
-from raft.tests.pausing_app import InterceptorMode, TriggerType
 from raft.states.base_state import Substate
 from raft.tests.common_test_code import run_data_from_status
-from raft.tests.setup_utils import Cluster
-from raft.tests.timer import get_timer_set
-from raft.comms.memory_comms import reset_queues
+from raft.tests.ps_cluster import PausingServerCluster, PausePoint
 
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
+timeout_basis = 0.2
     
 class TestDelayedStart(unittest.TestCase):
 
@@ -36,12 +34,9 @@ class TestDelayedStart(unittest.TestCase):
     def setUp(self):
         if self.logger is None:
             self.logger = logging.getLogger(__name__)
-        reset_queues()
-        self.cluster = Cluster(server_count=3,
-                               use_processes=False,
+        self.cluster = PausingServerCluster(server_count=3,
                                logging_type=LOGGING_TYPE,
-                               base_port=5000,
-                               use_pauser=True)
+                               base_port=5000)
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -51,60 +46,28 @@ class TestDelayedStart(unittest.TestCase):
     def tearDown(self):
         self.cluster.stop_all_servers()
         time.sleep(0.1)
-        self.cluster.stop_logging_server()
         self.loop.close()
 
     def test_start_one_after_election(self):
-        self.cluster.prep_mem_servers()
-        servers = []
-        monitors = []
-
-        for name,sdef in self.cluster.server_recs.items():
-            mserver = sdef['memserver']
-            servers.append(mserver)
-            mserver.configure()
-            monitor = mserver.monitor
-            monitors.append(monitor)
-
-        self.cluster.start_one_server(servers[0].name)
-        self.cluster.start_one_server(servers[1].name)
+        servers = self.cluster.prepare(timeout_basis=timeout_basis)
+        self.cluster.add_pause_point(PausePoint.election_done)
+        self.cluster.start_one_server("server_0")
+        self.cluster.start_one_server("server_1")
         self.logger.info("waiting for pause on election results")
-        start_time = time.time()
-        while time.time() - start_time < 3:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.05)
-            leader = None
-            first = None
-            for monitor in monitors:
-                if monitor.state is not None:
-                    if str(monitor.state) == "leader":
-                        leader = monitor
-                    elif str(monitor.state) == "follower":
-                        first = monitor
-            if leader:
-                if leader.substate == Substate.became_leader:
-                    break
-
-        self.assertIsNotNone(leader)
-        if leader.substate != Substate.became_leader:
-            print(f"\n\n\nLeader Substate {leader.substate}\n\n")
-        self.assertEqual(leader.substate, Substate.became_leader)
-        missing = None
-        for monitor in monitors:
-            if monitor.state is None:
-                missing = monitor
-                break
-        self.cluster.start_one_server(servers[2].name)
+        paused = self.cluster.wait_for_pause(timeout=2, expected_count=2)
+        self.assertTrue(paused)
+        self.cluster.resume_from_stepper_pause()
+        self.cluster.start_one_server("server_2")
+        spec2 = servers['server_2']
         self.logger.info("waiting third server start")
         start_time = time.time()
         while time.time() - start_time < 2:
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.05)
-            if missing.state is not None:
+            if spec2.monitor.state is not None:
                 break
-        self.assertEqual(str(missing.state), "follower")
+        self.assertEqual(spec2.monitor.state._type, "follower")
 
 
 

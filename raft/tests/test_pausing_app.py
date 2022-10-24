@@ -12,14 +12,13 @@ from raft.tests.bt_client import MemoryBankTellerClient
 from raft.tests.pausing_app import InterceptorMode, TriggerType
 from raft.states.base_state import Substate
 from raft.tests.common_test_code import run_data_from_status
-from raft.tests.setup_utils import Cluster
-from raft.tests.timer import get_all_timer_sets
-from raft.comms.memory_comms import reset_queues
+from raft.tests.ps_cluster import PausingServerCluster, PausePoint
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
+timeout_basis = 0.2
     
 class TestPausing(unittest.TestCase):
 
@@ -35,12 +34,9 @@ class TestPausing(unittest.TestCase):
     def setUp(self):
         if self.logger is None:
             self.logger = logging.getLogger(__name__)
-        reset_queues()
-        self.cluster = Cluster(server_count=3,
-                               use_processes=False,
+        self.cluster = PausingServerCluster(server_count=3,
                                logging_type=LOGGING_TYPE,
-                               base_port=5000,
-                               use_pauser=True)
+                               base_port=5000)
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -50,119 +46,38 @@ class TestPausing(unittest.TestCase):
     def tearDown(self):
         self.cluster.stop_all_servers()
         time.sleep(0.1)
-        self.cluster.stop_logging_server()
         self.loop.close()
     
-    def test_monitor_callbacks(self):
-        # just make sure that all the monitors get called
-        self.cluster.prep_mem_servers()
-        monitors = []
-        for name,sdef in self.cluster.server_recs.items():
-            mserver = sdef['memserver']
-            monitor = mserver.monitor
-            monitors.append(monitor)
-
-        for name,sdef in self.cluster.server_recs.items():
-            mserver = sdef['memserver']
-            mserver.configure()
-        self.cluster.start_all_servers()
-        self.logger.info("waiting for election results")
-        client = MemoryBankTellerClient("localhost", 5000)
-        start_time = time.time()
-        while time.time() - start_time < 2:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.25)
-            status = client.get_status()
-            if status and status.data['leader']:
-                leader_addr = status.data['leader']
-                break
-            status = None
-        self.assertIsNotNone(status)
-        self.assertIsNotNone(status.data['leader'])
-        leader_mon = None
-        first_mon = None
-        second_mon = None
-        def do_pause():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            for timer_set in get_all_timer_sets():
-                loop.run_until_complete(timer_set.pause_all())
-            #do_pause()
-        for monitor in monitors:
-            if monitor.state is None:
-                continue
-            if str(monitor.state) == "leader":
-                leader_mon = monitor
-            elif first_mon is None:
-                first_mon = monitor
-            else:
-                second_mon = monitor
-        self.assertIsNotNone(leader_mon)
-        self.assertIsNotNone(first_mon)
-        self.assertIsNotNone(second_mon)
-        run_data = run_data_from_status(self.cluster, self.logger, status)
-        leader = run_data.leader
-        first = run_data.first_follower
-        second = run_data.second_follower
-        addr = leader_mon.state_map.server.endpoint
-        self.assertEqual(addr, leader['addr'])
-        leader['monitor'] = leader_mon
-        addr = first_mon.state_map.server.endpoint
-        if addr == first['addr']:
-            first['monitor'] = first_mon
-            second['monitor'] = second_mon
-        else:
-            first['monitor'] = second_mon
-            second['monitor'] = first_mon
-            second_mon = first_mon
-            first_mon = first['monitor']
-        
     def test_pause_at_election_done_by_substate(self):
-        self.cluster.prep_mem_servers()
-        monitors = []
+        servers = self.cluster.prepare(timeout_basis=timeout_basis)
+        self.cluster.add_pause_point(PausePoint.election_done)
 
-        servers = []
-        for name,sdef in self.cluster.server_recs.items():
-            mserver = sdef['memserver']
-            servers.append(mserver)
-            mserver.configure()
-            monitor = mserver.monitor
-            monitor.set_pause_on_substate(Substate.joined)
-            monitor.set_pause_on_substate(Substate.new_leader)
-            monitor.set_pause_on_substate(Substate.became_leader)
-            monitors.append(monitor)
+        for spec in servers.values():
+            # follower after first heartbeat that requires no
+            # additional sync up actions
+            spec.monitor.set_pause_on_substate(Substate.synced)
+            # leader after term start message
+            spec.monitor.set_pause_on_substate(Substate.sent_heartbeat)
         self.cluster.start_all_servers()
-        
         self.logger.info("waiting for pause on election results")
         start_time = time.time()
         while time.time() - start_time < 4:
             # servers are in their own threads, so
             # blocking this one is fine
-            time.sleep(0.25)
+            time.sleep(0.01)
             pause_count = 0
-            for server in servers:
-                if server.paused:
+            for spec in servers.values():
+                if spec.pbt_server.paused:
                     pause_count += 1
             if pause_count == 3:
                 break
         self.assertEqual(pause_count, 3,
-                         msg=f"only {pause_count} servers pause on election")
+                         msg=f"only {pause_count} servers paused on election")
 
-        async def resume():
-            for server in servers:
-                await server.resume_all()
-
-        self.loop.run_until_complete(resume())
-
+        self.cluster.resume_all_paused_servers()
+        
     def test_pause_at_election_done_by_message(self):
-        self.cluster.prep_mem_servers()
-        interceptors = []
-
-        servers = []
+        servers = self.cluster.prepare(timeout_basis=timeout_basis)
 
         # We want the leader to send both term start messages
         # so we need to count the outgoing until we have both,
@@ -182,18 +97,14 @@ class TestPausing(unittest.TestCase):
                                             dict(mode=mode, code=code))
                 return True
             
-        for name,sdef in self.cluster.server_recs.items():
-            mserver = sdef['memserver']
-            servers.append(mserver)
-            mserver.configure()
-            inter = mserver.interceptor
-            tcp = TwoCountPauser(mserver)
+        for spec in servers.values():
+            inter = spec.pbt_server.interceptor
+            tcp = TwoCountPauser(spec.pbt_server)
             inter.add_trigger(InterceptorMode.out_after,
                               TermStartMessage._code,
                               tcp.pause)
             inter.add_trigger(InterceptorMode.in_after,
                               TermStartMessage._code)
-            interceptors.append(mserver.interceptor)
         self.cluster.start_all_servers()
         
         self.logger.info("waiting for pause on election results")
@@ -201,22 +112,18 @@ class TestPausing(unittest.TestCase):
         while time.time() - start_time < 4:
             # servers are in their own threads, so
             # blocking this one is fine
-            time.sleep(0.25)
+            time.sleep(0.01)
             pause_count = 0
-            for server in servers:
-                if server.paused:
+            for spec in servers.values():
+                if spec.pbt_server.paused:
                     pause_count += 1
             if pause_count == 3:
                 break
         self.assertEqual(pause_count, 3,
                          msg=f"only {pause_count} servers pause on election")
 
-        async def resume():
-            for server in servers:
-                await server.resume_all()
-
-        self.loop.run_until_complete(resume())
-
+        self.cluster.resume_all_paused_servers()
+  
 
 
 

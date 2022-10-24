@@ -71,7 +71,7 @@ class TestPausing(unittest.TestCase):
         self.logger.info("waiting for election results")
         paused = self.cluster.wait_for_pause()
         self.assertTrue(paused)
-        self.cluster.resume_from_pause()
+        self.cluster.resume_from_stepper_pause()
 
         # make sure it works after resume
         client = MemoryBankTellerClient("localhost", 5000)
@@ -116,7 +116,7 @@ class TestPausing(unittest.TestCase):
                 continue
             self.cluster.start_one_server(name)
         paused = self.cluster.wait_for_pause(expected_count=2)
-        self.cluster.resume_from_pause()
+        self.cluster.resume_from_stepper_pause()
 
 
 

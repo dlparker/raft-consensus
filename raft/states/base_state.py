@@ -31,6 +31,9 @@ class Substate(str, Enum):
     """ Just sent term start (as leader) """
     sent_term_start = "SENT_TERM_START"
     
+    """ Just sent term start (as leader) """
+    sent_heartbeat = "SENT_HEARTBEAT"
+    
     """ As of last call from leader, log is in sync """
     synced = "SYNCED"                 
 
@@ -108,7 +111,7 @@ class State(metaclass=abc.ABCMeta):
             if message.term > log.get_term():
                 set_term = True
         if set_term:
-            logger.info("updating term from %d to %s", log.get_term(),
+            logger.info("updating term from %s to %s", log.get_term(),
                         message.term)
             log.set_term(message.term)
 

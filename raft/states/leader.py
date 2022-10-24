@@ -275,6 +275,7 @@ class Leader(State):
         await self.server.broadcast(message)
         self.heartbeat_logger.debug("sent heartbeat to all commit = %s",
                                     message.data['leaderCommit'])
+        await self.set_substate(Substate.sent_heartbeat)
 
     async def send_term_start(self):
         log = self.server.get_log()
