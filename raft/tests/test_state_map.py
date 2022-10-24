@@ -45,8 +45,7 @@ class TestMap(unittest.TestCase):
         loop.close()
         
     async def inner_test_methods(self):
-        bt_server = MemoryBankTellerServer(0, Path('.'), "foo", (1,2),
-                                        None, False)
+        bt_server = MemoryBankTellerServer(0, Path('.'), "foo", (1,2), None)
         smap = bt_server.state_map = StandardStateMap()
         # make sure all errors raise when calls made
         # before activate call
@@ -124,7 +123,7 @@ class TestMap(unittest.TestCase):
         # path of activate being called before adding state change
         # monitors
         bt_server_2 = MemoryBankTellerServer(1, Path('.'), "foo", (1,2),
-                                             None, False)
+                                             None)
         bt_server_2.start()
         smap2 = bt_server_2.state_map
         start_time = time.time()

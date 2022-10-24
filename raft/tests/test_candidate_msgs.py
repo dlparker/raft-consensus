@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 from raft.messages.termstart import TermStartMessage
+from raft.messages.request_vote import RequestVoteMessage
 from raft.tests.bt_client import MemoryBankTellerClient
 from raft.tests.pausing_app import InterceptorMode, TriggerType
 from raft.states.base_state import Substate
@@ -70,7 +71,7 @@ class TestDelayedStart(unittest.TestCase):
         # start just the one server and wait for it
         # to pause in candidate state
         self.cluster.start_one_server(servers[0].name)
-        self.logger.info("waiting for pause election start")
+        self.logger.info("waiting for switch to candidate")
         monitor = monitors[0]
         monitor.set_pause_on_substate(Substate.voting)
         start_time = time.time()
@@ -81,11 +82,11 @@ class TestDelayedStart(unittest.TestCase):
             if monitor.state is not None:
                 if str(monitor.state) == "candidate":
                     if monitor.substate == Substate.voting:
-                        if monitor.server.paused:
+                        if monitor.pbt_server.paused:
                             break
 
         self.assertEqual(monitor.substate, Substate.voting)
-        self.assertTrue(monitor.server.paused)
+        self.assertTrue(monitor.pbt_server.paused)
         # leave the timer off but allow comms again
         servers[0].comms.resume()
         client =  MemoryBankTellerClient("localhost", 5000)
@@ -126,10 +127,12 @@ class TestDelayedStart(unittest.TestCase):
         # now simulate a new message indicating the term needs to go up
         log = inner_server.get_log()
         log_term = log.get_term()
+        monitor.clear_pause_on_substate(Substate.voting)
+        self.loop.run_until_complete(servers[0].resume_all())
         tsm = TermStartMessage(("localhost", 5001),
                                ("localhost", 5000),
                                log_term + 1,
-                               {})
+                               {"leaderPort":('localhost', 5001)})
         client.direct_message(tsm)
         start_time = time.time()
         while time.time() - start_time < 3:
@@ -139,8 +142,6 @@ class TestDelayedStart(unittest.TestCase):
         self.assertEqual(log.get_term(), log_term + 1)
         self.cluster.start_one_server(servers[1].name)
         self.cluster.start_one_server(servers[2].name)
-        monitor.clear_pause_on_substate(Substate.voting)
-        self.loop.run_until_complete(servers[0].resume_all())
         time.sleep(0.1)
         leader_add = None
         start_time = time.time()

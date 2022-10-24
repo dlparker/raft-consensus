@@ -23,11 +23,7 @@ class Candidate(Voter):
         server.set_state(self)
         self.votes = {}
         self.election_timeout = self.candidate_interval()
-        log = server.get_log()
-        self.candidate_timer = self.server.get_timer("candidate-interval",
-                                                     log.get_term(),
-                                                     self.election_timeout,
-                                                     self.on_timer)
+        self.candidate_timer = None
         self.task = None
                             
     def __str__(self):
@@ -37,6 +33,11 @@ class Candidate(Voter):
         if self.terminated:
             raise Exception("cannot start a terminated state")
 
+        log = self.server.get_log()
+        self.candidate_timer = self.server.get_timer("candidate-interval",
+                                                     log.get_term(),
+                                                     self.election_timeout,
+                                                     self.on_timer)
         self.candidate_timer.start()
         self.task = task_logger.create_task(self.start_election(),
                                             logger=self.logger,
@@ -49,7 +50,7 @@ class Candidate(Voter):
             await asyncio.sleep(0)
             
     def candidate_interval(self):
-        return random.uniform(0.1, self.timeout)
+        return random.uniform(0.01, self.timeout)
         
     async def on_term_start(self, message):
         self.logger.info("candidate resigning because we got a term start message")

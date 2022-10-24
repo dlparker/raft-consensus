@@ -122,14 +122,14 @@ class TestLogPulls(unittest.TestCase):
         # now stop one follower, do some log record creating
         # ops, the restart the follower and walk it through
         # the log pull
-        self.stopper = second['monitor'].server.name
+        self.stopper = second['monitor'].pbt_server.name
         self.cluster.stop_server(self.stopper)
         self.client.do_credit(10)
         self.client.do_credit(10)
         self.client.do_debit(5)
         self.client.do_debit(5)
         
-        sdef = self.cluster.prep_mem_server(self.stopper, vote_at_start=False)
+        sdef = self.cluster.prep_mem_server(self.stopper)
         mserver = sdef['memserver']
         mserver.configure()
         self.restarted_monitor = mserver.monitor
@@ -142,18 +142,18 @@ class TestLogPulls(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.25)
-            if self.restarted_monitor.server.paused:
+            if self.restarted_monitor.pbt_server.paused:
                 break
 
-        self.assertTrue(self.restarted_monitor.server.paused)
-        self.target_log = self.restarted_monitor.server.thread.server.get_log()
+        self.assertTrue(self.restarted_monitor.pbt_server.paused)
+        self.target_log = self.restarted_monitor.pbt_server.thread.server.get_log()
         self.assertIsNone(self.target_log.read())
         
     def test_normal_pull(self):
         self.preamble()
         # now resume so that the normal log pull sequence will take place
         async def resume():
-            await self.restarted_monitor.server.resume_all()
+            await self.restarted_monitor.pbt_server.resume_all()
         self.loop.run_until_complete(resume())
         start_time = time.time()
         while time.time() - start_time < 2:
@@ -177,16 +177,16 @@ class TestLogPulls(unittest.TestCase):
         # the log, then the leader should tell the follower to
         # reset, and then it should drop all the log records
 
-        leader_inter = self.leader_monitor.server.interceptor
+        leader_inter = self.leader_monitor.pbt_server.interceptor
         leader_inter.add_trigger(InterceptorMode.in_before,
                           LogPullMessage._code)
         
-        follow_inter = self.restarted_monitor.server.interceptor
+        follow_inter = self.restarted_monitor.pbt_server.interceptor
         follow_inter.add_trigger(InterceptorMode.in_after,
                                  LogPullResponseMessage._code)
         
         async def resume_follower():
-            await self.restarted_monitor.server.resume_all()
+            await self.restarted_monitor.pbt_server.resume_all()
         self.loop.run_until_complete(resume_follower())
         start_time = time.time()
         while time.time() - start_time < 2:
@@ -194,19 +194,19 @@ class TestLogPulls(unittest.TestCase):
             # blocking this one is fine
             time.sleep(0.25)
             rec = self.target_log.read()
-            if self.leader_monitor.server.paused:
+            if self.leader_monitor.pbt_server.paused:
                 break
 
-        self.assertTrue(self.leader_monitor.server.paused)
+        self.assertTrue(self.leader_monitor.pbt_server.paused)
         # just replace the log with an empty one, but don't
         # break the term
-        old_term  = self.leader_monitor.server.thread.server.log.get_term()
-        leader_log = self.leader_monitor.server.thread.server.log = MemoryLog()
+        old_term  = self.leader_monitor.pbt_server.thread.server.log.get_term()
+        leader_log = self.leader_monitor.pbt_server.thread.server.log = MemoryLog()
         leader_log.set_term(old_term)
         
         
         async def resume_leader():
-            await self.leader_monitor.server.resume_all()
+            await self.leader_monitor.pbt_server.resume_all()
         self.loop.run_until_complete(resume_leader())
 
         start_time = time.time()
@@ -214,9 +214,9 @@ class TestLogPulls(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.25)
-            if self.restarted_monitor.server.paused:
+            if self.restarted_monitor.pbt_server.paused:
                 break
-        self.assertTrue(self.restarted_monitor.server.paused)
+        self.assertTrue(self.restarted_monitor.pbt_server.paused)
         self.loop.run_until_complete(resume_follower())
         self.assertIsNone(self.target_log.read())
 
@@ -241,24 +241,24 @@ class TestLogPulls(unittest.TestCase):
         # it is there, it should be tested.
 
         # copy the first four messages to the follower's log
-        leader_log = self.leader_monitor.server.thread.server.log
+        leader_log = self.leader_monitor.pbt_server.thread.server.log
         recs = []
         for i in range(3):
             recs.append(leader_log.read(i))            
         self.target_log.append(recs)
 
         # stop the leader before it handles the pull message
-        leader_inter = self.leader_monitor.server.interceptor
+        leader_inter = self.leader_monitor.pbt_server.interceptor
         leader_inter.add_trigger(InterceptorMode.in_before,
                                  LogPullMessage._code)
         
         # stop the follower after it handles the pull message response
-        follow_inter = self.restarted_monitor.server.interceptor
+        follow_inter = self.restarted_monitor.pbt_server.interceptor
         follow_inter.add_trigger(InterceptorMode.in_after,
                                  LogPullResponseMessage._code)
         
         async def resume_follower():
-            await self.restarted_monitor.server.resume_all()
+            await self.restarted_monitor.pbt_server.resume_all()
         self.loop.run_until_complete(resume_follower())
 
         start_time = time.time()
@@ -266,15 +266,15 @@ class TestLogPulls(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.25)
-            if self.leader_monitor.server.paused:
+            if self.leader_monitor.pbt_server.paused:
                 break
-        self.assertTrue(self.leader_monitor.server.paused)
+        self.assertTrue(self.leader_monitor.pbt_server.paused)
         # Trim the leader log to just two entries, so that the
         # leader will think that the follower has asked for
         # records with a start index above the last index
         leader_log.trim_after(1)
         async def resume_leader():
-            await self.leader_monitor.server.resume_all()
+            await self.leader_monitor.pbt_server.resume_all()
         self.loop.run_until_complete(resume_leader())
 
         start_time = time.time()
@@ -282,9 +282,9 @@ class TestLogPulls(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.25)
-            if self.restarted_monitor.server.paused:
+            if self.restarted_monitor.pbt_server.paused:
                 break
-        self.assertTrue(self.restarted_monitor.server.paused)
+        self.assertTrue(self.restarted_monitor.pbt_server.paused)
         self.loop.run_until_complete(resume_follower())
         rec = self.target_log.read()
         self.assertIsNotNone(rec)

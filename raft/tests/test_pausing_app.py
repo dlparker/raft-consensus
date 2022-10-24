@@ -13,7 +13,7 @@ from raft.tests.pausing_app import InterceptorMode, TriggerType
 from raft.states.base_state import Substate
 from raft.tests.common_test_code import run_data_from_status
 from raft.tests.setup_utils import Cluster
-from raft.tests.timer import get_timer_set
+from raft.tests.timer import get_all_timer_sets
 from raft.comms.memory_comms import reset_queues
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
@@ -89,7 +89,8 @@ class TestPausing(unittest.TestCase):
             except RuntimeError:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-            loop.run_until_complete(get_timer_set()[0].pause_all())
+            for timer_set in get_all_timer_sets():
+                loop.run_until_complete(timer_set.pause_all())
             #do_pause()
         for monitor in monitors:
             if monitor.state is None:
@@ -179,7 +180,7 @@ class TestPausing(unittest.TestCase):
                     return True
                 await self.server.pause_all(TriggerType.interceptor,
                                             dict(mode=mode, code=code))
-                True
+                return True
             
         for name,sdef in self.cluster.server_recs.items():
             mserver = sdef['memserver']

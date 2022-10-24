@@ -61,16 +61,16 @@ class Timer:
             try:
                 await asyncio.sleep(0.005)
                 if not self.keep_running:
-                    self.logger.info("timer %s one_pass method exiting because" \
-                                     " keep_running is false",
+                    self.logger.info("timer %s one_pass method exiting " \
+                                     "because keep_running is false",
                                      self.name)
                     return True
             except RuntimeError: # pragma: no cover error
                 # someone killed the loop while we were running
                 return
-        self.task = task_logger.create_task(self.cb_wrapper(),
-                                            logger=self.logger,
-                                            message=f"{self.name} callback error")
+        task_logger.create_task(self.cb_wrapper(),
+                                logger=self.logger,
+                                message=f"{self.name} callback error")
 
     async def cb_wrapper(self):
         try:
@@ -91,7 +91,6 @@ class Timer:
             except:
                 self.logger.error(traceback.format_exc())
                 pass
-            
         self.logger.info("timer %s run method exiting on stop", self.name)
         self.task = None
         

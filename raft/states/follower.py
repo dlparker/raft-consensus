@@ -22,18 +22,13 @@ class Follower(Voter):
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        self.leaderless_timer = None
         self.leader_addr = None
         self.heartbeat_count = 0
         self.substate = Substate.starting
-        interval = self.election_interval()
-        log = server.get_log()
-        self.leaderless_timer = self.server.get_timer("follower-election",
-                                                      log.get_term(),
-                                                      interval,
-                                                      self.leader_lost)
+        self.leaderless_timer = None
         self.last_vote = None
         self.last_vote_time = None
+        self.running = False
         
     def __str__(self):
         return "follower"
@@ -44,12 +39,22 @@ class Follower(Voter):
     def start(self):
         if self.terminated:
             raise Exception("cannot start a terminated state")
+        if self.running:
+            raise Exception("cannot call start on follower twice!")
+        self.running = True
+        log = self.server.get_log()
+        interval = self.election_interval()
+        self.leaderless_timer = self.server.get_timer("follower-election",
+                                                      log.get_term(),
+                                                      interval,
+                                                      self.leader_lost)
         self.leaderless_timer.start()
 
     async def stop(self):
         if self.terminated:
             return
         self.terminated = True
+        self.running = False
         await self.leaderless_timer.terminate()
         
     def election_interval(self):
@@ -62,7 +67,7 @@ class Follower(Voter):
         return await self.start_election()
     
     async def start_election(self):
-        if not self.leaderless_timer.is_enabled() or self.terminated:
+        if not self.leaderless_timer.enabled or self.terminated:
             return
         try:
             self.terminated = True
@@ -406,6 +411,8 @@ class Follower(Voter):
         # our last log record index is max.
         # If we have already voted, then we say no. Election
         # will resolve or restart.
+        if self.leaderless_timer.is_enabled():
+            await self.leaderless_timer.reset() 
         log = self.server.get_log()
         # get the last record in the log
         last_rec = log.read()
@@ -439,8 +446,6 @@ class Follower(Voter):
             await self.send_vote_response_message(message, votedYes=True)
             self.logger.info("resetting leaderless_timer on vote done")
             # election in progress, let it run
-            if self.leaderless_timer.is_enabled():
-                await self.leaderless_timer.reset() 
         else:
             self.logger.info("voting false on message %s %s",
                              message, message.data)

@@ -14,7 +14,7 @@ LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-timeout_basis = 1.0
+timeout_basis = 0.2
     
 class TestPausing(unittest.TestCase):
 
@@ -114,7 +114,7 @@ class TestPausing(unittest.TestCase):
         for name, spec in self.cluster.get_servers().items():
             if spec.running:
                 continue
-            self.cluster.start_one_server(name, vote_at_start=False)
+            self.cluster.start_one_server(name)
         paused = self.cluster.wait_for_pause(expected_count=2)
         self.cluster.resume_from_pause()
 

@@ -111,13 +111,11 @@ class Cluster:
         return 
 
 
-    def prep_mem_server(self, name, vote_at_start=True):
+    def prep_mem_server(self, name):
         if self.use_procs:
             raise Exception('invalid call for mp servers')
         srec = self.server_recs[name]
-        # vote at start is last arg
         args = [ item for item in srec['run_args'][:-1] ]
-        args.append(vote_at_start)
         if srec.get('server_thread'):
             raise Exception(f"server {name} server_thread already running")
         if not srec.get("memserver"):
@@ -128,15 +126,9 @@ class Cluster:
             srec['memserver'] = memserver
         return srec
     
-    def start_one_server(self, name, vote_at_start=True):
-        # vote_at_start True means that server starts with
-        # a follower that does not wait for timeout, which
-        # makes testing go faster. Sometimes you want the
-        # timeout to happen, so set to False
+    def start_one_server(self, name):
         srec = self.server_recs[name]
-        # vote at start is last arg
         args = [ item for item in srec['run_args'][:-1] ]
-        args.append(vote_at_start)
         if self.use_procs:
             if srec.get('proc'):
                 raise Exception(f"server {name} process already running")

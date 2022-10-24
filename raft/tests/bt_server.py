@@ -25,11 +25,7 @@ class UDPBankTellerServer:
 
     @classmethod
     def make_and_start(cls, port, working_dir, name, others,
-                       log_config, vote_at_start=True):
-        # vote_at_start True means that server starts with
-        # a follower that does not wait for timeout, which
-        # makes testing go faster. Sometimes you want the
-        # timeout to happen, so set to False
+                       log_config):
         from pytest_cov.embed import cleanup_on_sigterm
         cleanup_on_sigterm()
         import sys
@@ -48,23 +44,18 @@ class UDPBankTellerServer:
                 pprint(log_config)
                 raise
         try:
-            instance = cls(port, working_dir, name, others, vote_at_start)
+            instance = cls(port, working_dir, name, others)
             instance.start()
         except Exception as e:
             traceback.print_exc()
             raise
 
-    def __init__(self, port, working_dir, name, others, vote_at_start):
-        # vote_at_start True means that server starts with
-        # a follower that does not wait for timeout, which
-        # makes testing go faster. Sometimes you want the
-        # timeout to happen, so set to False
+    def __init__(self, port, working_dir, name, others):
         self.host = "localhost"
         self.port = port
         self.name = name
         self.working_dir = working_dir
         self.others = others
-        self.vote_at_start = vote_at_start
         self.running = False
         
     async def _run(self):
@@ -108,12 +99,7 @@ class UDPBankTellerServer:
         
 class MemoryBankTellerServer:
 
-    def __init__(self, port, working_dir, name, others,
-                 log_config=None, vote_at_start=True):
-        # vote_at_start True means that server starts with
-        # a follower that does not wait for timeout, which
-        # makes testing go faster. Sometimes you want the
-        # timeout to happen, so set to False
+    def __init__(self, port, working_dir, name, others, log_config=None):
         # log_config is ignored, kept just to match process launching
         # versions to make control code cleaner
         self.host = "localhost"
@@ -183,15 +169,15 @@ class ServerThread(threading.Thread):
         self.other_servers.append(other)
 
     async def pause_on_reason(self, reason_string, propogate=True):
-        await self.bt_server.comms.pause()
-        await get_timer_set()[1].pause_all()
+        self.bt_server.comms.pause()
+        await get_timer_set().pause_all()
         if propogate:
             for other in self.other_servers:
                 other.pause_on_reason(reason_string, False)
 
     async def resume_from_reason(self, reason_string, propogate=True):
         self.bt_server.comms.resume()
-        await get_timer_set()[1].resume()
+        await get_timer_set().resume()
         if propogate:
             for other in self.other_servers:
                 other.resume_from_reason(reason_string, False)

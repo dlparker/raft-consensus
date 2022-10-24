@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import time
 import shutil
@@ -40,8 +41,11 @@ class PausePoint(str, Enum):
 
 class PauseStep(metaclass=abc.ABCMeta):
 
-    def __init__(self, point: PausePoint):
+    def __init__(self, cluster: PausingServerCluster,
+                 point: PausePoint):
         self.point = point
+        self.cluster = cluster
+        self.server_specs = []
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -60,15 +64,20 @@ class PauseStep(metaclass=abc.ABCMeta):
     
 class SubstatePauseStep(PauseStep):
 
-    def __init__(self, point: PausePoint):
-        super().__init__(point)
+    def __init__(self, cluster: PausingServerCluster,
+                 point: PausePoint):
+        super().__init__(cluster, point)
         self.substates = []
         
     def configure(self, server_spec: ServerSpec, substates):
         self.substates = []
+        self.server_specs.append(server_spec)
+        method = None
+        if hasattr(self, "substate_pause_method"):
+            method = self.substate_pause_method
         for substate in substates:
             self.substates.append(substate)
-            server_spec.monitor.set_pause_on_substate(substate)
+            server_spec.monitor.set_pause_on_substate(substate, method)
     
     def check_condition(self, server_spec: ServerSpec) -> bool:
         return server_spec.pbt_server.paused
@@ -85,19 +94,56 @@ class SubstatePauseStep(PauseStep):
     
 class PauseAfterElection(SubstatePauseStep):
 
-    def __init__(self):
-        super().__init__(PausePoint.election_done)
+    def __init__(self, cluster: PausingServerCluster):
+        super().__init__(cluster, PausePoint.election_done)
 
     def configure(self, server_spec: ServerSpec):
         substates = [Substate.joined, Substate.new_leader,
                     Substate.became_leader]
         super().configure(server_spec, substates)
 
-
+    async def substate_pause_method(self, monitor, state,
+                                    old_substate, new_substate):
+        spec = None
+        for tspec in self.server_specs:
+            if tspec.monitor == monitor:
+                spec = tspec
+        if spec is None:
+            raise Exception("could not locate server spec from monitor")
+        async def leader_pause(leader_spec):
+            logger = logging.getLogger(__name__)
+            logger.info("Waiting in pause for state %s substate %s",
+                        state, new_substate)
+            while True:
+                # wait for the others to be paused
+                paused = 0
+                expected = 0
+                for ospec in self.server_specs:
+                    if ospec == spec:
+                        continue
+                    if ospec.pbt_server.thread.running:
+                        expected += 1
+                    if ospec.pbt_server.paused:
+                        paused += 1
+                if paused == expected:
+                    break
+                await asyncio.sleep(0.001)
+            await monitor.substate_pause_method(monitor,
+                                                state,
+                                                old_substate,
+                                                new_substate)
+        if new_substate == Substate.became_leader:
+            asyncio.create_task(leader_pause(spec))
+            return True
+        return await monitor.substate_pause_method(monitor, state,
+                                                   old_substate, new_substate)
+            
+            
+        
 class MessageSplitStep(PauseStep):
 
-    def __init__(self, point: PausePoint):
-        super().__init__(point)
+    def __init__(self, cluster: PausingServerCluster, point: PausePoint):
+        super().__init__(cluster, point)
         self.sender_code = None
         self.receiver_code = None
         
@@ -124,8 +170,8 @@ class MessageSplitStep(PauseStep):
 
 class LogPullStraddle(MessageSplitStep):
 
-    def __init__(self):
-        super().__init__(PausePoint.log_pull_straddle)
+    def __init__(self, cluster: PausingServerCluster):
+        super().__init__(cluster, PausePoint.log_pull_straddle)
 
     def configure(self, server_spec: ServerSpec):
         super().configure(server_spec, LogPullMessage._code,
@@ -168,7 +214,7 @@ class PausingServerCluster:
             from raft.tests.timer import get_timer_set
             await self.timer_set.pause_all()
             for name, spec in self.server_specs.items():
-                await spec.pbt_server.comms.pause()
+                spec.pbt_server.comms.pause()
         
     def prepare(self, timeout_basis=1.0):
         if len(self.server_specs) > 0:
@@ -209,7 +255,7 @@ class PausingServerCluster:
             stepper_cls = pause_map.get(pause_point)
             if stepper_cls is None:
                 raise Exception(f"No step class for {pause_point}")
-            t_stepper = stepper_cls()
+            t_stepper = stepper_cls(self)
         else:
             t_stepper = stepper
         if servers is None:
@@ -264,18 +310,12 @@ class PausingServerCluster:
             self.pause_stepper.resume(spec)
         self.pause_stepper = None
             
-    def start_all_servers(self, vote_at_start=True):
+    def start_all_servers(self):
         for name in self.server_specs.keys():
-            self.start_one_server(name, vote_at_start)
+            self.start_one_server(name)
 
-    def start_one_server(self, name, vote_at_start=True):
-        # vote_at_start True means that server starts with
-        # a follower that does not wait for timeout, which
-        # makes testing go faster. Sometimes you want the
-        # timeout to happen, so set to False
+    def start_one_server(self, name):
         spec = self.server_specs[name]
-        if not vote_at_start:
-            spec.pbt_server.new_state_monitor.disable_quick_start()
         server_thread = spec.pbt_server.start_thread()
         spec.pbt_server.configure()
         spec.pbt_server.start()

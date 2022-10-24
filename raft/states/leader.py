@@ -47,10 +47,7 @@ class Leader(State):
             # first heartbeat, and we will catch them up
             self.followers[other] = FollowerCursor(other, last_index)
 
-        self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
-                                                     log.get_term(),
-                                                     self.heartbeat_timeout,
-                                                     self.send_heartbeat)
+        self.heartbeat_timer = None
         self.task = None
 
     def __str__(self):
@@ -59,6 +56,11 @@ class Leader(State):
     def start(self):
         if self.terminated:
             raise Exception("cannot start a terminated state")
+        log = self.server.get_log()
+        self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
+                                                     log.get_term(),
+                                                     self.heartbeat_timeout,
+                                                     self.send_heartbeat)
         self.heartbeat_timer.start()
         self.task = task_logger.create_task(self.on_start(),
                                             logger=self.logger,
@@ -300,7 +302,7 @@ class Leader(State):
         # lets wait for messages to go out before noting change
         self.logger.info("sending term start message to all %s %s",
                          message, data)
-        await self.server.broadcast(message, wait=True)
+        await self.server.broadcast(message)
         self.logger.info("sent term start message to all %s %s", message, data)
         await self.set_substate(Substate.sent_term_start)
 

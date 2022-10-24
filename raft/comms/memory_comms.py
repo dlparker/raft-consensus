@@ -60,7 +60,7 @@ class MemoryComms(CommsAPI):
         self.paused = False
         self.interceptor = None
 
-    async def pause(self):
+    def pause(self):
         self.paused = True
         return
 
@@ -100,7 +100,7 @@ class MemoryComms(CommsAPI):
                 any_full = True
         return not any_full
             
-    async def post_message(self, message, wait=False):
+    async def post_message(self, message):
         global queues
         try:
             target = message.receiver
@@ -126,13 +126,10 @@ class MemoryComms(CommsAPI):
             w = Wrapper(data, self.endpoint)
             self.logger.debug("%s posted %s to %s",
                               self.endpoint, message.code, target)
-            before_size = queue.qsize()
             await queue.put(w)
             if self.interceptor:
                 # let test code decide to pause things after
                 # delivering
-                while queue.qsize() > before_size:
-                    await asyncio.sleep(0.001)   
                 deliver = await self.interceptor.after_out_msg(message)
                 if not deliver:
                     # don't unpause in case was paused excplicitly

@@ -101,9 +101,12 @@ class StandardStateMap(StateMap):
     
     async def set_substate(self, state, substate):
         if not self.server:
-            raise Exception('must call activate before this method!')
+            msg = 'must call activate before this method!'
+            raise Exception(msg)
         if state != self.state:
-            raise Exception('set_substate call on non-current state!')
+            msg = 'set_substate call on non-current state!'
+            self.logger.error(msg)
+            raise Exception(msg)
         for monitor in self.monitors:
             try:
                 await monitor.new_substate(self, state, substate)

@@ -179,8 +179,7 @@ class BaseCase:
             
         def do_restart(self, server_def):
             self.logger.info("restarting server %s", server_def['name'])
-            self.cluster.start_one_server(server_def['name'], vote_at_start=False)
-
+            self.cluster.start_one_server(server_def['name'])
             self.logger.info("restarted server, waiting for startup")
             status_exc = None
             start_time = time.time()

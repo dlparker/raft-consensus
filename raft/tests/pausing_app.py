@@ -1,3 +1,4 @@
+import os
 import logging
 import time
 import asyncio
@@ -6,12 +7,59 @@ import threading
 from enum import Enum
 from typing import Union
 from raft.states.base_state import State, Substate
+from raft.states.follower import Follower
+from raft.states.candidate import Candidate
+from raft.states.leader import Leader
 from raft.states.state_map import StandardStateMap, StateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.comms.memory_comms import MessageInterceptor
 
 from raft.tests.bt_server import MemoryBankTellerServer
 from raft.tests.timer import get_timer_set
+
+class PFollower(Follower):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger = logging.getLogger(__name__)
+        self.paused = False
+
+    async def leader_lost(self):
+        if self.paused:
+            self.logger.info("not doing leader lost, paused")
+            return
+        return await super().leader_lost()
+
+    async def start_election(self):
+        if self.paused:
+            self.logger.info("\n\n\tnot doing start_election, paused\n\n")
+            return
+        self.logger.info("doing start_election, not paused")
+        return await super().start_election()
+        
+    async def on_heartbeat(self, message):
+        if self.paused:
+            self.logger.info("not doing heartbeat, paused")
+            return
+        return await super().on_heartbeat(message)
+        
+class PCandidate(Candidate):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.paused = False
+
+    async def on_timer(self):
+        if self.paused:
+            return
+        return await super().on_timer()
+        
+class PLeader(Leader):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.paused = False
+
 
 class TriggerType(str, Enum):
 
@@ -37,22 +85,33 @@ class PausingMonitor(StateChangeMonitor):
         import threading
         this_id = threading.Thread.ident
         if self.pbt_server.paused:
-            msg = f"tryning {self.name} from {old_state}" \
+            msg = f"trying {self.name} from {old_state}" \
                 f"to {new_state} but should be paused!"
             self.logger.error(msg)
-            raise Exception(msg)
+            #raise Exception(msg)
+            os.system(f"kill {os.getpid()}")
             
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
         self.state_history.append(old_state)
         self.substate_history = []
+        if new_state._type == "follower":
+            new_state = PFollower(new_state.server, new_state.timeout)
+        elif new_state._type == "candidate":
+            new_state = PCandidate(new_state.server,
+                                   new_state.election_timeout)
+        elif new_state._type == "leader":
+            new_state = PLeader(new_state.server,
+                                new_state.heartbeat_timeout)
         self.state = new_state
         self.state_map = state_map
         method = self.pause_on_states.get(str(new_state), None)
         if method:
             try:
-                clear = await method(old_state, new_state)
+                # "self" becomes "monitor" arg, in case user
+                # supplied method needs context
+                clear = await method(self, old_state, new_state)
             except:
-                traceback.print_exc()
+                self.logger.error(traceback.format_exc())
                 clear = True
             if clear:
                 self.logger.warning("removing state pause for %s",
@@ -67,7 +126,9 @@ class PausingMonitor(StateChangeMonitor):
             msg = f"trying {self.name} {state} to " \
                 f" substate {substate} but should be paused!"
             self.logger.error(msg)
-            raise Exception(msg)
+            #raise Exception(msg)
+            os.system(f"kill {os.getpid()}")
+
         self.logger.info(f"{self.name} {state} to substate {substate}")
         self.substate_history.append(self.substate)
         old_substate = self.substate
@@ -77,9 +138,11 @@ class PausingMonitor(StateChangeMonitor):
         if method:
             try:
                 self.logger.info(f"{self.name} calling substate method")
-                clear = await method(self.state, old_substate, substate)
+                # "self" becomes "monitor" arg, in case user
+                # supplied method needs context
+                clear = await method(self, self.state, old_substate, substate)
             except:
-                traceback.print_exc()
+                self.logger.error(traceback.format_exc())
                 clear = True
             if clear:
                 self.logger.warning("removing substate pause from  %s",
@@ -91,18 +154,23 @@ class PausingMonitor(StateChangeMonitor):
             method = self.state_pause_method
         self.pause_on_states[str(state)] = method
         
-    async def state_pause_method(self, old_state, new_state):
+    async def state_pause_method(self, monitor, old_state, new_state):
+        # the monitor arg is redundant for this method, but
+        # caller supplied methods might need it
         await self.pbt_server.pause_all(TriggerType.state,
-                                    dict(old_state=old_state,
-                                         new_state=new_state))
+                                        dict(old_state=old_state,
+                                             new_state=new_state))
 
     def clear_pause_on_substate(self, state):
         if str(state) in self.pause_on_substates:
             del self.pause_on_states[str(state)]
         
-    async def substate_pause_method(self, state, old_substate, new_substate):
+    async def substate_pause_method(self, monitor, state,
+                                    old_substate, new_substate):
+        # the monitor arg is redundant for this method, but
+        # caller supplied methods might need it
         await self.pbt_server.pause_all(TriggerType.substate,
-                                    dict(state=state,
+                                        dict(state=state,
                                          old_substate=old_substate,
                                          new_substate=new_substate))
         
@@ -202,8 +270,8 @@ class PausingInterceptor(MessageInterceptor):
 
     async def pause_method(self, mode, code, message):
         await self.pbt_server.pause_all(TriggerType.interceptor,
-                                    dict(mode=mode,
-                                         code=code))
+                                        dict(mode=mode,
+                                             code=code))
         return True
     
     def clear_triggers(self):
@@ -240,52 +308,39 @@ class PausingInterceptor(MessageInterceptor):
         else:
             raise Exception(f"invalid mode {mode}")
 
-class NewStateMonitor(StateChangeMonitor):
 
-    def __init__(self):
-        self.quick_start = True
-        
-    def disable_quick_start(self):
-        self.quick_start = False
-        
-    async def new_state(self, state_map: StateMap,
-                        old_state: Union[State, None],
-                        new_state: Substate) -> State:
-        if old_state is None and new_state._type == "follower":
-            asyncio.create_task(new_state.start_election())
-        return new_state
-        
-
-    async def new_substate(self, state_map: StateMap,
-                            state: State,
-                            substate: Substate) -> None:
-        return substate
-
-    
 class PausingBankTellerServer(MemoryBankTellerServer):
 
     def __init__(self, port, working_dir, name, others,
-                 log_config=None, vote_at_start=True):
+                 log_config=None):
         super().__init__(port, working_dir, name, others,
-                         log_config, vote_at_start)
+                         log_config)
         self.logger = logging.getLogger(__name__)
         self.state_map = StandardStateMap()
         self.interceptor = PausingInterceptor(self, self.logger)
         self.comms.set_interceptor(self.interceptor)
         self.monitor = PausingMonitor(self, f"{port}", self.logger)
-        self.new_state_monitor = NewStateMonitor()
-        self.state_map.add_state_change_monitor(self.new_state_monitor)
         self.state_map.add_state_change_monitor(self.monitor)
-        # use the thread local timer set, let it manage the
-        # global one
-        self.timer_set = get_timer_set()[1]
         self.paused = False
         self.do_resume = False
 
-    def disable_vote_at_start(self):
-        self.monitor
-
     async def pause_all(self, trigger_type, trigger_data):
+        self.paused = True
+        self.state_map.state.pause = True
+        timer_set = get_timer_set()
+        await timer_set.pause_all()
+        if False:
+            try:
+                start_time = time.time()
+                while (time.time() - start_time < 2 and
+                       not self.comms.queue.empty()):
+                    await asyncio.sleep(0.01)
+                if not self.comms.queue.empty():
+                    self.logger.error("comms queue never emptied, runnaway")
+                #await self.comms.pause()
+            except:
+                self.logger.error(traceback.format_exc())
+                raise
         if trigger_type == TriggerType.interceptor:
             self.logger.info("%s pausing all on interceptor %s %s",
                              self.port,
@@ -302,20 +357,6 @@ class PausingBankTellerServer(MemoryBankTellerServer):
                              trigger_data['state'],
                              trigger_data['old_substate'],
                              trigger_data['new_substate'])
-            
-        await self.timer_set.pause_all()
-        try:
-            start_time = time.time()
-            while (time.time() - start_time < 2 and
-                   not self.comms.queue.empty()):
-                await asyncio.sleep(0.01)
-            if not self.comms.queue.empty():
-                self.logger.error("comms queue never emptied, runnaway")
-            #await self.comms.pause()
-        except:
-            self.logger.error(traceback.format_exc())
-            raise
-        self.paused = True
         self.logger.info("%s paused all timers this thread and comms",
                          self.port)
         while self.paused:
@@ -334,10 +375,8 @@ class PausingBankTellerServer(MemoryBankTellerServer):
 
     async def in_loop_check(self):
         if self.do_resume:
-            timer_sets = get_timer_set()
-            if timer_sets[1] is None:
-                breakpoint()
-            await timer_sets[1].resume_all()
+            timer_set = get_timer_set()
+            timer_set.resume_all()
             self.comms.resume()
             self.paused = False
             self.do_resume = False

@@ -92,7 +92,7 @@ class TestMessageOps(unittest.TestCase):
             if monitor.state._type == "follower":
                 follower = monitor
                 break
-        inner_server = follower.server.thread.server
+        inner_server = follower.pbt_server.thread.server
         initial_count = inner_server.state.heartbeat_count
         count = initial_count
         self.assertIsNotNone(follower)
@@ -145,7 +145,7 @@ class TestStateEdges(unittest.TestCase):
         mserver.configure()
         monitor = mserver.monitor
         monitor.set_pause_on_substate(Substate.leader_lost)
-        self.cluster.start_one_server(name, vote_at_start=False)
+        self.cluster.start_one_server(name)
         self.logger.info("waiting for leader lost pause")
         start_time = time.time()
         while time.time() - start_time < 1.5:
