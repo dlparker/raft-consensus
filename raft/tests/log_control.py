@@ -25,7 +25,7 @@ def set_levels(handler_names):
     #log_loggers['raft.states.leader:heartbeat'] = debug_log
     #log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests'] = debug_log
-    log_loggers['raft.tests.timer'] = debug_log
+    #log_loggers['raft.tests.timer'] = debug_log
     #log_loggers['raft.comms.memory_comms'] = debug_log
     return log_loggers
     
@@ -84,9 +84,9 @@ def config_logging(logfile_path, use_server=False, server_filepath=None,
     return log_config, server_config
 
 def servers_as_procs_log_setup(file_path="/tmp/raft_tests/test.log",
-                           use_server=True,
-                           server_filepath="/tmp/raft_tests/combined.log",
-                           extra_levels=None):
+                               use_server=True,
+                               server_filepath="/tmp/raft_tests/combined.log",
+                               extra_levels=None):
     config,server_config = config_logging(file_path,  use_server=use_server,
                                          server_filepath=server_filepath)
     
@@ -114,12 +114,13 @@ def servers_as_procs_log_setup(file_path="/tmp/raft_tests/test.log",
         log_server_handlers['stdout'] = server_config['handlers']['stdout']
         handler_names = ['file', 'stdout']
         log_server_loggers = set_levels(handler_names)
-        log_server_config = dict(version=1, disable_existing_loggers = True,
+        log_server_config = dict(version=1,
+                                 disable_existing_loggers = True,
                                  formatters=log_server_formaters,
                                  handlers=log_server_handlers,
                                  loggers=log_server_loggers)
         LogSocketServer.start(port=9999, configDict=log_server_config)
-        print("startted logging server")
+        #print("started logging server")
         have_logging_server = True
     dictConfig(config)
     return config

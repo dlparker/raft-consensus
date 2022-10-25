@@ -5,13 +5,13 @@ import logging
 import traceback
 import os
 from pathlib import Path
+from dataclasses import dataclass
 
 
 from raft.tests.bt_server import MemoryBankTellerServer
 from raft.tests.bt_client import MemoryBankTellerClient
 from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
-from raft.tests.common_test_code import RunData, run_data_from_status
 from raft.tests.setup_utils import Cluster
 from raft.comms.memory_comms import reset_queues
 
@@ -19,6 +19,33 @@ LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
+@dataclass
+class RunData:
+    leader: dict
+    leader_addr: tuple
+    first_follower: dict
+    second_follower: dict
+
+def run_data_from_status(cluster, logger, status):
+    run_data = {}
+    leader_addr = status.data['leader']
+    leader = None
+    first_follower = None
+    second_follower = None
+    for name,sdef in cluster.server_recs.items():
+        if sdef['port'] == leader_addr[1]:
+            sdef['role'] = "leader"
+            leader = sdef
+        else:
+            if not first_follower:
+                first_follower = sdef
+            else:
+                second_follower = sdef
+            sdef['role'] = "follower"
+    logger.info("found leader %s", leader_addr)
+    run_data = RunData(leader, leader_addr, first_follower, second_follower)
+    return run_data
+    
 class Monitor1(StateChangeMonitor):
 
     def __init__(self, name, logger):

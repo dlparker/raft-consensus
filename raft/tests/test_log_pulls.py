@@ -9,17 +9,17 @@ from pathlib import Path
 
 from raft.log.memory_log import MemoryLog
 from raft.messages.log_pull import LogPullMessage, LogPullResponseMessage
-from raft.tests.bt_client import MemoryBankTellerClient
 from raft.tests.pausing_app import InterceptorMode
 from raft.states.base_state import Substate
-from raft.tests.common_test_code import run_data_from_status
 from raft.tests.ps_cluster import PausingServerCluster, PausePoint
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-timeout_basis = 0.2
+# the timeing gets a bit tricky letting the paused log puller restart,
+# sometimes it gets leader_lost if the timeout_basis it too low
+timeout_basis = 0.5
     
 class TestLogPulls(unittest.TestCase):
 
@@ -94,7 +94,7 @@ class TestLogPulls(unittest.TestCase):
         self.assertIsNotNone(self.first_spec)
         self.assertIsNotNone(self.second_spec)
         self.cluster.resume_all_paused_servers()
-        self.client = MemoryBankTellerClient("localhost", 5000)
+        self.client = self.leader_spec.get_client()
         start_time = time.time()
         while time.time() - start_time < 0.5:
             # servers are in their own threads, so
@@ -118,8 +118,7 @@ class TestLogPulls(unittest.TestCase):
         
         self.second_spec = self.cluster.prepare_one(self.stopper, restart=True,
                                  timeout_basis=timeout_basis)
-        self.restarted_monitor = self.second_spec.monitor
-        self.restarted_monitor.set_pause_on_substate(Substate.joined)
+        self.second_spec.monitor.set_pause_on_substate(Substate.joined)
         self.cluster.start_one_server(self.stopper)
         
         self.logger.info("waiting for restart complete to join")
@@ -128,11 +127,10 @@ class TestLogPulls(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.01)
-            if self.restarted_monitor.pbt_server.paused:
+            if self.second_spec.pbt_server.paused:
                 break
-        self.assertTrue(self.restarted_monitor.pbt_server.paused)
-        thread = self.restarted_monitor.pbt_server.thread
-        self.target_log = thread.server.get_log()
+        self.assertTrue(self.second_spec.pbt_server.paused)
+        self.target_log = self.second_spec.server_obj.get_log()
         self.assertIsNone(self.target_log.read())
 
         # now the restarted server is paused at substate joined,
@@ -142,7 +140,7 @@ class TestLogPulls(unittest.TestCase):
         self.preamble()
         # now resume so that the normal log pull sequence will take place
         async def resume():
-            await self.restarted_monitor.pbt_server.resume_all()
+            await self.second_spec.pbt_server.resume_all()
         self.loop.run_until_complete(resume())
         start_time = time.time()
         while time.time() - start_time < 2:
@@ -170,12 +168,12 @@ class TestLogPulls(unittest.TestCase):
         leader_inter.add_trigger(InterceptorMode.in_before,
                                  LogPullMessage._code)
         
-        follow_inter = self.restarted_monitor.pbt_server.interceptor
+        follow_inter = self.second_spec.pbt_server.interceptor
         follow_inter.add_trigger(InterceptorMode.in_after,
                                  LogPullResponseMessage._code)
         
         async def resume_follower():
-            await self.restarted_monitor.pbt_server.resume_all()
+            await self.second_spec.pbt_server.resume_all()
         self.loop.run_until_complete(resume_follower())
         start_time = time.time()
         while time.time() - start_time < 2:
@@ -189,8 +187,8 @@ class TestLogPulls(unittest.TestCase):
         self.assertTrue(self.leader_spec.pbt_server.paused)
         # just replace the log with an empty one, but don't
         # break the term
-        old_term  = self.leader_spec.pbt_server.thread.server.log.get_term()
-        leader_log = self.leader_spec.pbt_server.thread.server.log = MemoryLog()
+        old_term  = self.leader_spec.server_obj.log.get_term()
+        leader_log = self.leader_spec.server_obj.log = MemoryLog()
         leader_log.set_term(old_term)
         
         
@@ -203,9 +201,9 @@ class TestLogPulls(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.25)
-            if self.restarted_monitor.pbt_server.paused:
+            if self.second_spec.pbt_server.paused:
                 break
-        self.assertTrue(self.restarted_monitor.pbt_server.paused)
+        self.assertTrue(self.second_spec.pbt_server.paused)
         self.loop.run_until_complete(resume_follower())
         self.assertIsNone(self.target_log.read())
 
@@ -230,7 +228,7 @@ class TestLogPulls(unittest.TestCase):
         # it is there, it should be tested.
 
         # copy the first four messages to the follower's log
-        leader_log = self.leader_spec.pbt_server.thread.server.log
+        leader_log = self.leader_spec.server_obj.log
         recs = []
         for i in range(3):
             recs.append(leader_log.read(i))            
@@ -238,7 +236,7 @@ class TestLogPulls(unittest.TestCase):
 
         # stop the follower after it sends the pull message, timeouts
         # are short in test mode so it might hit one
-        follow_inter = self.restarted_monitor.pbt_server.interceptor
+        follow_inter = self.second_spec.pbt_server.interceptor
         follow_inter.add_trigger(InterceptorMode.out_after,
                                  LogPullMessage._code)
         
@@ -248,7 +246,7 @@ class TestLogPulls(unittest.TestCase):
                                  LogPullMessage._code)
         
         async def resume_follower():
-            await self.restarted_monitor.pbt_server.resume_all()
+            await self.second_spec.pbt_server.resume_all()
         self.loop.run_until_complete(resume_follower())
 
         start_time = time.time()
@@ -285,9 +283,9 @@ class TestLogPulls(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.01)
-            if self.restarted_monitor.pbt_server.paused:
+            if self.second_spec.pbt_server.paused:
                 break
-        self.assertTrue(self.restarted_monitor.pbt_server.paused)
+        self.assertTrue(self.second_spec.pbt_server.paused)
 
         # now a resume should have it clearing log data until
         # it matches leader

@@ -11,10 +11,12 @@ from enum import Enum
 import abc
 
 from raft.states.base_state import Substate
+from raft.servers.server import Server
 from raft.messages.log_pull import LogPullMessage, LogPullResponseMessage
 from raft.comms.memory_comms import reset_queues
 
 from raft.tests.log_control import one_proc_log_setup
+from raft.tests.bt_client import MemoryBankTellerClient
 from raft.tests.pausing_app import PausingBankTellerServer, PausingMonitor
 from raft.tests.pausing_app import PausingInterceptor, InterceptorMode
 from raft.tests.bt_server import ServerThread
@@ -27,11 +29,25 @@ class ServerSpec:
     working_dir: Path = field(repr=False)
     run_args: List = field(repr=False)
     pbt_server: PausingBankTellerServer = field(repr=False)
-    pbt_server_thread: ServerThread = field(repr=False)
+    thread: ServerThread = field(repr=False)
     monitor: PausingMonitor = field(repr=False)
     interceptor: PausingInterceptor = field(repr=False)
-    server: ServerThread = field(repr=False, default=None)
     running: bool = field(repr=False, default=False)
+    client: MemoryBankTellerClient = field(repr=False, default=None)
+    role: str  = field(repr=False, default=None)
+    
+    def get_client(self):
+        if not self.client:
+            self.client = MemoryBankTellerClient(*self.addr)
+        return self.client
+        
+
+    @property
+    def server_obj(self):
+        if not self.thread:
+            return None
+        return self.thread.server
+        
     
 class PausePoint(str, Enum):
     election_done = "ELECTION_DONE"
@@ -119,7 +135,7 @@ class PauseAfterElection(SubstatePauseStep):
                 for ospec in self.server_specs:
                     if ospec == spec:
                         continue
-                    if ospec.pbt_server.thread.running:
+                    if ospec.thread.running:
                         expected += 1
                     if ospec.pbt_server.paused:
                         paused += 1
@@ -235,7 +251,7 @@ class PausingServerCluster:
                           dir_rec['addr'], dir_rec['working_dir'],
                           run_args=args,
                           pbt_server=pbt_server,
-                          pbt_server_thread=pbt_server.thread,
+                          thread=pbt_server.thread,
                           monitor=pbt_server.monitor,
                           interceptor=pbt_server.interceptor)
         self.server_specs[spec.name] = spec
@@ -336,6 +352,7 @@ class PausingServerCluster:
         server_thread = spec.pbt_server.start_thread()
         spec.pbt_server.configure()
         spec.pbt_server.start()
+        spec.server = spec.thread.server
         spec.running = True
 
     def setup_server_dir(self, name):
@@ -367,9 +384,10 @@ class PausingServerCluster:
 
     def stop_server(self, name):
         spec = self.server_specs[name]
-        if spec.pbt_server_thread:
-            spec.pbt_server_thread.stop()
-            spec.pbt_server_thread = None
+        if spec.thread:
+            spec.thread.stop()
+            spec.thread = None
+            spec.server = None
         spec.pbt_server.stop()            
         spec.running = False
 

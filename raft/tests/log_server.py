@@ -89,7 +89,7 @@ class LogRecordSocketReceiver(socketserver.ThreadingTCPServer):
 
     def serve_until_stopped(self):
         """Run the socket receiver until aborted."""
-        print('Log Record Socket Receiver is started.', flush=True)
+        #print('Log Record Socket Receiver is started.', flush=True)
         abort = 0
         while not abort:
             rd, wr, ex = select.select([self.socket.fileno()], [], [],
@@ -97,7 +97,7 @@ class LogRecordSocketReceiver(socketserver.ThreadingTCPServer):
             if rd:
                 self.handle_request()
             abort = self.abort
-        print('Log Record Socket Receiver is stopped.')
+        #print('Log Record Socket Receiver is stopped.')
 
 
 class LogSocketServer:
@@ -137,12 +137,15 @@ class LogSocketServer:
         """
         # Clear all existing log handlers.
         logging.getLogger().handlers = []
+        config = None
         if not kwargs:
             logging.basicConfig(
                 format='%(asctime)s - %(levelname)s - %(message)s')
         else:
             if "configDict" in kwargs:
                 configDict = kwargs['configDict']
+                import json
+                config = json.dumps(configDict, indent=4)
                 dictConfig(configDict)
             else:
                 logging.basicConfig(**kwargs)
@@ -153,6 +156,7 @@ class LogSocketServer:
         server_started.value = True
         port.value = tcp_server.port
         logger.info("started logging server on port %d", tcp_server.port)
+        logger.info("log config is \n%s", config)
         tcp_server.serve_until_stopped()
 
     @staticmethod

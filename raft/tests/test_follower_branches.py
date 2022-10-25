@@ -54,9 +54,9 @@ class TestMessageOps(unittest.TestCase):
         follower = None
         for spec in servers.values():
             if spec.monitor.state._type == "follower":
-                follower = spec.monitor
+                follower = spec
                 break
-        inner_server = follower.pbt_server.thread.server
+        inner_server = follower.server_obj
         initial_count = inner_server.state.heartbeat_count
         count = initial_count
         self.assertIsNotNone(follower)

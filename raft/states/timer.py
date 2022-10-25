@@ -135,10 +135,7 @@ class Timer:
                 dur = time.time() - wait_start
                 raise Exception(f"Timer {self.name} task did not exit" \
                                 f" after waiting {dur:.8f}")
-            if self.terminated:
-                raise Exception(f"Timer {self.name} terminated during" \
-                                " call to reset")
-        if not self.keep_running or self.task is None:
+        if not self.keep_running or self.task is None and not self.terminated:
             self.start()
         else:
             self.start_time = time.time()

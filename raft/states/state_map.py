@@ -58,15 +58,15 @@ class StateMap(metaclass=abc.ABCMeta):
     
 class StandardStateMap(StateMap):
 
-    def __init__(self):
+    def __init__(self, timeout_basis=1.0):
         self.server = None
         self.state = None
         self.queue = None
         self.logger = None
         self.monitors = None
-        self.follower_leaderless_timeout = 0.75
-        self.candidate_voting_timeout = 0.5
-        self.leader_heartbeat_timeout = 0.5
+        self.follower_leaderless_timeout = 0.75 * timeout_basis
+        self.candidate_voting_timeout = 0.5 * timeout_basis
+        self.leader_heartbeat_timeout = 0.5 * timeout_basis
         
     # can't be done with init because instance
     # of this class required for server class init

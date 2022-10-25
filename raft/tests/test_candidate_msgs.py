@@ -12,7 +12,6 @@ from raft.messages.request_vote import RequestVoteMessage
 from raft.messages.status import StatusQueryResponseMessage
 from raft.states.base_state import Substate
 from raft.tests.bt_client import MemoryBankTellerClient
-from raft.tests.common_test_code import run_data_from_status
 from raft.tests.ps_cluster import PausingServerCluster
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
@@ -85,7 +84,7 @@ class TestDelayedStart(unittest.TestCase):
                                0,
                                {})
         client.direct_message(tsm)
-        inner_server = spec.pbt_server.thread.server
+        inner_server = spec.server_obj
         start_time = time.time()
         while time.time() - start_time < 3:
             time.sleep(0.05)

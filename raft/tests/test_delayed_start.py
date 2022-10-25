@@ -10,7 +10,6 @@ from pathlib import Path
 from raft.messages.termstart import TermStartMessage
 from raft.tests.bt_client import MemoryBankTellerClient
 from raft.states.base_state import Substate
-from raft.tests.common_test_code import run_data_from_status
 from raft.tests.ps_cluster import PausingServerCluster, PausePoint
 
 

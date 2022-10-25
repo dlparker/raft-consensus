@@ -16,7 +16,7 @@ import traceback
 
 from log_control import config_logging
 
-from raft.tests.setup_utils import Cluster
+from raft.tests.udp_cluster import UDPServerCluster
 from raft.tests.bt_client import UDPBankTellerClient
 
 config,_ = config_logging("test.log")

@@ -1,4 +1,4 @@
-# TODO: Fix name, it is messed up
+#
 
 import asyncio
 from pathlib import Path
@@ -25,7 +25,7 @@ class UDPBankTellerServer:
 
     @classmethod
     def make_and_start(cls, port, working_dir, name, others,
-                       log_config):
+                       log_config, timeout_basis=1.0):
         from pytest_cov.embed import cleanup_on_sigterm
         cleanup_on_sigterm()
         import sys
@@ -44,25 +44,27 @@ class UDPBankTellerServer:
                 pprint(log_config)
                 raise
         try:
-            instance = cls(port, working_dir, name, others)
+            instance = cls(port, working_dir, name, others, timeout_basis)
             instance.start()
         except Exception as e:
             traceback.print_exc()
             raise
+        return instance
 
-    def __init__(self, port, working_dir, name, others):
+    def __init__(self, port, working_dir, name, others, timeout_basis):
         self.host = "localhost"
         self.port = port
         self.name = name
         self.working_dir = working_dir
         self.others = others
         self.running = False
+        self.timeout_basis = timeout_basis
         
     async def _run(self):
         try:
             logger = logging.getLogger(__name__)
             logger.info("bank teller server starting")
-            state_map = StandardStateMap()
+            state_map = StandardStateMap(self.timeout_basis)
             data_log = MemoryLog()
             loop = asyncio.get_running_loop()
             logger.info('creating server')

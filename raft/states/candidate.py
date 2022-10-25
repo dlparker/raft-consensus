@@ -76,6 +76,8 @@ class Candidate(Voter):
         return True
 
     async def on_vote_received(self, message):
+        if self.terminated:
+            return True
         # reset timer
         if self.candidate_timer.is_enabled():
             await self.candidate_timer.reset()
@@ -104,11 +106,12 @@ class Candidate(Voter):
             # held by two out of three servers.
             # with one dead.
             if len(self.votes.keys()) + 1 > self.server.total_nodes / 2:
-                sm = self.server.get_state_map()
+                self.terminated = True
+                self.candidate_timer.disable()
                 await self.candidate_timer.terminate() # never run again
+                sm = self.server.get_state_map()
                 self.logger.info("changing to leader")
                 leader = await sm.switch_to_leader(self)
-                self.terminated = True
                 return True
         # check if received all the votes -> resign
         if len(self.votes) == len(self.server.other_nodes):
