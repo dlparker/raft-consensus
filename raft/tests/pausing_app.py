@@ -316,11 +316,11 @@ class PausingInterceptor(MessageInterceptor):
 class PausingBankTellerServer(MemoryBankTellerServer):
 
     def __init__(self, port, working_dir, name, others,
-                 log_config=None):
+                 log_config=None, timeout_basis=1.0):
         super().__init__(port, working_dir, name, others,
-                         log_config)
+                         log_config, timeout_basis)
         self.logger = logging.getLogger(__name__)
-        self.state_map = StandardStateMap()
+        self.state_map = StandardStateMap(timeout_basis=timeout_basis)
         self.interceptor = PausingInterceptor(self, self.logger)
         self.comms.set_interceptor(self.interceptor)
         self.monitor = PausingMonitor(self, f"{port}", self.logger)

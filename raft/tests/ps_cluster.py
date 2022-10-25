@@ -240,13 +240,9 @@ class PausingServerCluster:
             if addr[1] != dir_rec['port']:
                 others.append(addr)
         args = [dir_rec['port'], dir_rec['working_dir'],
-                dir_rec['name'], others, self.log_config]
+                dir_rec['name'], others, self.log_config,
+                timeout_basis]
         pbt_server = PausingBankTellerServer(*args)
-        smap = pbt_server.state_map
-        smap.follower_leaderless_timeout=0.75 * timeout_basis
-        smap.candidate_voting_timeout=0.5 * timeout_basis
-        smap.leader_heartbeat_timeout=0.5 * timeout_basis
-        
         spec = ServerSpec(dir_rec['name'], dir_rec['port'],
                           dir_rec['addr'], dir_rec['working_dir'],
                           run_args=args,

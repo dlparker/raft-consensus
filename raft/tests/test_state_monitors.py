@@ -7,8 +7,6 @@ import os
 from pathlib import Path
 from dataclasses import dataclass
 
-
-from raft.tests.bt_server import MemoryBankTellerServer
 from raft.tests.bt_client import MemoryBankTellerClient
 from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor

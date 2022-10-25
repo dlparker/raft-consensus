@@ -126,16 +126,18 @@ class UDPBankTellerServer:
         
 class MemoryBankTellerServer:
 
-    def __init__(self, port, working_dir, name, others, log_config=None):
+    def __init__(self, port, working_dir, name, others,
+                 log_config=None, timeout_basis=1.0):
         # log_config is ignored, kept just to match process launching
         # versions to make control code cleaner
         self.host = "localhost"
         self.port = port
         self.working_dir = working_dir
         self.other_nodes = others
-        self.endpoint = (self.host, self.port)
         self.name = name
-        self.state_map = StandardStateMap()
+        self.timeout_basis = timeout_basis
+        self.endpoint = (self.host, self.port)
+        self.state_map = StandardStateMap(timeout_basis=timeout_basis)
         self.data_log = MemoryLog()
         self.comms = MemoryComms()
         self.app = BankingApp()
