@@ -71,6 +71,7 @@ class TestBasic(unittest.TestCase):
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
             await end_1.post_message(msg1)
+            self.assertFalse(end_1.are_out_queues_empty())
             start_time = time.time()
             while time.time() - start_time < 0.1:
                 await asyncio.sleep(0.001)
@@ -79,6 +80,7 @@ class TestBasic(unittest.TestCase):
             
             self.assertFalse(server_2.in_queue.empty())
             msg1_sent = await server_2.in_queue.get()
+            self.assertTrue(end_1.are_out_queues_empty())
             reply_1 = StatusQueryResponseMessage(end_2.endpoint,
                                                  end_1.endpoint,
                                                  term=0,

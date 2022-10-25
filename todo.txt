@@ -1,9 +1,15 @@
 
 Review and document new message times and ensure that they
 actually improve things compared to the more limited set defined
-in the raft paper
+in the raft paper.
 
 Build something to collect and clear unhandled errors in server.py
 
 Add paging to log pull protocol
+
+examine all abstract base classes to make sure they have the
+correct __subclasshook__ method logic
+
+add a setup step for comms api to install serializer class instead
+of hard coding to original
 

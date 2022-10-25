@@ -2,6 +2,37 @@
 
 # Testing
 
+# Coverage
+
+## Coverage Exclusions
+
+Things not covered in standard coverage setup, based on a judgement
+call on what tests are worth the effort. Coverage exclusion is used
+to make it easy to see how much testing has been done on the code that
+really needs it, versus diluting the value of the coverage counted by
+including useless items and accepting lower scores on important items.
+By some philosophies this is an invalid approach. If you think that way,
+just disable some of the exclude lines in the coverage.cfg file until
+you are happy.
+
+Some things that are excluded:
+     
+ - Errors likely only happen during shutdown, such as asyncio cancels
+ - Errors that result from messages arriving to the wrong state, such
+   as a vote reply arriving at a follower. This are not errors per se,
+   as the code that receives them just ignores them. Setting up tests
+   to cover this would be alot of work and would add almost nothing
+   that simple inspection doesn't already provide. 
+ - Errors of the sort that cause system to fail completely, such
+   as a failure while trying to setup a UDP connection.
+ - Errors in code that exists solely to support development and test,
+   such as the memory and udp comms implementations. 
+ - declarations of abstract methods on abstract classes and the
+   ```__sbuclasshook__``` method
+   
+
+
+
 ## Tricky bits:
  - UDP client and coverage:
  
