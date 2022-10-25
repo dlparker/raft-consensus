@@ -137,10 +137,6 @@ class TestStateEdges(unittest.TestCase):
         async def do_stop():
             await spec.monitor.state.stop()
             
-        # Since already terminated, stop should no-op.
-        # Since stop terminates the timer, no-op should leave it running
-        self.loop.run_until_complete(do_stop())
-        self.assertFalse(spec.monitor.state.leaderless_timer.terminated)
         # Unset the termination flag and then call stop.
         # Should terminate the timer
         spec.monitor.state.terminated = False

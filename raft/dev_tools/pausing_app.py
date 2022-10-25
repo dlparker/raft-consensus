@@ -113,9 +113,9 @@ class PausingMonitor(StateChangeMonitor):
             except:
                 self.logger.error(traceback.format_exc())
                 clear = True
-            if clear:
                 self.logger.warning("removing state pause for %s",
                                     new_state)
+            if clear:
                 del self.pause_on_states[str(state)] 
         return new_state
 
@@ -144,9 +144,9 @@ class PausingMonitor(StateChangeMonitor):
             except:
                 self.logger.error(traceback.format_exc())
                 clear = True
-            if clear:
                 self.logger.warning("removing substate pause from  %s",
                                     substate)
+            if clear:
                 del self.pause_on_substates[substate] 
 
     def set_pause_on_state(self, state: State, method=None):

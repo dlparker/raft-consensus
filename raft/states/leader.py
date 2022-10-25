@@ -67,7 +67,8 @@ class Leader(State):
                                             message="leader start method")
     async def stop(self):
         self.terminated = True
-        await self.heartbeat_timer.terminate()
+        if not self.heartbeat_timer.terminated:
+            await self.heartbeat_timer.terminate()
         if self.task:
             self.task.cancel()
             await asyncio.sleep(0)
@@ -248,8 +249,6 @@ class Leader(State):
         return True
         
     async def send_heartbeat(self):
-        if self.terminated or not self.heartbeat_timer.is_enabled():
-            return
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:

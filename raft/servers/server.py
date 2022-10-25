@@ -88,16 +88,35 @@ class Server:
             if not handled:
                 self.logger.info("on_message handler of state %s rejected"\
                                  " message %s", pre_state, message.code)
+                if pre_state == self.state:
+                    start_time = time.time()
+                    while (self.state_map.changing
+                            and time.time() - start_time < 1):
+                        # There is a race between the instant
+                        # where a state sets terminated flag
+                        # and the instant at which a message might
+                        # show up, so we need to wait a bit if that
+                        # is happening
+                        await asyncio.sleep(0.01)
+                    if self.state_map.changing:
+                        e = dict(code="message_rejected",
+                                 message=message,
+                                 details="state changing timeout")
+                        self.unhandled_errors.append(e)
+                        return
                 if pre_state != self.state:
                     self.logger.info("changed state from %s to %s, recursing",
                                  pre_state, self.state)
                     if recursed:
-                        raise Exception("already recursed, not doing it again" \
+                        raise Exception("already recursed, " \
+                                        " not doing it again" \
                                         " to avoid loop")
                     await self.on_message(message, recursed=True)
                 else:
-                    self.unhandled_errors.append(dict(code="message_rejected",
-                                                      details=message))
+                    e = dict(code="message_rejected",
+                             message=message,
+                             details="available handlers rejected message")
+                    self.unhandled_errors.append(e)
         except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("State %s got exception %s on message %s",

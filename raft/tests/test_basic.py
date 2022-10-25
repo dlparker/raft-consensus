@@ -217,12 +217,6 @@ class TestTimer(unittest.TestCase):
             await asyncio.sleep(0.01)
         self.assertTrue(self.counter > 0)
 
-        # make sure reset raises if timer is disabled
-        t2.disable()
-        self.assertFalse(t2.is_enabled())
-        with self.assertRaises(Exception) as context:
-            await t2.reset()
-        
         await t2.terminate()
         with self.assertRaises(Exception) as context:
             t1.start()

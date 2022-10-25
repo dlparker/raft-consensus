@@ -14,7 +14,9 @@ import abc
 from raft.dev_tools.bt_server import UDPBankTellerServer
 from raft.dev_tools.bt_server import clear_bt_server_cs_dict, get_bt_server_cs_dict
 from raft.dev_tools.bt_client import UDPBankTellerClient
-from raft.dev_tools.log_control import servers_as_procs_log_setup, stop_logging_server 
+from raft.dev_tools.log_control import (servers_as_procs_log_setup,
+                                        stop_logging_server,
+                                        have_logging_server)
 
 @dataclass
 class ServerSpec:
@@ -91,7 +93,8 @@ class UDPServerCluster:
 
     def start_one_server(self, name):
         if self.logging_type == "devel_mp":
-            from log_control import have_logging_server 
+            # doesn't seem to work to import in module global space
+            from raft.dev_tools.log_control import have_logging_server
             if not have_logging_server:
                 raise Exception('no logging server!')
                 

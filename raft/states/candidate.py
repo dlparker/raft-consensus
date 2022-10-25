@@ -43,8 +43,10 @@ class Candidate(Voter):
                                             logger=self.logger,
                                             message="candidate election error")
     async def stop(self):
+        # ignore already terminated, just make sure it is done
         self.terminated = True
-        await self.candidate_timer.terminate()
+        if not self.candidate_timer.terminated:
+            await self.candidate_timer.terminate()
         if self.task:
             self.task.cancel()
             await asyncio.sleep(0)
@@ -76,11 +78,8 @@ class Candidate(Voter):
         return True
 
     async def on_vote_received(self, message):
-        if self.terminated:
-            return True
         # reset timer
-        if self.candidate_timer.is_enabled():
-            await self.candidate_timer.reset()
+        #await self.candidate_timer.reset()
         self.logger.info("vote received from %s, response %s", message.sender,
                     message.data['response'])
         if message.data.get('already_leader', None):
@@ -106,12 +105,13 @@ class Candidate(Voter):
             # held by two out of three servers.
             # with one dead.
             if len(self.votes.keys()) + 1 > self.server.total_nodes / 2:
-                self.terminated = True
-                self.candidate_timer.disable()
-                await self.candidate_timer.terminate() # never run again
                 sm = self.server.get_state_map()
+                sm.start_state_change("candidate", "leader")
+                self.terminated = True
+                await self.candidate_timer.terminate() # never run again
                 self.logger.info("changing to leader")
                 leader = await sm.switch_to_leader(self)
+                await self.stop()
                 return True
         # check if received all the votes -> resign
         if len(self.votes) == len(self.server.other_nodes):
@@ -121,7 +121,6 @@ class Candidate(Voter):
 
     # start elections by increasing term, voting for itself and send out vote requests
     async def start_election(self):
-        self.candidate_timer.disable()
         if self.terminated:
             return
         log = self.server.get_log()
@@ -167,12 +166,13 @@ class Candidate(Voter):
             # switch and new timer fire
             return
         try:
-            self.terminated = True
-            self.candidate_timer.disable()
-            await self.candidate_timer.terminate() # never run again
             sm = self.server.get_state_map()
+            sm.start_state_change("candidate", "follower")
+            self.terminated = True
+            await self.candidate_timer.terminate() # never run again
             follower = await sm.switch_to_follower(self)
             self.logger.info("candidate resigned")
+            await self.stop()
         except:
             self.logger.error(traceback.format_exc())
 

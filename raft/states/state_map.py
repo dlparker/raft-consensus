@@ -42,7 +42,21 @@ class StateMap(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def get_state(self) -> State:
         raise NotImplementedError
+
+    @abc.abstractmethod
+    def changing_state(self) -> bool:
+        raise NotImplementedError
         
+    @abc.abstractmethod
+    def start_state_change(self, old_state: Union[str, None],
+                           new_state: str) -> None:
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def finish_state_change(self, old_state: Union[str, None],
+                            new_state: str) -> None:
+        raise NotImplementedError
+    
     @abc.abstractmethod
     def switch_to_follower(self, old_state: Optional[State] = None) -> Follower:
         raise NotImplementedError
@@ -67,6 +81,9 @@ class StandardStateMap(StateMap):
         self.follower_leaderless_timeout = 0.75 * timeout_basis
         self.candidate_voting_timeout = 0.5 * timeout_basis
         self.leader_heartbeat_timeout = 0.5 * timeout_basis
+        self.changing = False
+        self.pre_change = None
+        self.post_change = None
         
     # can't be done with init because instance
     # of this class required for server class init
@@ -99,6 +116,21 @@ class StandardStateMap(StateMap):
             raise Exception('must call activate before this method!')
         return self.substate
     
+    def changing_state(self) -> bool:
+        return self.changing
+
+    def start_state_change(self, old_state: Optional[State],
+                           new_state: State) -> None:
+        self.changing = True
+        self.pre_change = old_state
+        self.post_change = new_state
+    
+    def finish_state_change(self, old_state: Optional[State],
+                           new_state: State) -> None:
+        self.changing = False
+        self.pre_change = old_state
+        self.post_change = new_state
+    
     async def set_substate(self, state, substate):
         if not self.server:
             msg = 'must call activate before this method!'
@@ -130,6 +162,11 @@ class StandardStateMap(StateMap):
                                   traceback.format_exc())
         self.server.set_state(follower)
         self.state = follower
+        if old_state:
+            os_name = old_state._type
+        else:
+            os_name = None
+        self.finish_state_change(os_name, 'follower')
         follower.start()
         return follower
     
@@ -147,6 +184,11 @@ class StandardStateMap(StateMap):
                                   traceback.format_exc())
         self.server.set_state(candidate)
         self.state = candidate
+        if old_state:
+            os_name = old_state._type
+        else:
+            os_name = None
+        self.finish_state_change(os_name, 'candidate')
         candidate.start()
         return candidate
 
@@ -164,6 +206,11 @@ class StandardStateMap(StateMap):
                                   traceback.format_exc())
         self.server.set_state(leader)
         self.state = leader
+        if old_state:
+            os_name = old_state._type
+        else:
+            os_name = None
+        self.finish_state_change(os_name, 'leader')
         leader.start()
         return leader
 

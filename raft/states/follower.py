@@ -5,10 +5,10 @@ from dataclasses import asdict
 import logging
 import traceback
 
-from ..utils import task_logger
-from ..log.log_api import LogRec
-from ..messages.append_entries import AppendResponseMessage
-from ..messages.log_pull import LogPullMessage
+from raft.utils import task_logger
+from raft.log.log_api import LogRec
+from raft.messages.append_entries import AppendResponseMessage
+from raft.messages.log_pull import LogPullMessage
 from .base_state import Substate
 from .voter import Voter
 
@@ -28,7 +28,6 @@ class Follower(Voter):
         self.leaderless_timer = None
         self.last_vote = None
         self.last_vote_time = None
-        self.running = False
         
     def __str__(self):
         return "follower"
@@ -39,9 +38,6 @@ class Follower(Voter):
     def start(self):
         if self.terminated:
             raise Exception("cannot start a terminated state")
-        if self.running:
-            raise Exception("cannot call start on follower twice!")
-        self.running = True
         log = self.server.get_log()
         interval = self.election_interval()
         self.leaderless_timer = self.server.get_timer("follower-election",
@@ -51,11 +47,10 @@ class Follower(Voter):
         self.leaderless_timer.start()
 
     async def stop(self):
-        if self.terminated:
-            return
+        # ignore already terminated, just make sure it is done
         self.terminated = True
-        self.running = False
-        await self.leaderless_timer.terminate()
+        if not self.leaderless_timer.terminated:
+            await self.leaderless_timer.terminate()
         
     def election_interval(self):
         return random.uniform(self.timeout, 2 * self.timeout)
@@ -67,25 +62,25 @@ class Follower(Voter):
         return await self.start_election()
     
     async def start_election(self):
-        if not self.leaderless_timer.enabled or self.terminated:
+        if self.terminated:
             return
         try:
+            sm = self.server.get_state_map()
+            sm.start_state_change("follower", "candidate")
             self.terminated = True
-            self.leaderless_timer.disable()
             await self.leaderless_timer.terminate()
             self.logger.debug("starting election")
             self.logger.debug("doing switch to candidate")
-            sm = self.server.get_state_map()
             candidate = await sm.switch_to_candidate(self)
+            await self.stop()
         except: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             raise
 
     async def on_heartbeat(self, message):
         # reset timeout
-        self.logger.info("resetting leaderless_timer on heartbeat")
-        if self.leaderless_timer.is_enabled():
-            await self.leaderless_timer.reset()
+        self.heartbeat_logger.info("resetting leaderless_timer on heartbeat")
+        await self.leaderless_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data
         laddr = (data["leaderPort"][0], data["leaderPort"][1])
@@ -105,8 +100,7 @@ class Follower(Voter):
 
     async def on_log_pull_response(self, message):
         self.logger.debug("in log pull response")
-        if self.leaderless_timer.is_enabled():
-            await self.leaderless_timer.reset()
+        await self.leaderless_timer.reset()
         data = message.data
         log = self.server.get_log()
         last_rec = log.read()
@@ -262,7 +256,7 @@ class Follower(Voter):
         await self.server.send_message_response(message)
         # getting here might have been slow, let's reset the
         # timer
-        if self.leaderless_timer.is_enabled():
+        if not self.terminated:
             await self.leaderless_timer.reset()
 
     async def do_rollback_to_leader(self, message):
@@ -296,8 +290,7 @@ class Follower(Voter):
             
     async def on_append_entries(self, message):
         self.logger.info("resetting leaderless_timer on append entries")
-        if self.leaderless_timer.is_enabled():
-            await self.leaderless_timer.reset()
+        await self.leaderless_timer.reset()
         log = self.server.get_log()
         data = message.data
         self.logger.debug("append %s %s", message, message.data)
@@ -385,8 +378,7 @@ class Follower(Voter):
 
     async def on_term_start(self, message):
         self.logger.info("resetting leaderless_timer on term start")
-        if self.leaderless_timer.is_enabled():
-            await self.leaderless_timer.reset()
+        await self.leaderless_timer.reset()
         log = self.server.get_log()
         self.logger.info("follower got term start: message.term = %s"\
                          " local_term = %s",
@@ -407,7 +399,15 @@ class Follower(Voter):
             self.leader_addr = laddr
         return True
 
-    async def on_vote_request(self, message): 
+    async def on_vote_request(self, message):
+        # For some reason I can't figure out, this
+        # message tends to come in during the process
+        # of switching states, so it can end up here
+        # despite the check for terminated in the base_state code.
+        # Since everbody's awaitn stuff, I guess it can just happen
+        if self.terminated:
+            return False
+        await self.leaderless_timer.reset() 
         # If this node has not voted,
         # and if lastLogIndex in message
         # is not earlier than our local log index
@@ -421,8 +421,6 @@ class Follower(Voter):
         # our last log record index is max.
         # If we have already voted, then we say no. Election
         # will resolve or restart.
-        if self.leaderless_timer.is_enabled():
-            await self.leaderless_timer.reset() 
         log = self.server.get_log()
         # get the last record in the log
         last_rec = log.read()

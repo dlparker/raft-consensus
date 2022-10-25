@@ -15,10 +15,6 @@ class Timer:
         self.interval = interval
         self.callback = callback
         self.task = None
-        # Enabled flag is used by timer owner to allow or prevent
-        # resets by setting and checking this state. It has no effect
-        # on timer code itself
-        self.enabled = False
         # Keep running is the flag used by the control methods to tell
         # the timer task when to exit. This logic around this supports
         # stopping and restarting the timer. the reset method does exactly
@@ -38,24 +34,16 @@ class Timer:
     
     def start(self):
         if self.terminated:
-            raise Exception("tried to start on already terminated timer" \
+            raise Exception("tried to start already terminated timer" \
                             f" {self.name}")
         if self.waiting:
             raise Exception("called start while waiting for stop on timer" \
                             f" {self.name}")
-        self.enabled = True
         self.keep_running = True
         self.task = task_logger.create_task(self.run(),
                                             logger=self.logger,
                                             message=f"{self.name} run error")
 
-    def disable(self):
-        self.enabled = False
-        self.keep_running = False
-        
-    def is_enabled(self):
-        return self.enabled
-    
     async def one_pass(self):
         while time.time() - self.start_time < self.interval:
             try:
@@ -74,7 +62,7 @@ class Timer:
 
     async def cb_wrapper(self):
         try:
-            if self.keep_running and self.enabled and not self.terminated:
+            if self.keep_running:
                 await self.callback()
         except asyncio.exceptions.CancelledError: # pragma: no cover error 
                 pass
@@ -100,8 +88,8 @@ class Timer:
                             f" {self.name}")
         if not self.keep_running or not self.task:
             return
-        self.waiting = True
         self.keep_running = False
+        self.waiting = True
         wait_start = time.time()
         wait_limit = self.interval + (0.1 * self.interval)
         self.logger.debug("timer %s waiting %.8f for task exit",
@@ -119,10 +107,6 @@ class Timer:
                             f" after waiting {dur:.8f}")
         
     async def reset(self):
-        if not self.enabled:
-            raise Exception("tried to reset disabled timer"  \
-                            f" {self.name}")
-            
         if self.terminated:
             raise Exception("tried to reset already terminated timer"  \
                             f" {self.name}")

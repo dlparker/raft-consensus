@@ -56,7 +56,6 @@ class TimerSet:
         for timer in self.recs.values():
             if timer.terminated:
                 continue
-            timer.disable()
             timers.append(timer)
         for timer in timers:
             if timer.terminated:
