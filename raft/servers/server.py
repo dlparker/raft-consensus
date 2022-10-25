@@ -90,7 +90,7 @@ class Server:
                                  " message %s", pre_state, message.code)
                 if pre_state == self.state:
                     start_time = time.time()
-                    while (self.state_map.changing
+                    while (self.state_map.changing_state()
                             and time.time() - start_time < 1):
                         # There is a race between the instant
                         # where a state sets terminated flag
@@ -130,7 +130,7 @@ class Server:
         if len(n) > 0:
             await self.comms.post_message(message)
         
-    async def broadcast(self, message, wait=False):
+    async def broadcast(self, message):
         for n in self.other_nodes:
             # Have to create a deep copy of message to have different receivers
             send_message = copy.deepcopy(message)
@@ -138,14 +138,3 @@ class Server:
             self.logger.debug("%s sending message %s to %s", self.state,
                    send_message, n)
             await self.comms.post_message(send_message)
-        if wait:
-            self.logger.debug("broadcast waiting for message out "\
-                              "queues to empty")
-            start_time = time.time()
-            while (time.time() - start_time < 1
-                   and not self.comms.are_out_queues_empty()):
-                await asyncio.sleep(0.001)
-            if not self.comms.are_out_queues_empty():
-                raise Exception("timeout waiting for send queue to empty")
-            self.logger.debug("%s out queues empty after broadcast",
-                              self.state)

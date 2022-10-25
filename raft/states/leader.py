@@ -93,13 +93,11 @@ class Leader(State):
     async def on_append_response(self, message):
         log = self.server.get_log()
         last_rec = log.read()
-        if last_rec:
-            last_index = last_rec.index
-            last_term = last_rec.term
-        else:
-            # no log records yet
-            last_index = None
-            last_term = None
+        if not last_rec:
+            self.logger.warning("Got append response when log is empty")
+            return True
+        last_index = last_rec.index
+        last_term = last_rec.term
         message_commit = message.data['leaderCommit']
         if log.get_commit_index() != message_commit:
             # this is a common occurance since we commit after a quorum
@@ -110,6 +108,8 @@ class Leader(State):
                               "with our log to that point")
             return True
         sender_index = message.data['prevLogIndex']
+        # last_index could be None if append call was for first log
+        # entry
         if sender_index and last_index and last_index != sender_index + 1:
             self.logger.error("got append response message from %s"
                               " for index %s but " \
