@@ -189,6 +189,7 @@ class BaseCase:
             self.cluster.prepare_one(server_name)
             self.cluster.start_one_server(server_name)
             self.logger.info("restarted server, waiting for startup")
+            self.cluster.wait_for_state("any", server_name)
             spec = self.servers[server_name]
             status_exc = None
             start_time = time.time()
@@ -198,6 +199,7 @@ class BaseCase:
                     restart_client = spec.get_client()
                     status = restart_client.get_status()
                     if status:
+                        status_exc = None
                         break
                 except Exception as e:
                     status_exc = e
@@ -206,6 +208,7 @@ class BaseCase:
             
         def inner_test_leader_stop(self, restart=False):
             spec_0 = self.servers["server_0"]
+            self.cluster.wait_for_state()
             client0 =  spec_0.get_client()
             run_data = self.wait_for_election_done(client0)
             leader = run_data.leader
@@ -237,6 +240,7 @@ class BaseCase:
             
         def inner_test_non_leader_stop(self, restart=False):
             spec_0 = self.servers["server_0"]
+            self.cluster.wait_for_state()
             client1 =  spec_0.get_client()
             run_data = self.wait_for_election_done(client1)
             leader = run_data.leader

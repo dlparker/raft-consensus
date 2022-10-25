@@ -135,6 +135,7 @@ class TestLogPulls(unittest.TestCase):
 
         # now the restarted server is paused at substate joined,
         # letting it go will cause log catch up.
+        self.second_spec.monitor.clear_pause_on_substate(Substate.joined)
         
     def test_normal_pull(self):
         self.preamble()
@@ -191,7 +192,6 @@ class TestLogPulls(unittest.TestCase):
         leader_log = self.leader_spec.server_obj.log = MemoryLog()
         leader_log.set_term(old_term)
         
-        
         async def resume_leader():
             await self.leader_spec.pbt_server.resume_all()
         self.loop.run_until_complete(resume_leader())
@@ -245,9 +245,9 @@ class TestLogPulls(unittest.TestCase):
         leader_inter.add_trigger(InterceptorMode.in_before,
                                  LogPullMessage._code)
         
-        async def resume_follower():
-            await self.second_spec.pbt_server.resume_all()
-        self.loop.run_until_complete(resume_follower())
+        async def resume_follower(wait=True):
+            await self.second_spec.pbt_server.resume_all(wait)
+        self.loop.run_until_complete(resume_follower(wait=False))
 
         start_time = time.time()
         while time.time() - start_time < 2:
@@ -274,7 +274,7 @@ class TestLogPulls(unittest.TestCase):
         # resume the leader
         self.loop.run_until_complete(resume_leader())
         # resume the follower
-        self.loop.run_until_complete(resume_follower())
+        self.loop.run_until_complete(resume_follower(wait=False))
 
         # wait for the follower to hit the new interceptor pause
         # on the in log pull response

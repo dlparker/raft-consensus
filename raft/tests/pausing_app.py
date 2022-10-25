@@ -369,10 +369,17 @@ class PausingBankTellerServer(MemoryBankTellerServer):
             except asyncio.exceptions.CancelledError:
                 pass
 
-    async def resume_all(self):
+    async def resume_all(self, wait=True):
+        # If you have an interceptor or monitor setup to
+        # do a pause and you call this, the timeout
+        # logic might not work since the next pause might
+        # happen before this code can notice the resume.
+        # If that is your situation, call with wait = False
         if not self.paused:
             return
         self.do_resume = True
+        if not wait:
+            return
         start_time = time.time()
         while time.time() - start_time < 1 and self.paused:
             await asyncio.sleep(0.01)

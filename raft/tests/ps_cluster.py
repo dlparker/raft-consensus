@@ -381,6 +381,41 @@ class PausingServerCluster:
             if spec.addr == addr:
                 return spec
         return None
+    def wait_for_state(self, state_type="any", server_name=None, timeout=3):
+        expected = []
+        if server_name is None:
+            for sname,spec in self.server_specs.items():
+                if not spec.running:
+                    continue
+                expected.append(sname)
+        else:
+            spec = self.server_specs[server_name]
+            if not spec.running:
+                raise Exception(f"cannot wait for server {server_name}," \
+                                " not running")
+            expected.append(server_name)
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            found = []
+            for sname in expected:
+                if sname in found:
+                    continue
+                state = spec.monitor.state
+                if state is None:
+                    continue
+                if state_type == "any":
+                    found.append(sname)
+                else:
+                    if state == state_type:
+                        found.append(sname)
+            if len(found) == len(expected):
+                break
+        
+        if len(found) != len(expected):
+            raise Exception(f"timeout waiting for {state_type}, " \
+                            f"expected '{expected}', got '{found}'")
+        
 
     def stop_server(self, name):
         spec = self.server_specs[name]

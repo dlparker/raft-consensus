@@ -1,4 +1,5 @@
 import os
+import multiprocessing
 
 from raft.tests.bt_client import UDPBankTellerClient
 from raft.tests.common_test_code import BaseCase

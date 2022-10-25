@@ -6,6 +6,7 @@ import traceback
 import logging
 import threading
 import time
+import multiprocessing
 from logging.config import dictConfig
 
 import raft
@@ -17,9 +18,31 @@ from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.states.follower import Follower
 from bank_teller.bank_app import BankingApp
-
 from raft.tests.timer import ControlledTimer, get_timer_set
 
+manager = multiprocessing.Manager()
+csns = manager.Namespace()
+csns.status = manager.dict()
+csns.control = manager.dict()
+
+def get_bt_server_cs_dict(name):
+    return csns.status.get(name, None)
+
+def clear_bt_server_cs_dict(name):
+    csns.status[name] = manager.dict()
+    
+class MPStandardStateMap(StandardStateMap):
+
+    def __init__(self, *args, **kwargs):
+        self.bt_server_name = kwargs.pop('bt_server_name')
+        csns.status[self.bt_server_name] = manager.dict()
+        super().__init__(*args, **kwargs)
+        
+    async def set_substate(self, state, substate):
+        await super().set_substate(state, substate)
+        csns.status[self.bt_server_name]['state_type'] = state._type
+        csns.status[self.bt_server_name]['substate'] = substate
+    
     
 class UDPBankTellerServer:
 
@@ -64,7 +87,8 @@ class UDPBankTellerServer:
         try:
             logger = logging.getLogger(__name__)
             logger.info("bank teller server starting")
-            state_map = StandardStateMap(self.timeout_basis)
+            state_map = MPStandardStateMap(bt_server_name=self.name,
+                                           timeout_basis=self.timeout_basis)
             data_log = MemoryLog()
             loop = asyncio.get_running_loop()
             logger.info('creating server')
@@ -98,6 +122,7 @@ class UDPBankTellerServer:
             loop.close()        
             self.running = False
 
+        
         
 class MemoryBankTellerServer:
 

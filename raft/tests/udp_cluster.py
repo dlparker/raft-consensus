@@ -12,6 +12,7 @@ from enum import Enum
 import abc
 
 from raft.tests.bt_server import UDPBankTellerServer
+from raft.tests.bt_server import clear_bt_server_cs_dict, get_bt_server_cs_dict
 from raft.tests.bt_client import UDPBankTellerClient
 from log_control import servers_as_procs_log_setup, stop_logging_server 
 
@@ -68,7 +69,7 @@ class UDPServerCluster:
                           dir_rec['addr'], dir_rec['working_dir'],
                           run_args=args,
                           process=None)
-
+        clear_bt_server_cs_dict(spec.name)
         self.server_specs[spec.name] = spec
         return spec
         
@@ -130,6 +131,44 @@ class UDPServerCluster:
                 return spec
         return None
 
+    def wait_for_state(self, state_type="any", server_name=None, timeout=3):
+        expected = []
+        if server_name is None:
+            for sname,spec in self.server_specs.items():
+                if not spec.running:
+                    continue
+                expected.append(sname)
+        else:
+            spec = self.server_specs[server_name]
+            if not spec.running:
+                raise Exception(f"cannot wait for server {server_name}," \
+                                " not running")
+            expected.append(server_name)
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            found = []
+            for sname in expected:
+                if sname in found:
+                    continue
+                sstat = get_bt_server_cs_dict(sname)
+                if sstat is None:
+                    continue
+                if sstat.get('state_type') is None:
+                    continue
+                if state_type == "any":
+                    found.append(sname)
+                else:
+                    if sstat['state_type'] == state_type:
+                        found.append(sname)
+            if len(found) == len(expected):
+                break
+        
+        if len(found) != len(expected):
+            raise Exception(f"timeout waiting for {state_type}, " \
+                            f"expected '{expected}', got '{found}'")
+        
+            
     def stop_server(self, name):
         spec = self.server_specs[name]
         if not spec.running:
