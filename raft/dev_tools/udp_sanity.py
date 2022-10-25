@@ -6,7 +6,7 @@ import traceback
 import os
 from pathlib import Path
 
-from raft.tests.udp_cluster import UDPServerCluster
+from raft.dev_tools.udp_cluster import UDPServerCluster
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":

@@ -1,7 +1,7 @@
 import os
 import multiprocessing
 
-from raft.tests.bt_client import UDPBankTellerClient
+from raft.dev_tools.bt_client import UDPBankTellerClient
 from raft.tests.common_test_code import BaseCase
 
 #LOGGING_TYPE = "devel_one_proc" when using Mem comms and thread based servers

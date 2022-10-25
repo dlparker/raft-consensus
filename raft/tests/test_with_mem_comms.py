@@ -1,5 +1,5 @@
 import os
-from raft.tests.bt_client import MemoryBankTellerClient
+from raft.dev_tools.bt_client import MemoryBankTellerClient
 from raft.tests.common_test_code import BaseCase
 
 #LOGGING_TYPE = "devel_one_proc" when using Mem comms and thread based servers

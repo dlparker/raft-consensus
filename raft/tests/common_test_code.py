@@ -7,10 +7,10 @@ import os
 from dataclasses import dataclass
 from typing import Union
 
-from raft.tests.ps_cluster import PausingServerCluster, PausePoint
-from raft.tests.udp_cluster import UDPServerCluster
-from raft.tests.ps_cluster import ServerSpec as PSSpec
-from raft.tests.udp_cluster import ServerSpec as UDPSpec
+from raft.dev_tools.ps_cluster import PausingServerCluster, PausePoint
+from raft.dev_tools.udp_cluster import UDPServerCluster
+from raft.dev_tools.ps_cluster import ServerSpec as PSSpec
+from raft.dev_tools.udp_cluster import ServerSpec as UDPSpec
 
 async def do_wait(seconds):
     start_time = time.time()

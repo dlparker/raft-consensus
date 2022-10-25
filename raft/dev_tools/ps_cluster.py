@@ -15,11 +15,11 @@ from raft.servers.server import Server
 from raft.messages.log_pull import LogPullMessage, LogPullResponseMessage
 from raft.comms.memory_comms import reset_queues
 
-from raft.tests.log_control import one_proc_log_setup
-from raft.tests.bt_client import MemoryBankTellerClient
-from raft.tests.pausing_app import PausingBankTellerServer, PausingMonitor
-from raft.tests.pausing_app import PausingInterceptor, InterceptorMode
-from raft.tests.bt_server import ServerThread
+from raft.dev_tools.log_control import one_proc_log_setup
+from raft.dev_tools.bt_client import MemoryBankTellerClient
+from raft.dev_tools.pausing_app import PausingBankTellerServer, PausingMonitor
+from raft.dev_tools.pausing_app import PausingInterceptor, InterceptorMode
+from raft.dev_tools.bt_server import ServerThread
 
 @dataclass
 class ServerSpec:
@@ -218,18 +218,6 @@ class PausingServerCluster:
 
     def get_servers(self):
         return self.server_specs
-
-    def on_assert_pause_all(self):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        async def pauser():
-            from raft.tests.timer import get_timer_set
-            await self.timer_set.pause_all()
-            for name, spec in self.server_specs.items():
-                spec.pbt_server.comms.pause()
 
     def prepare_one(self, name, restart=False, timeout_basis=1.0):
         if restart:

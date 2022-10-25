@@ -16,7 +16,7 @@ import traceback
 
 from log_control import config_logging
 
-from raft.tests.bt_client import UDPBankTellerClient
+from raft.dev_tools.bt_client import UDPBankTellerClient
 
 config,_ = config_logging("test.log")
 dictConfig(config)

@@ -7,7 +7,7 @@ import os
 
 import pytest
 
-from raft.tests.timer import get_timer_set, ControlledTimer
+from raft.dev_tools.timer import get_timer_set, ControlledTimer
 from raft.log.log_api import LogRec
 from raft.log.memory_log import MemoryLog
 from raft.states.timer import Timer

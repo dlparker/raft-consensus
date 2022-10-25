@@ -8,10 +8,10 @@ from pathlib import Path
 
 
 from raft.messages.termstart import TermStartMessage
-from raft.tests.bt_client import MemoryBankTellerClient
-from raft.tests.pausing_app import InterceptorMode, TriggerType
+from raft.dev_tools.bt_client import MemoryBankTellerClient
+from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
 from raft.states.base_state import Substate
-from raft.tests.ps_cluster import PausingServerCluster, PausePoint
+from raft.dev_tools.ps_cluster import PausingServerCluster, PausePoint
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":

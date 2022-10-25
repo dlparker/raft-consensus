@@ -11,10 +11,10 @@ from typing import Tuple, List, Union
 from enum import Enum
 import abc
 
-from raft.tests.bt_server import UDPBankTellerServer
-from raft.tests.bt_server import clear_bt_server_cs_dict, get_bt_server_cs_dict
-from raft.tests.bt_client import UDPBankTellerClient
-from log_control import servers_as_procs_log_setup, stop_logging_server 
+from raft.dev_tools.bt_server import UDPBankTellerServer
+from raft.dev_tools.bt_server import clear_bt_server_cs_dict, get_bt_server_cs_dict
+from raft.dev_tools.bt_client import UDPBankTellerClient
+from raft.dev_tools.log_control import servers_as_procs_log_setup, stop_logging_server 
 
 @dataclass
 class ServerSpec:

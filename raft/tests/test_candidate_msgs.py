@@ -11,8 +11,8 @@ from raft.messages.termstart import TermStartMessage
 from raft.messages.request_vote import RequestVoteMessage
 from raft.messages.status import StatusQueryResponseMessage
 from raft.states.base_state import Substate
-from raft.tests.bt_client import MemoryBankTellerClient
-from raft.tests.ps_cluster import PausingServerCluster
+from raft.dev_tools.bt_client import MemoryBankTellerClient
+from raft.dev_tools.ps_cluster import PausingServerCluster
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":

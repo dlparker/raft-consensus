@@ -14,8 +14,8 @@ from raft.states.state_map import StandardStateMap, StateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.comms.memory_comms import MessageInterceptor
 
-from raft.tests.bt_server import MemoryBankTellerServer
-from raft.tests.timer import get_timer_set
+from raft.dev_tools.bt_server import MemoryBankTellerServer
+from raft.dev_tools.timer import get_timer_set
 
 class PFollower(Follower):
 

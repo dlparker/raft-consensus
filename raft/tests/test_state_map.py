@@ -7,8 +7,8 @@ import os
 from pathlib import Path
 
 
-from raft.tests.bt_server import MemoryBankTellerServer
-from raft.tests.bt_client import MemoryBankTellerClient
+from raft.dev_tools.bt_server import MemoryBankTellerServer
+from raft.dev_tools.bt_client import MemoryBankTellerClient
 from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.states.base_state import Substate

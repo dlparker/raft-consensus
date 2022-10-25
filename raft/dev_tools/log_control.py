@@ -3,7 +3,7 @@ from logging.config import dictConfig
 from pathlib import Path
 import copy
 
-from log_server import LogSocketServer
+from raft.dev_tools.log_server import LogSocketServer
 
 have_logging_server = False
 logging_set_once = False
@@ -25,7 +25,7 @@ def set_levels(handler_names):
     #log_loggers['raft.states.leader:heartbeat'] = debug_log
     #log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests'] = debug_log
-    #log_loggers['raft.tests.timer'] = debug_log
+    #log_loggers['raft.dev_tools.timer'] = debug_log
     #log_loggers['raft.comms.memory_comms'] = debug_log
     return log_loggers
     

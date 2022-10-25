@@ -1,6 +1,6 @@
 import os
-from raft.tests.bt_client import MemoryBankTellerClient
-from raft.tests.bt_client import UDPBankTellerClient
+from raft.dev_tools.bt_client import MemoryBankTellerClient
+from raft.dev_tools.bt_client import UDPBankTellerClient
 from raft.tests.common_test_code import BaseCase
 
     

@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from raft.states.base_state import Substate
-from raft.tests.ps_cluster import PausingServerCluster, PausePoint
+from raft.dev_tools.ps_cluster import PausingServerCluster, PausePoint
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
