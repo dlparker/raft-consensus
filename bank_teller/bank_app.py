@@ -1,6 +1,6 @@
 from typing import Union
 import logging
-from raft.app_api.app import App
+from raft.app_api.app import App, CommandResult
 
 class BankingApp(App):
 
@@ -11,8 +11,10 @@ class BankingApp(App):
     def set_server(self, server):
         self.server = server
         
-    def execute_command(self, command) -> Union[dict, None]:
+    def execute_command(self, command) -> CommandResult:
         parsed = command.split()
+        log_response = True
+        extra_dict = None
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -21,6 +23,16 @@ class BankingApp(App):
             balance = 0
         if len(parsed) == 0:
             response = "Invalid parsed"
+            log_response = False
+        elif len(parsed) == 1 and parsed[0] == 'log_stats':
+            response = "log_stats result"
+            log_response = False
+            extra_dict = dict(commit_index=log.get_commit_index(),
+                              term=log.get_term())
+            if last_rec:
+                extra_dict['last_index'] = last_rec.index
+            else:
+                extra_dict['last_index'] = None
         elif len(parsed) == 1 and parsed[0] == 'query':
             response = "Your current account balance is: " + str(balance)
         elif len(parsed) == 2 and parsed[0] == 'credit':
@@ -40,17 +52,27 @@ class BankingApp(App):
                 response = "Insufficient account balance"
         else:
             response = "Invalid command"
+            log_response = False
         if response == "Invalid command":
             self.logger.debug("invalid client command %s", command)
-            return None
+            data = {
+                "command": command,
+                "balance": None,
+                "response": response,
+            }
         else:
             self.logger.debug("completed client command %s", command)
-        data = {
-            "command": command,
-            "balance": balance,
-            "response": response,
-        }
-        return data
+            data = {
+                "command": command,
+                "balance": balance,
+                "response": response,
+            }
+        if extra_dict is not None:
+            data.update(extra_dict)
+        result = CommandResult(command=command,
+                               response=data,
+                               log_response=log_response)
+        return result
         
 
 

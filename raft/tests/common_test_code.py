@@ -333,18 +333,25 @@ class BaseCase:
             time.sleep(0.1)
             spec_0 = self.servers["server_0"]
             client1 =  spec_0.get_client()
+            logged_command_count = 0
             run_data = self.wait_for_election_done(client1)
             
             self.logger.info("doing credit at %s", client1)
             client1.do_credit(10)
+            logged_command_count += 1
             self.logger.info("doing query of %s", client1)
             result = client1.do_query()
+            logged_command_count += 1
             self.assertEqual(result['balance'], 10)
             self.logger.info("doing debit at %s", client1)
             client1.do_debit(5)
+            logged_command_count += 1
             self.logger.info("doing query of %s", client1)
             result = client1.do_query()
+            logged_command_count += 1
             self.assertEqual(result['balance'], 5)
+            result = client1.do_log_stats()
+            self.assertEqual(result['last_index'], logged_command_count - 1)
             self.logger.info("client ops via %s worked", client1)
             
         def test_client_ops(self):

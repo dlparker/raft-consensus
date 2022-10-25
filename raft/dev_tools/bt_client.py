@@ -52,6 +52,13 @@ class UDPBankTellerClient:
         self.sock.sendto(data, self.server_addr)
         return self.get_result()
 
+    def do_log_stats(self):
+        qm = ClientCommandMessage(self.addr, self.server_addr,
+                                  None, "log_stats")
+        data = Serializer.serialize(qm)
+        self.sock.sendto(data, self.server_addr)
+        return self.get_result()
+
     def do_credit(self, amount):
         cm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, f"credit {amount}")
@@ -119,6 +126,14 @@ class MemoryBankTellerClient:
             asyncio.set_event_loop(loop)
         return loop.run_until_complete(self.a_do_query())
 
+    def do_log_stats(self):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(self.a_do_log_stats())
+
     def get_status(self):
         try:
             loop = asyncio.get_running_loop()
@@ -171,6 +186,14 @@ class MemoryBankTellerClient:
     async def a_do_query(self):
         qm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, "query")
+        data = Serializer.serialize(qm)
+        w = Wrapper(data, self.addr)
+        await (await self.get_channel()).put(w)
+        return await self.a_get_result()
+
+    async def a_do_log_stats(self):
+        qm = ClientCommandMessage(self.addr, self.server_addr,
+                                  None, "log_stats")
         data = Serializer.serialize(qm)
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)

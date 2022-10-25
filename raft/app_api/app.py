@@ -1,12 +1,20 @@
 from __future__ import annotations
 import abc
 from typing import Union
+from dataclasses import dataclass, field
+
+@dataclass
+class CommandResult:
+    command: str 
+    response: str = field(repr=False, default=None)
+    log_response: bool = field(repr=False, default=True)
+    
 
 # abstract class for logged interaction app code
 class App(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
-    def execute_command(self, command) -> Union[dict, None]:
+    def execute_command(self, command) -> CommandResult:
         raise NotImplementedError
 
 

@@ -170,9 +170,7 @@ class Leader(State):
                 if reply_address:
                     # This log record was for data submitted by client,
                     # not an internal record such as term change.
-                    # make sure provided address is formated as a tuple
-                    # and use it to send reply to client
-                    reply_address = (reply_address[0], reply_address[1])
+                    # Send as reply to client
                     self.logger.debug("preparing reply for %s",
                                       reply_address)
                     reply = ClientCommandResultMessage(self.server.endpoint,
@@ -310,11 +308,6 @@ class Leader(State):
         target = message.sender
         if message.original_sender:
             target = message.original_sender
-        self.logger.debug("saving address for reply %s",
-                          target)
-        data = self.server.get_app().execute_command(message.data)
-        if data is None:
-            return False
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -327,11 +320,26 @@ class Leader(State):
             last_index = None
             last_term = None
 
+        # call the user app 
+        result = self.server.get_app().execute_command(message.data)
+        if not result.log_response:
+            # user app does not want to log response
+            self.logger.debug("preparing no-log reply for %s",
+                              target)
+            reply = ClientCommandResultMessage(self.server.endpoint,
+                                               target,
+                                               last_term,
+                                               result.response)
+            self.logger.debug("sending no-log reply message %s", reply)
+            await self.server.post_message(reply)
+            return True
+        self.logger.debug("saving address for reply %s", target)
+
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
         last_rec = log.read()
-        new_rec = LogRec(term=log.get_term(), user_data=data,
+        new_rec = LogRec(term=log.get_term(), user_data=result.response,
                          context=dict(client_addr=target))
         log.append([new_rec,])
         new_rec = log.read()

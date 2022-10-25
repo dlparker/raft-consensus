@@ -68,6 +68,9 @@ class UDPComms(CommsAPI):
         return False
     
     async def post_message(self, message):
+        # make sure addresses are tuples
+        message._sender = (message.sender[0], message.sender[1])
+        message._receiver = (message.receiver[0], message.receiver[1])
         if not isinstance(message, dict):
             self.logger.debug("posting %s to %s",
                               message, message.receiver)

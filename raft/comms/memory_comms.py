@@ -102,6 +102,9 @@ class MemoryComms(CommsAPI):
             
     async def post_message(self, message):
         global queues
+        # make sure addresses are tuples
+        message._sender = (message.sender[0], message.sender[1])
+        message._receiver = (message.receiver[0], message.receiver[1])
         try:
             target = message.receiver
             # this can happen at startup, waiting for

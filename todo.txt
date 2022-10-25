@@ -13,3 +13,7 @@ correct __subclasshook__ method logic
 add a setup step for comms api to install serializer class instead
 of hard coding to original
 
+
+clean up log api around storing pending response to client, the whole
+context thing is a fudge, we should be more agressive about log
+data format, probably adding context there.
