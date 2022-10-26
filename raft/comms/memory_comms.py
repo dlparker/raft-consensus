@@ -89,6 +89,7 @@ class MemoryComms(CommsAPI):
         self.keep_running = False
         if self.task:
             self.task.cancel()
+            await asyncio.sleep(0)
 
     def are_out_queues_empty(self):
         global queues
@@ -187,6 +188,12 @@ class MemoryComms(CommsAPI):
                                               message)
                         while self.paused:
                             await asyncio.sleep(0.001)
+            except asyncio.exceptions.CancelledError: # pragma: no cover error
+                self.keep_running = False
+                return
+            except GeneratorExit: # pragma: no cover error
+                self.keep_running = False
+                return
             except Exception as e: # pragma: no cover error
                 self.logger.error(traceback.format_exc())
 

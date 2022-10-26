@@ -54,7 +54,7 @@ class TestPausing(unittest.TestCase):
         while time.time() - start_time < 2:
             # servers are in their own threads, so
             # blocking this one is fine
-            time.sleep(0.25)
+            time.sleep(0.05)
             status = client.get_status()
             if status and status.data['leader']:
                 leader_addr = status.data['leader']

@@ -147,7 +147,7 @@ class TestLogPulls(unittest.TestCase):
         while time.time() - start_time < 2:
             # servers are in their own threads, so
             # blocking this one is fine
-            time.sleep(0.25)
+            time.sleep(0.05)
             rec = self.target_log.read()
             if rec and rec.index == 3:
                 break
@@ -180,7 +180,7 @@ class TestLogPulls(unittest.TestCase):
         while time.time() - start_time < 2:
             # servers are in their own threads, so
             # blocking this one is fine
-            time.sleep(0.25)
+            time.sleep(0.05)
             rec = self.target_log.read()
             if self.leader_spec.pbt_server.paused:
                 break
@@ -200,7 +200,7 @@ class TestLogPulls(unittest.TestCase):
         while time.time() - start_time < 2:
             # servers are in their own threads, so
             # blocking this one is fine
-            time.sleep(0.25)
+            time.sleep(0.05)
             if self.second_spec.pbt_server.paused:
                 break
         self.assertTrue(self.second_spec.pbt_server.paused)

@@ -40,6 +40,10 @@ class StateMap(metaclass=abc.ABCMeta):
         raise NotImplementedError
         
     @abc.abstractmethod
+    def remove_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
+        raise NotImplementedError
+        
+    @abc.abstractmethod
     def get_state(self) -> State:
         raise NotImplementedError
 
@@ -103,6 +107,10 @@ class StandardStateMap(StateMap):
         if monitor not in self.monitors:
             self.monitors.append(monitor)
             
+    def remove_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
+        if monitor in self.monitors:
+            self.monitors.remove(monitor)
+            
     def get_server(self):
         return self.server
     
@@ -142,6 +150,8 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 await monitor.new_substate(self, state, substate)
+            except GeneratorExit:
+                pass
             except:
                 self.logger.error("Monitor new_substate call got" \
                                   " exception \n\t%s",
@@ -157,6 +167,8 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 follower = await monitor.new_state(self, self.state, follower)
+            except GeneratorExit:
+                raise
             except:
                 self.logger.error("Monitor new_state call got exception \n\t%s",
                                   traceback.format_exc())
@@ -179,6 +191,8 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 candidate = await monitor.new_state(self, self.state, candidate)
+            except GeneratorExit:
+                pass
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
@@ -201,6 +215,8 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 leader = await monitor.new_state(self, self.state, leader)
+            except GeneratorExit:
+                pass
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())

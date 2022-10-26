@@ -64,6 +64,8 @@ class Timer:
         try:
             if self.keep_running:
                 await self.callback()
+        except GeneratorExit: # pragma: no cover error
+            self.keep_running = False
         except asyncio.exceptions.CancelledError: # pragma: no cover error 
                 pass
         except:
@@ -76,6 +78,8 @@ class Timer:
                 await self.one_pass()
             except asyncio.exceptions.CancelledError: # pragma: no cover error 
                 pass
+            except GeneratorExit: # pragma: no cover error
+                self.keep_running = False
             except:
                 self.logger.error(traceback.format_exc())
                 pass

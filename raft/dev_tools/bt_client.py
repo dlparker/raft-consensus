@@ -86,6 +86,10 @@ class MemoryBankTellerClient:
         get_queues()[self.addr] = self.queue
         get_queues()[self.addr] = self.queue
         self.channel = None
+        self.timeout = 2
+
+    def set_timeout(self, timeout):
+        self.timeout = timeout
 
     async def get_channel(self):
         # need to not blow up if server is not running
@@ -161,15 +165,14 @@ class MemoryBankTellerClient:
     async def a_get_result(self):
         w = None
         start_time = time.time()
-        while time.time() - start_time < 2:
+        while time.time() - start_time < self.timeout:
             if not self.queue.empty():
                 w = await self.queue.get()
                 break
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.001)
             xtime = time.time()
         if not w:
-            print(xtime - start_time)
-            raise Exception("timeout")
+            raise Exception(f"timeout after {xtime - start_time}")
         data = w.data
         result = Serializer.deserialize(data)
         if result.is_type("command_result"):

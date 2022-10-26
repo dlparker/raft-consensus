@@ -79,7 +79,7 @@ class Follower(Voter):
 
     async def on_heartbeat(self, message):
         # reset timeout
-        self.heartbeat_logger.info("resetting leaderless_timer on heartbeat")
+        self.heartbeat_logger.debug("resetting leaderless_timer on heartbeat")
         await self.leaderless_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         data = message.data

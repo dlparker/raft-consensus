@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 from raft.messages.termstart import TermStartMessage
-from raft.dev_tools.bt_client import MemoryBankTellerClient
 from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
 from raft.states.base_state import Substate
 from raft.dev_tools.ps_cluster import PausingServerCluster, PausePoint

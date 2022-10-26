@@ -90,7 +90,7 @@ class PausingMonitor(StateChangeMonitor):
             self.logger.error(msg)
             #raise Exception(msg)
             os.system(f"kill {os.getpid()}")
-            
+
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
         self.state_history.append(old_state)
         self.substate_history = []
@@ -110,6 +110,8 @@ class PausingMonitor(StateChangeMonitor):
                 # "self" becomes "monitor" arg, in case user
                 # supplied method needs context
                 clear = await method(self, old_state, new_state)
+            except GeneratorExit:
+                raise
             except:
                 self.logger.error(traceback.format_exc())
                 clear = True
@@ -129,7 +131,8 @@ class PausingMonitor(StateChangeMonitor):
             #raise Exception(msg)
             os.system(f"kill {os.getpid()}")
 
-        self.logger.info(f"{self.name} {state} to substate {substate}")
+        if self.substate != substate:
+            self.logger.info(f"{self.name} {state} to substate {substate}")
         self.substate_history.append(self.substate)
         old_substate = self.substate
         self.substate = substate
@@ -141,6 +144,8 @@ class PausingMonitor(StateChangeMonitor):
                 # "self" becomes "monitor" arg, in case user
                 # supplied method needs context
                 clear = await method(self, self.state, old_substate, substate)
+            except GeneratorExit:
+                raise
             except:
                 self.logger.error(traceback.format_exc())
                 clear = True

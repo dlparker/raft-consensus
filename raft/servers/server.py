@@ -28,13 +28,13 @@ class Server:
         self.unhandled_errors = []
 
     def start(self):
+        if self.running:
+            raise Exception("cannot call start twice")
         task_logger.create_task(self._start(),
                                 logger=self.logger,
                                 message="server start task")
         
     async def _start(self):
-        if self.running:
-            raise Exception("cannot call start twice")
         self.app.set_server(self)
         self.logger.info('Server on %s activating state map', self.endpoint)
         self.state = await self.state_map.activate(self)
@@ -81,6 +81,12 @@ class Server:
     def get_state(self):
         return self.state
 
+    def get_unhandled_errors(self, clear=False):
+        result = self.unhandled_errors
+        if clear:
+            self.unhandled_errors = []
+        return result
+    
     async def on_message(self, message, recursed=False):
         try:
             pre_state = self.state
@@ -91,7 +97,7 @@ class Server:
                 if pre_state == self.state:
                     start_time = time.time()
                     while (self.state_map.changing_state()
-                            and time.time() - start_time < 1):
+                            and time.time() - start_time < 0.2):
                         # There is a race between the instant
                         # where a state sets terminated flag
                         # and the instant at which a message might
@@ -108,9 +114,12 @@ class Server:
                     self.logger.info("changed state from %s to %s, recursing",
                                  pre_state, self.state)
                     if recursed:
-                        raise Exception("already recursed, " \
-                                        " not doing it again" \
-                                        " to avoid loop")
+                        details = "Recursed available handlers rejected message"
+                        e = dict(code="message_rejected",
+                                 message=message,
+                                 details=details)
+                        self.unhandled_errors.append(e)
+                        return
                     await self.on_message(message, recursed=True)
                 else:
                     e = dict(code="message_rejected",
