@@ -270,16 +270,22 @@ class ServerThread(threading.Thread):
             print("\n\n!!!!!!Server thread failed!!!!")
             traceback.print_exc()
         tasks = asyncio.all_tasks()
-        for t in [t for t in tasks if not (t.done() or t.cancelled())]:
-            if t != asyncio.current_task():
-                t.cancel()
-                await asyncio.sleep(0)
+        start_time = time.time()
+        while time.time() - start_time < 0.5:
+            undone = []
+            for t in [t for t in tasks if not (t.done() or t.cancelled())]:
+                if t != asyncio.current_task():
+                    undone.append(t)
+        for t in undone:
+            print(f"cancelling {t}")
+            t.cancel()
+            await asyncio.sleep(0)
         self.running = False
 
     def stop(self):
         self.keep_running = False
         start_time = time.time()
-        while self.running and time.time() - start_time < 1:
+        while self.running and time.time() - start_time < 1000:
             time.sleep(0.001)
         if self.running:
             raise Exception("Server did not stop")

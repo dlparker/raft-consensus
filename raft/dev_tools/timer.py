@@ -93,6 +93,8 @@ class ControlledTimer(Timer):
         self.logger = logging.getLogger(__name__)
         self.timer_set = get_timer_set()
         self.timer_set.register_timer(self)
+        self.allow_failed_terminate = False
+        self.stop_on_go = False
 
     def start(self):
         self.logger.debug("Starting timer %s", self.eye_d)
@@ -104,10 +106,9 @@ class ControlledTimer(Timer):
         self.logger.debug("Stopped timer %s", self.eye_d)
 
     async def one_pass(self):
-        try:
-            await super().one_pass()
-        except asyncio.exceptions.CancelledError:
-            self.keep_running = False
+        self.logger.debug("Start one pass for timer %s", self.eye_d)
+        await super().one_pass()
+        self.logger.debug("End one pass for timer %s", self.eye_d)
         
     async def pause(self):
         self.logger.info("Pausing timer %s", self.eye_d)
@@ -137,6 +138,19 @@ class ControlledTimer(Timer):
         if self.terminated:
             raise Exception("tried to terminate already terminated timer")
         self.logger.debug("terminating timer %s", self.eye_d)
-        await super().terminate()
+        try:
+            await super().terminate()
+        except:
+            if self.allow_failed_terminate:
+                # Some tests blow up states immediately on start
+                # in order to get to error handling code around
+                # state switches in state map. Since start is
+                # a sync call and the blowup happens in async loop,
+                # it is very hard to get the timer to exit cleanly,
+                # too hard to do without corrupting code under test.
+                # So, let test code just swallow exception
+                pass
+            else:
+                raise
         self.timer_set.delete_timer(self)
 

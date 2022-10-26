@@ -87,7 +87,6 @@ class StandardStateMap(StateMap):
         self.leader_heartbeat_timeout = 0.5 * timeout_basis
         self.changing = False
         self.pre_change = None
-        self.post_change = None
         
     # can't be done with init because instance
     # of this class required for server class init
@@ -127,17 +126,24 @@ class StandardStateMap(StateMap):
     def changing_state(self) -> bool:
         return self.changing
 
-    def start_state_change(self, old_state: Optional[State],
-                           new_state: State) -> None:
+    def start_state_change(self, old_state: Union[str, None],
+                           new_state: str) -> None:
         self.changing = True
-        self.pre_change = old_state
-        self.post_change = new_state
+        self.pre_change = self.state
     
-    def finish_state_change(self, old_state: Optional[State],
-                           new_state: State) -> None:
+    def finish_state_change(self, old_state: Union[str, None],
+                            new_state: str) -> None:
         self.changing = False
-        self.pre_change = old_state
-        self.post_change = new_state
+        self.pre_change = None
+    
+    def failed_state_change(self, old_state: Union[str, None],
+                            target_state: str,
+                            error_data: str) -> None:
+        self.changing = False
+        self.server.record_failed_state_change(old_state, target_state,
+                                               error_data)
+        self.state = self.pre_change
+        self.pre_change = None
     
     async def set_substate(self, state, substate):
         if not self.server:
@@ -178,8 +184,9 @@ class StandardStateMap(StateMap):
             os_name = old_state._type
         else:
             os_name = None
-        self.finish_state_change(os_name, 'follower')
         follower.start()
+        await asyncio.sleep(0)
+        self.finish_state_change(os_name, 'follower')
         return follower
     
     async def switch_to_candidate(self, old_state: Optional[State] = None) -> Candidate:
@@ -202,8 +209,9 @@ class StandardStateMap(StateMap):
             os_name = old_state._type
         else:
             os_name = None
-        self.finish_state_change(os_name, 'candidate')
         candidate.start()
+        await asyncio.sleep(0)
+        self.finish_state_change(os_name, 'candidate')
         return candidate
 
     async def switch_to_leader(self, old_state: Optional[State] = None) -> Leader:
@@ -226,8 +234,9 @@ class StandardStateMap(StateMap):
             os_name = old_state._type
         else:
             os_name = None
-        self.finish_state_change(os_name, 'leader')
         leader.start()
+        await asyncio.sleep(0)
+        self.finish_state_change(os_name, 'candidate')
         return leader
 
     

@@ -86,9 +86,11 @@ class PausingMonitor(StateChangeMonitor):
         this_id = threading.Thread.ident
         if self.pbt_server.paused:
             msg = f"trying {self.name} from {old_state}" \
-                f"to {new_state} but should be paused!"
+                f" to {new_state} but should be paused!"
             self.logger.error(msg)
             #raise Exception(msg)
+            print(f"\n\n\t{msg}")
+            print(f"\n\tsuiciding\n\n")
             os.system(f"kill {os.getpid()}")
 
         self.logger.info(f"{self.name} from {old_state} to {new_state}")

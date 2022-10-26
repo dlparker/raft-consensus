@@ -1,9 +1,11 @@
 
 Review and document new message times and ensure that they
 actually improve things compared to the more limited set defined
-in the raft paper.
+in the raft paper. Do a side by side sequence diagram to identify
+where my messages take the place of appendentries messages with
+specific values and follower states.
 
-Build something to collect and clear unhandled errors in server.py
+Add log trimming sequence.
 
 Add paging to log pull protocol
 
@@ -17,3 +19,14 @@ of hard coding to original
 clean up log api around storing pending response to client, the whole
 context thing is a fudge, we should be more agressive about log
 data format, probably adding context there.
+
+
+Build something to collect and clear unhandled errors in server.py,
+including a logging mechanism that is robust against errors, so
+the errors go in an in-memory log and then into a disk log such
+that the second call will not kill the process or result in a loop.
+Maybe an "ErrorSink" class?
+
+Find all the state locations that can produce an unrecoverable
+error and have them report the error to the state machine, which
+will report it to the server, which will save it in unrecoverable.

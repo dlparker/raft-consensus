@@ -21,7 +21,8 @@ class Candidate(Voter):
         self.logger = logging.getLogger(__name__)
         self.server = server
         server.set_state(self)
-        self.votes = {}
+        self.yea_votes = {}
+        self.all_votes = {}
         self.election_timeout = self.candidate_interval()
         self.candidate_timer = None
         self.task = None
@@ -68,9 +69,8 @@ class Candidate(Voter):
         self.logger.info("candidate resigning because we" \
                          "got hearbeat from leader")
         await self.resign()
-        await self.on_heartbeat_common(message)
-        self.logger.debug("sent heartbeat reply")
-        return True
+        self.logger.debug("rejecting heartbeat")
+        return False
 
     async def on_timer(self):
         self.logger.info("candidate resigning because timer ended")
@@ -88,35 +88,41 @@ class Candidate(Voter):
                              message.sender)
             await self.resign()
             return True
-            
-        if message.sender[1] not in self.votes and message.data['response']:
-            self.votes[message.sender[1]] = message.data['response']
-
-            # check if received majorities
-            # if len(self.votes.keys()) > (self.server.total_nodes - 1) / 2:
-            # The above original logic from upstream was wrong, it does
-            # not work with three servers if the leader dies, election
-            # cannot complete because number of votes receive cannot be more
-            # than one. 
-            # I changed the logic to include the fact that a candidate's
-            # own vote is included in the total votes, which makes sense.
-            # It is easy to see how you could read it the other way from
-            # the text of the paper, but it does not work for and election
-            # held by two out of three servers.
-            # with one dead.
-            if len(self.votes.keys()) + 1 > self.server.total_nodes / 2:
-                sm = self.server.get_state_map()
+        if message.sender in self.all_votes:
+            # already counted, dummy trying to cheat by voting twice
+            return True
+        self.all_votes[message.sender] = message.data['response']
+        if not message.data['response']:
+            if len(self.all_votes) == len(self.server.other_nodes):
+                self.logger.info("candidate resigning because all " \
+                                 "votes are in but we didn't win")
+                await self.resign()
+            return True
+        self.yea_votes[message.sender] = True
+        # check if received majorities
+        # if len(self.yea_votes.keys()) > (self.server.total_nodes - 1) / 2:
+        # The above original logic from upstream was wrong, it does
+        # not work with three servers if the leader dies, election
+        # cannot complete because number of votes receive cannot be more
+        # than one. 
+        # I changed the logic to include the fact that a candidate's
+        # own vote is included in the total votes, which makes sense.
+        # It is easy to see how you could read it the other way from
+        # the text of the paper, but it does not work for and election
+        # held by two out of three servers.
+        # with one dead.
+        if len(self.yea_votes.keys()) + 1 > self.server.total_nodes / 2:
+            sm = self.server.get_state_map()
+            try:
                 sm.start_state_change("candidate", "leader")
                 self.terminated = True
                 await self.candidate_timer.terminate() # never run again
                 self.logger.info("changing to leader")
                 leader = await sm.switch_to_leader(self)
                 await self.stop()
-                return True
-        # check if received all the votes -> resign
-        if len(self.votes) == len(self.server.other_nodes):
-            self.logger.info("candidate resigning because all votes are in but we didn't win")
-            await self.resign()
+            except:
+                sm.failed_state_change("candidate", "leader",
+                                       traceback.format_exc())
         return True
 
     # start elections by increasing term, voting for itself and send out vote requests
@@ -147,19 +153,13 @@ class Candidate(Voter):
                 "lastLogTerm": last_term,
             }
         )
-        await self.set_substate(Substate.voting)
-        # can happen anytime we await
-        if self.terminated:
-            return
         await self.server.broadcast(election)
-        if self.terminated:
-            return
-
+        await self.set_substate(Substate.voting)
         self.logger.info("sent all endpoints %s", election)
         self.last_vote = self.server.endpoint
         self.task = None
 
-    # received append entry from leader or not enough votes -> step down
+    # Voting ended by some combination of messages
     async def resign(self):
         if self.terminated:
             # order in async makes race for server states
@@ -174,7 +174,8 @@ class Candidate(Voter):
             self.logger.info("candidate resigned")
             await self.stop()
         except:
-            self.logger.error(traceback.format_exc())
+            sm.failed_state_change("candidate", "follower",
+                                   traceback.format_exc())
 
     def get_leader_addr(self):
         return None

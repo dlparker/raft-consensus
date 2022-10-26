@@ -86,7 +86,15 @@ class Server:
         if clear:
             self.unhandled_errors = []
         return result
-    
+
+    def record_failed_state_change(self, old_state, target_state,
+                                   error_data):
+        details = f"Change from {old_state} to {target_state} failed. "
+        details += error_data
+        e = dict(code="state_change_failed",
+                 details=details)
+        self.unhandled_errors.append(e)
+        
     async def on_message(self, message, recursed=False):
         try:
             pre_state = self.state

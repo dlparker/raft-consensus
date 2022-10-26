@@ -26,7 +26,8 @@ def set_levels(handler_names):
     #log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests'] = debug_log
     #log_loggers['raft.dev_tools.timer'] = debug_log
-    #log_loggers['raft.comms.memory_comms'] = debug_log
+    #log_loggers['raft.states.timer'] = debug_log
+    log_loggers['raft.comms.memory_comms'] = warn_log
     return log_loggers
     
 def config_server_logging(main_config, filepath):

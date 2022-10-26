@@ -183,13 +183,13 @@ class TestEdges(unittest.TestCase):
         
     def test_simple_calls(self):
         target, client = self.preamble()
-        server = target.thread.server
+        server = target.server_obj
         # just check this here, make sure call is rejected
         with self.assertRaises(Exception) as context:
             stats = server.start()
         self.assertTrue("twice" in str(context.exception))
         self.assertEqual(target.monitor.state, 
-                         target.thread.server.get_state())
+                         target.server_obj.get_state())
         
     def test_reject_messages_while_changing_state(self):
         # The servers.server.py Server class has
@@ -209,7 +209,7 @@ class TestEdges(unittest.TestCase):
         # normally process client messages.
         target, client = self.preamble()
         target.monitor.state.set_rejecting(False)
-        server = target.thread.server
+        server = target.server_obj
         estack = server.get_unhandled_errors()
         self.assertEqual(len(estack), 0)
         stats = client.do_log_stats()
@@ -255,7 +255,7 @@ class TestEdges(unittest.TestCase):
         stats = client.do_log_stats()
         self.assertIsNotNone(stats)
         client.set_timeout(0.5)
-        server = target.thread.server
+        server = target.server_obj
         estack = server.get_unhandled_errors()
         self.assertEqual(len(estack), 0)
         target.monitor.state.setup_respawn_reject(2)

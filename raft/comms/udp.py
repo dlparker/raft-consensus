@@ -1,7 +1,10 @@
-""" This implementation is not intended for production use. It has
-insufficient error handling and testing (see all the pragma: no cover
-marks for code not tested). If you want a UDP transport for production
-use, then build your own, possibly but cloning and improving this one.
+"""This implementation is not intended for production use. It has a
+message length limitation of. It has no mechanism for dealing with
+very long messages. It has insufficient error handling and testing
+(see all the pragma: no cover marks for code not tested). If you want
+a UDP transport for production use, then build your own, possibly by
+cloning and improving this one.
+
 """
 from socket import *
 import time

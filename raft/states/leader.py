@@ -46,7 +46,6 @@ class Leader(State):
             # log entry. If they are not, they will tell us that on
             # first heartbeat, and we will catch them up
             self.followers[other] = FollowerCursor(other, last_index)
-
         self.heartbeat_timer = None
         self.task = None
 
@@ -61,7 +60,6 @@ class Leader(State):
                                                      log.get_term(),
                                                      self.heartbeat_timeout,
                                                      self.send_heartbeat)
-        self.heartbeat_timer.start()
         self.task = task_logger.create_task(self.on_start(),
                                             logger=self.logger,
                                             message="leader start method")
@@ -74,13 +72,20 @@ class Leader(State):
             await asyncio.sleep(0)
             
     async def on_start(self):
+        if self.terminated:
+            self.task = None
+            return
         self.logger.debug("in on_start")
+        self.heartbeat_timer.start()
         try:
             await self.send_term_start()
         except:
             self.logger.error(traceback.format_exc())
+            self.task = None
+            raise
         self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
+        self.task = None
         
     def get_leader_addr(self):
         return self.server.endpoint
