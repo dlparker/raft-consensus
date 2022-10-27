@@ -7,10 +7,11 @@ import os
 
 import pytest
 
-from raft.dev_tools.timer import get_timer_set, ControlledTimer
+#from raft.dev_tools.timer import get_timer_set, ControlledTimer
+from raft.dev_tools.timer_wrapper import get_timer_set, ControlledTimer
 from raft.log.log_api import LogRec
 from raft.log.memory_log import MemoryLog
-from raft.states.timer import Timer
+from raft.utils.timer import Timer
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
 
@@ -181,7 +182,7 @@ class TestTimer(unittest.TestCase):
 
     async def exploder_target(self):
         self.counter += 1
-        if self.counter == 1:
+        if self.counter == 2:
             self.exploded = True
             raise Exception("boom!")
 
@@ -219,11 +220,11 @@ class TestTimer(unittest.TestCase):
 
         await t2.terminate()
         with self.assertRaises(Exception) as context:
-            t1.start()
+            t2.start()
         self.assertTrue("start" in str(context.exception))
         self.assertTrue("terminated" in str(context.exception))
         with self.assertRaises(Exception) as context:
-            await t1.stop()
+            await t2.stop()
         self.assertTrue("stop" in str(context.exception))
         self.assertTrue("terminated" in str(context.exception))
         with self.assertRaises(Exception) as context:
@@ -239,11 +240,14 @@ class TestTimer(unittest.TestCase):
         # the one_pass method will not break the timer
         class Exploder(Timer):
             fuse = -1
-            async def one_pass(self):
-                self.fuse += 1
-                if self.fuse == 1:
-                    raise Exception("I die!")
-                await super().one_pass()
+            def beater(self):
+                super().beater()
+                if time.time() - self.start_time >= self.interval:
+                    self.fuse += 1
+                    if self.fuse == 1:
+                        raise Exception("I die!")
+                    else:
+                        print("\n\n\tno die\n\n")
         
         self.counter = 0
         t4 = Exploder('boom', 0, 0.05, self.target)
@@ -261,104 +265,21 @@ class TestTimer(unittest.TestCase):
         self.assertTrue(self.counter > 1)
         await t4.terminate()
 
-        # Now make sure that an exception happens if the
-        # loop won't stop for some strange reason
-        # the one_pass method will not break the timer
-        class Runaway(Timer):
-
-            runner = True
-            do_terminate = False
-            async def run(self):
-                while self.keep_running:
-                    self.start_time = time.time()
-                    try:
-                        await self.one_pass()
-                    except:
-                        self.logger.error(traceback.format_exc())
-                        
-                    while self.runner:
-                        await asyncio.sleep(0.01)
-                    self.task = None
-                    if self.do_terminate:
-                        self.terminated = True
-
-        t5 = Runaway('boom', 0, 0.05, self.target)
+        self.counter = 0
+        t5 = Timer('boom', 0, 0.05, self.exploder_target)
         # first pass should work
         t5.start()
-        self.counter = 0
         await asyncio.sleep(0.06)
         self.assertEqual(self.counter, 1)
-        with self.assertRaises(Exception) as context:
-            await t5.stop()
-        # cleanup
-        t5.runner = False
-        await asyncio.sleep(0.01)
-        await t5.stop()
-        await t5.terminate()
-
-        
-        t6 = Runaway('boom2', 0, 0.05, self.target)
-        # first pass should work
-        t6.start()
-        self.counter = 0
-        await asyncio.sleep(0.06)
-        self.assertEqual(self.counter, 1)
-        # make the interval longer so stop waits a long time
-        t6.interval = 1.0
-        asyncio.create_task(t6.stop())
-        start_time = time.time()
-        while time.time() - start_time < 0.5 and not t6.waiting:
-            await asyncio.sleep(0.01)
-        self.assertTrue(t6.waiting,
-                        msg="runaway timer stop did not show waiting")
-
-        # make the interval shorter so reset waits a short time
-        t6.interval = 0.1
-        with self.assertRaises(Exception) as context:
-            await t6.reset()
-        with self.assertRaises(Exception) as context:
-            await t6.start()
-        # cleanup
-        t6.runner = False
-        await asyncio.sleep(0.01)
-        await t6.stop()
-        await t6.terminate()
-
-        t7 = Runaway('boom3', 0, 0.05, self.target)
-        # first pass should work
-        t7.start()
-        self.counter = 0
-        await asyncio.sleep(0.06)
-        self.assertEqual(self.counter, 1)
-        asyncio.create_task(t7.stop())
-        start_time = time.time()
-        while time.time() - start_time < 0.5 and not t7.waiting:
-            await asyncio.sleep(0.01)
-        self.assertTrue(t7.waiting,
-                        msg="runaway timer stop did not show waiting")
-
-        # make it look like terminate was called before reset
-        # waiting task could start again
-        t7.do_terminate = True
-        t7.runner = False
-        with self.assertRaises(Exception) as context:
-            await t7.reset()
-
-        # Now make sure that an exception in the execution of
-        # the callback will not break the timer
-        t8 = Timer('boomer', 0, 0.05, self.exploder_target)
-        t8.start()
-        self.counter = 0
-        await asyncio.sleep(0.06)
-        self.assertEqual(self.counter, 1)
-        self.assertTrue(self.exploded)
-        self.exploded = False
         await asyncio.sleep(0.06)
         self.assertEqual(self.counter, 2)
+        self.assertTrue(self.exploded)
+        # third pass should work
+        self.exploded = False
+        await asyncio.sleep(0.06)
+        self.assertTrue(self.counter > 2)
         self.assertFalse(self.exploded)
-        
-        # cleanup
-        await t8.terminate()
+        await t5.terminate()
         
         
     def test_timer_1(self):

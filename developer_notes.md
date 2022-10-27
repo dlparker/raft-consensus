@@ -2,6 +2,47 @@
 
 # Testing
 
+Weird Stuff I can't fix
+
+Many of the tests use a scheme where one or more server
+instances are run as independent threads using the MemoryBankTellerServer
+class in see raft/dev_tools/bt_server.py or some child class
+(see pausing_app.py). There are some puzzling effects in these tests
+where tasks that use asyncio.sleep hang, so they then do not end properly
+during thread/server shutdown. This emits warnings about tasks being
+destroyed when still pending. There are related problems trying
+to cleanly stop tasks created by the raft/states/timer.py mondule,
+where the stop function never sees the timer actually stopping and
+times out while waiting for it. 
+
+At one point I did a bunch of deep fiddling of the code and was able
+to get a breakpoint fired inside the timer task code. At that point
+I could step into the asyncio.sleep call and it would hang. I fiddled
+some more and proved that it did not hang if I did asyncio.sleep(0),
+but any positive value (didn't try negative) would cause it to hang.
+After trying a bunch of stuff to see if I could change the behavior,
+I gave up.
+
+Note that this only happens after I have used the pausing features
+in pausing_app.py to get the timers to stop firing so that the test
+code can look at a non-changing state of the code under test. It is
+not a direct problem with the pausing feature, because the case that
+I caught in the debugger was a new timer that was created after the
+pause was released. 
+
+I added some extra test support code to the timer wrapper class found
+in raft/dev_tools/timer.py to allow test code to ignore the timer
+terminate/stop timeouts, which allows the tests to run but feels very
+cludgey. The complexity of the scenario makes me reluctant to try
+to build a simple example.
+
+So, until something is found to eliminate this problem, test output
+will continue to complain about the task destruction, and it is
+possible that a test will fail occasionally due to this same problem.
+If you see a complaint about timer stop or terminate not completing,
+this is probably the cause. Try the test again and see if it fails.
+
+
 # Coverage
 
 ## Coverage Exclusions
