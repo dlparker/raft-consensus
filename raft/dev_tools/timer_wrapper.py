@@ -1,12 +1,13 @@
 import time
 import asyncio
 import threading
+import traceback
 import logging
 from collections import defaultdict
 
-from raft.states.timer import Timer
+from raft.utils.timer import Timer
 
-all_sets = []
+all_sets = {}
 thread_local = threading.local()
 
 def get_timer_set():
@@ -16,7 +17,7 @@ def get_timer_set():
         if thread_local.timer_set is not None:
             return thread_local.timer_set
     thread_local.timer_set = TimerSet()
-    all_sets.append(thread_local.timer_set)
+    all_sets[threading.get_ident()] = thread_local.timer_set
     return thread_local.timer_set
 
 def get_all_timer_sets():
@@ -39,6 +40,14 @@ class TimerSet:
         self.logger.debug("registered %s in thread %s, %d total",
                           timer.eye_d, threading.get_ident(), len(self.recs))
 
+    def check_regy(self, timer):
+        if timer.eye_d in self.recs:
+            return True
+        return False
+
+    def get_timers(self):
+        return self.recs
+    
     def delete_timer(self, timer):
         if timer.eye_d in self.recs:
             del self.recs[timer.eye_d]
@@ -93,10 +102,11 @@ class ControlledTimer(Timer):
         self.logger = logging.getLogger(__name__)
         self.timer_set = get_timer_set()
         self.timer_set.register_timer(self)
-        self.allow_failed_terminate = False
-        self.stop_on_go = False
 
     def start(self):
+        if not self.timer_set.check_regy(self):
+            traceback.print_stack()
+            raise Exception('huh?')
         self.logger.debug("Starting timer %s", self.eye_d)
         super().start()
 

@@ -5,7 +5,7 @@ import logging
 import traceback
 import time
 
-from ..states.timer import Timer
+from ..utils.timer import Timer
 from ..utils import task_logger
 from ..app_api.app import App
 
@@ -19,7 +19,7 @@ class Server:
         self.total_nodes = len(self.other_nodes) + 1
         self.logger = logging.getLogger(__name__)
         self.comms = comms
-        self.timer_class = None
+        self.timer_class = Timer
         self.state_map = state_map
         self.state = None # needed because activate will call set_state
         self.app = app
@@ -67,8 +67,6 @@ class Server:
     
     def get_timer(self, name, term, interval, callback):
         self.logger.info("creating timer %s", name)
-        if not self.timer_class:
-            return Timer(name, term, interval, callback)
         return self.timer_class(name, term, interval, callback)
 
     def set_timer_class(self, cls):

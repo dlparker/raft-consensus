@@ -18,7 +18,7 @@ from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.states.follower import Follower
 from bank_teller.bank_app import BankingApp
-from raft.dev_tools.timer import ControlledTimer, get_timer_set
+from raft.dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 
 manager = multiprocessing.Manager()
 csns = manager.Namespace()

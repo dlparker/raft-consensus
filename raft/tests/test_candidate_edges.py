@@ -17,6 +17,7 @@ from raft.states.base_state import Substate
 from raft.dev_tools.bt_client import MemoryBankTellerClient
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PFollower, PLeader
+from raft.dev_tools.timer_wrapper import get_all_timer_sets
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -93,8 +94,6 @@ class TestOddMsgArrivals(unittest.TestCase):
         pass
     
     def setUp(self):
-        if self.logger is None:
-            self.logger = logging.getLogger(__name__)
         self.cluster = PausingServerCluster(server_count=3,
                                             logging_type=LOGGING_TYPE,
                                             base_port=5000)
@@ -103,21 +102,22 @@ class TestOddMsgArrivals(unittest.TestCase):
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
+        self.logger = logging.getLogger("raft.tests." + __name__)
                 
     def tearDown(self):
         self.cluster.stop_all_servers()
         time.sleep(0.1)
-        #self.loop.close()
+        self.loop.close()
 
     def preamble(self):
         servers = self.cluster.prepare(timeout_basis=timeout_basis)
         # start just the one server and wait for it
         # to pause in candidate state
         spec = servers["server_0"]
-        self.cluster.start_one_server("server_0")
-        self.logger.info("waiting for switch to candidate")
         monitor = spec.monitor
         monitor.set_pause_on_substate(Substate.voting)
+        self.cluster.start_one_server("server_0")
+        self.logger.info("waiting for switch to candidate")
         start_time = time.time()
         while time.time() - start_time < 3:
             # servers are in their own threads, so
@@ -130,18 +130,19 @@ class TestOddMsgArrivals(unittest.TestCase):
                             break
         self.assertEqual(monitor.substate, Substate.voting)
         self.assertTrue(monitor.pbt_server.paused)
+        self.logger.info(f"\n Timers \n")
         return spec
         
     def test_a_terminated_blocks(self):
         spec = self.preamble()
         monitor = spec.monitor
         candidate = monitor.state
+        self.logger.info("Candidate paused, going to call stop on it")
         async def try_stop():
             await candidate.stop()
         self.loop.run_until_complete(try_stop())
         self.assertTrue(candidate.terminated)
-        # second call should appear to work
-        # start should raise
+        self.logger.info("Calling stop again, should raise")
         with self.assertRaises(Exception) as context:
             candidate.start()
         self.assertTrue("terminated" in str(context.exception))
@@ -150,6 +151,7 @@ class TestOddMsgArrivals(unittest.TestCase):
         # call to self.candidate_timer.start() will raise
         # an exception, so just making the call to
         # start_election is a test. No raise means no problem
+        self.logger.info("Trying start election while terminated")
         self.assertTrue(candidate.candidate_timer.terminated)
         async def try_election():
             await candidate.start_election()
@@ -158,22 +160,32 @@ class TestOddMsgArrivals(unittest.TestCase):
         # someone removes it or changes the logic, then the
         # call to resign will result in a state_map change
         # to follower.
+        self.logger.info("Trying resign while terminated")
+        # make sure it does not blow up on seeing the timer
+        # is terminated, fake it to look like it is still running
         candidate.candidate_timer.terminated = False
         async def try_resign():
             await candidate.resign()
         self.loop.run_until_complete(try_resign())
         # make sure it did not switch
         self.assertEqual(spec.pbt_server.state_map.state, candidate)
+        self.logger.info("State did not change, test passed, cleaning up")
+        monitor.clear_pause_on_substate(Substate.voting)
+        self.loop.run_until_complete(spec.pbt_server.resume_all())
+        
         
     def test_b_msg_rejects(self):
         spec = self.preamble()
         monitor = spec.monitor
         server = spec.server_obj # this is the servers/server.py Server
         # leave the timer off but allow comms again
+        self.logger.info("Candidate paused, sending status query")
         client =  MemoryBankTellerClient("localhost", 5000)
         status = client.get_status()
         res = client.do_credit(10)
         self.assertTrue('not available' in res)
+        self.logger.info("Status query returned 'not available' as expected")
+        self.logger.info("Setting candidate to terminated")
         monitor.state.terminated = True
         self.assertTrue(monitor.state.is_terminated())
         # any old message would do
@@ -181,8 +193,8 @@ class TestOddMsgArrivals(unittest.TestCase):
                                ("localhost", 5000),
                                0,
                                {})
+        self.logger.info("Sending term start message expecting reject")
         client.direct_message(tsm)
-
         self.assertEqual(len(server.get_unhandled_errors()), 0)
         start_time = time.time()
         while time.time() - start_time < 3:
@@ -190,10 +202,15 @@ class TestOddMsgArrivals(unittest.TestCase):
             if len(server.unhandled_errors) > 0:
                 break
         self.assertEqual(len(server.get_unhandled_errors()), 1)
+        self.logger.info("Reject resulted in server saving error\n%s",
+                         server.get_unhandled_errors()[0])
+        self.logger.info("clearing terminated flag")
         monitor.state.terminated = False
-        self.assertFalse(monitor.state.is_terminated())
-
-        # now send a message that has no handler
+        # Now send a message that has no handler.
+        # The StatusQuery message sequence is designed for client
+        # to server, not server to server, so server does not expect
+        # to get response, so no handler registered
+        self.logger.info("Sending message that has no registered handler")
         sqrm = StatusQueryResponseMessage(("localhost", 5001),
                                           ("localhost", 5000),
                                           0,
@@ -205,16 +222,22 @@ class TestOddMsgArrivals(unittest.TestCase):
             if len(server.unhandled_errors) > 1:
                 break
         self.assertEqual(len(server.get_unhandled_errors()), 2)
+        self.logger.info("Reject resulted in server saving error\n%s",
+                         server.get_unhandled_errors()[1])
         
         # now simulate a new message indicating the term needs to go up
         log = server.get_log()
         log_term = log.get_term()
+        self.logger.info("Releasing pause and resuming candidate")
         monitor.clear_pause_on_substate(Substate.voting)
         self.loop.run_until_complete(spec.pbt_server.resume_all())
         tsm = TermStartMessage(("localhost", 5001),
                                ("localhost", 5000),
                                log_term + 1,
                                {"leaderPort":('localhost', 5001)})
+        self.logger.info("Sending term start that should cause term" \
+                         " value change from %s to %s", log_term,
+                         log_term + 1)
         client.direct_message(tsm)
         start_time = time.time()
         while time.time() - start_time < 3:
@@ -222,6 +245,7 @@ class TestOddMsgArrivals(unittest.TestCase):
             if log.get_term() == log_term + 1:
                 break
         self.assertEqual(log.get_term(), log_term + 1)
+        self.logger.info("starting other two servers and waiting for election")
         self.cluster.start_one_server("server_1")
         self.cluster.start_one_server("server_2")
         time.sleep(0.1)
@@ -235,6 +259,7 @@ class TestOddMsgArrivals(unittest.TestCase):
                 break
         self.assertIsNotNone(status)
         self.assertIsNotNone(status.data['leader'])
+        self.logger.info("Elected %s, test passed", status.data['leader'])
             
     def release_to_resign(self, spec, method):
         monitor = spec.monitor

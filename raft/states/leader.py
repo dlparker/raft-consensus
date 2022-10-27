@@ -13,7 +13,6 @@ from ..messages.termstart import TermStartMessage
 from ..messages.log_pull import LogPullResponseMessage
 from ..utils import task_logger
 from .base_state import State, Substate
-from .timer import Timer
 
 @dataclass
 class FollowerCursor:

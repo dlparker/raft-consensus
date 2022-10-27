@@ -7,7 +7,6 @@ from ..messages.request_vote import RequestVoteMessage
 from ..utils import task_logger
 from .voter import Voter
 from .leader import Leader
-from .timer import Timer
 from .base_state import Substate
 
 
@@ -138,7 +137,7 @@ class Candidate(Voter):
             # no log records yet
             last_index = None
             last_term = None
-        self.candidate_timer.start()
+        await self.candidate_timer.reset()
         log.incr_term()
         self.term = log.get_term()
         self.logger.info("candidate starting election term is %d, timeout is %f",

@@ -15,7 +15,7 @@ from raft.app_api.app import StateChangeMonitor
 from raft.comms.memory_comms import MessageInterceptor
 
 from raft.dev_tools.bt_server import MemoryBankTellerServer
-from raft.dev_tools.timer import get_timer_set
+from raft.dev_tools.timer_wrapper import get_timer_set
 
 class PFollower(Follower):
 
@@ -90,6 +90,7 @@ class PausingMonitor(StateChangeMonitor):
             self.logger.error(msg)
             #raise Exception(msg)
             print(f"\n\n\t{msg}")
+            traceback.print_stack()
             print(f"\n\tsuiciding\n\n")
             os.system(f"kill {os.getpid()}")
 
@@ -127,10 +128,15 @@ class PausingMonitor(StateChangeMonitor):
         import threading
         this_id = threading.Thread.ident
         if self.pbt_server.paused:
-            msg = f"trying {self.name} {state} to " \
+            msg = f"trying {self.name} {state} to" \
                 f" substate {substate} but should be paused!"
             self.logger.error(msg)
             #raise Exception(msg)
+            print(f"\n\n\t{msg}")
+            traceback.print_stack()
+            print(f"\nthread is {threading.get_ident()}\n");
+            self.logger.debug(f"\n Timers \n")
+            print(f"\n\tsuiciding\n\n")
             os.system(f"kill {os.getpid()}")
 
         if self.substate != substate:
@@ -336,10 +342,10 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.do_resume = False
 
     async def pause_all(self, trigger_type, trigger_data):
-        self.paused = True
-        self.state_map.state.pause = True
         timer_set = get_timer_set()
         await timer_set.pause_all()
+        self.paused = True
+        self.state_map.state.pause = True
         if False:
             try:
                 start_time = time.time()

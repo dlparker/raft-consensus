@@ -30,8 +30,6 @@ class TestPausing(unittest.TestCase):
         pass
     
     def setUp(self):
-        if self.logger is None:
-            self.logger = logging.getLogger(__name__)
         self.cluster = PausingServerCluster(server_count=3,
                                logging_type=LOGGING_TYPE,
                                base_port=5000)
@@ -40,6 +38,7 @@ class TestPausing(unittest.TestCase):
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
+        self.logger = logging.getLogger(__name__)
                 
     def tearDown(self):
         self.cluster.stop_all_servers()

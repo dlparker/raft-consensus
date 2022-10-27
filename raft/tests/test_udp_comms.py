@@ -7,7 +7,6 @@ import os
 from dataclasses import dataclass
 
 from raft.comms.udp import UDPComms
-from raft.states.timer import Timer
 from raft.messages.status import StatusQueryMessage, StatusQueryResponseMessage
 
 #LOGGING_TYPE = "silent" for no log at all
