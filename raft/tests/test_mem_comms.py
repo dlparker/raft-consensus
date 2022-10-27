@@ -68,6 +68,7 @@ class TestBasic(unittest.TestCase):
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
             await end_1.post_message(msg1)
+            self.assertFalse(end_1.are_out_queues_empty())
             start_time = time.time()
             while time.time() - start_time < 0.1:
                 await asyncio.sleep(0.001)
@@ -75,7 +76,6 @@ class TestBasic(unittest.TestCase):
                     continue
                 if not server_2.in_queue.empty():
                     break
-            
             self.assertFalse(server_2.in_queue.empty())
             msg1_sent = await server_2.in_queue.get()
             reply_1 = StatusQueryResponseMessage(end_2.endpoint,
@@ -83,7 +83,6 @@ class TestBasic(unittest.TestCase):
                                                  term=0,
                                                  data=msg1_sent.data)
             await end_2.post_message(reply_1)
-            
             start_time = time.time()
             while time.time() - start_time < 0.1:
                 await asyncio.sleep(0.001)
@@ -283,79 +282,6 @@ class TestDebugControls(unittest.TestCase):
     def tearDown(self):
         pass
 
-    def test_pause_on_send(self):
-        self.logger.info("starting test_pause_on_send")
-        
-        end_1 = MemoryComms()
-        server_1 = FakeServer()
-        end_2 = MemoryComms()
-        server_2 = FakeServer()
-
-        async def do_seq1():
-            await end_1.start(server_1, (0, 0))
-            await end_2.start(server_2, (0, 1))
-            msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
-                                      term=0, data=dict(foo="bar"))
-            # if we set pause, outgoing should be pending but
-            # not sent
-            end_1.pause()
-            asyncio.create_task(end_1.post_message(msg1))
-            await asyncio.sleep(.01)
-            self.assertTrue(server_2.in_queue.empty())
-            # resume and it should go
-            end_1.resume()
-            await asyncio.sleep(.01)
-            self.assertFalse(server_2.in_queue.empty())
-            
-            await end_1.stop()
-            await end_2.stop()
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(do_seq1())
-        except KeyboardInterrupt:
-            pass
-        logging.info('Closing the loop')
-        loop.close()
-
-    def test_pause_on_reply(self):
-        self.logger.info("starting test_pause_on_send")
-        
-        end_1 = MemoryComms()
-        server_1 = FakeServer()
-        end_2 = MemoryComms()
-        server_2 = FakeServer()
-
-        async def do_seq1():
-            await end_1.start(server_1, (0, 0))
-            await end_2.start(server_2, (0, 1))
-            msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
-                                      term=0, data=dict(foo="bar"))
-            # if we set pause on end_2, outgoing from end_1 should go
-            # to queue, but incomming on end_2 should deuque
-            end_2.pause()
-            await end_1.post_message(msg1)
-            await asyncio.sleep(.01)
-            self.assertFalse(end_1.are_out_queues_empty())
-            # resume and it should deliver
-            end_2.resume()
-            await asyncio.sleep(.01)
-            self.assertTrue(end_1.are_out_queues_empty())
-            self.assertFalse(server_2.in_queue.empty())
-            await end_1.stop()
-            await end_2.stop()
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(do_seq1())
-        except KeyboardInterrupt:
-            pass
-        logging.info('Closing the loop')
-        loop.close()
-        
-        
     def test_interceptor(self):
 
         self.logger.info("starting test_pause_on_send")
@@ -364,10 +290,15 @@ class TestDebugControls(unittest.TestCase):
         server_1 = FakeServer()
         end_2 = MemoryComms()
         server_2 = FakeServer()
+        self.hold_pause = {InterceptorMode.out_before: True,
+                          InterceptorMode.out_after: True,
+                          InterceptorMode.in_before: True,
+                          InterceptorMode.in_after: True}
         pauses = []
         async def pause_method(mode, code, message):
             pauses.append(dict(mode=mode, code=code, message=message))
-            return False # causes pause in comms code
+            while self.hold_pause[mode]:
+                await asyncio.sleep(0.001)
                           
         inter1 = MyInterceptor(self.logger, pause_method)
         inter1.add_trigger(InterceptorMode.out_before,
@@ -396,17 +327,18 @@ class TestDebugControls(unittest.TestCase):
             await asyncio.sleep(.01)
             self.assertEqual(len(pauses), 1)
             self.assertEqual(pauses[0]['mode'], InterceptorMode.out_before)
-
-            end_1.resume()
+            self.hold_pause[InterceptorMode.out_before] = False
             await asyncio.sleep(.01)
             self.assertEqual(len(pauses), 3)
             self.assertEqual(pauses[1]['mode'], InterceptorMode.out_after)
             self.assertEqual(pauses[2]['mode'], InterceptorMode.in_before)
-            end_2.resume()
+            self.hold_pause[InterceptorMode.out_before] = False
+            self.hold_pause[InterceptorMode.in_before] = False
             await asyncio.sleep(.01)
             self.assertEqual(len(pauses), 4)
-            self.assertEqual(pauses[2]['mode'], InterceptorMode.in_before)
             self.assertEqual(pauses[3]['mode'], InterceptorMode.in_after)
+            self.hold_pause[InterceptorMode.in_after] = False
+            await asyncio.sleep(0)
             
             await end_1.stop()
             await end_2.stop()

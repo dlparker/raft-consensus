@@ -354,7 +354,6 @@ class PausingBankTellerServer(MemoryBankTellerServer):
                     await asyncio.sleep(0.01)
                 if not self.comms.queue.empty():
                     self.logger.error("comms queue never emptied, runnaway")
-                #await self.comms.pause()
             except:
                 self.logger.error(traceback.format_exc())
                 raise
@@ -404,6 +403,5 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         if self.do_resume:
             timer_set = get_timer_set()
             timer_set.resume_all()
-            self.comms.resume()
             self.paused = False
             self.do_resume = False
