@@ -117,14 +117,16 @@ class MemoryComms(CommsAPI):
             if self.interceptor:
                 # let test code decide to pause things before
                 # delivering
+                self.logger.debug("calling interceptor before %s", message.code)
                 deliver = await self.interceptor.before_out_msg(message)
                 if not deliver:
                     self.paused = True
                     # don't unpause in case was paused excplicitly
             if self.paused:
-                self.logger.debug("pausing before send to %s", target)
+                self.logger.info("pausing before send to %s", target)
                 while self.paused:
                     await asyncio.sleep(0.001)   
+                self.logger.info("exiting paused condition")
             queue = queues[target]
             data = Serializer.serialize(message)
             w = Wrapper(data, self.endpoint)
@@ -134,13 +136,15 @@ class MemoryComms(CommsAPI):
             if self.interceptor:
                 # let test code decide to pause things after
                 # delivering
+                self.logger.debug("calling interceptor after %s", message.code)
                 deliver = await self.interceptor.after_out_msg(message)
                 if not deliver:
                     # don't unpause in case was paused excplicitly
                     self.paused = True
-                    self.logger.debug("pausing after send to %s", target)
+                    self.logger.info("pausing after send to %s", target)
                     while self.paused:
                         await asyncio.sleep(0.001)   
+                    self.logger.info("exiting paused condition")
         except Exception: # pragma: no cover error
             self.logger.error(traceback.format_exc())
 

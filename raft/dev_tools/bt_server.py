@@ -277,7 +277,7 @@ class ServerThread(threading.Thread):
                 if t != asyncio.current_task():
                     undone.append(t)
         for t in undone:
-            print(f"cancelling {t}")
+            self.logger.info("cancelling %s", t)
             t.cancel()
             await asyncio.sleep(0)
         self.running = False

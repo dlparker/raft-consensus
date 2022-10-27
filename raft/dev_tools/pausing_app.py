@@ -120,7 +120,7 @@ class PausingMonitor(StateChangeMonitor):
                 clear = True
                 self.logger.warning("removing state pause for %s",
                                     new_state)
-            if clear:
+            if clear and state in self.pause_on_states:
                 del self.pause_on_states[str(state)] 
         return new_state
 
@@ -159,7 +159,7 @@ class PausingMonitor(StateChangeMonitor):
                 clear = True
                 self.logger.warning("removing substate pause from  %s",
                                     substate)
-            if clear:
+            if clear and substate in self.pause_on_substates:
                 del self.pause_on_substates[substate] 
 
     def set_pause_on_state(self, state: State, method=None):

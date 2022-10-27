@@ -130,7 +130,6 @@ class TestOddMsgArrivals(unittest.TestCase):
                             break
         self.assertEqual(monitor.substate, Substate.voting)
         self.assertTrue(monitor.pbt_server.paused)
-        self.logger.info(f"\n Timers \n")
         return spec
         
     def test_a_terminated_blocks(self):

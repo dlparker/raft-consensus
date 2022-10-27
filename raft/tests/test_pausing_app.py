@@ -71,7 +71,21 @@ class TestPausing(unittest.TestCase):
         self.assertEqual(pause_count, 3,
                          msg=f"only {pause_count} servers paused on election")
 
+        for spec in servers.values():
+            spec.monitor.clear_pause_on_substate(Substate.synced)
+            spec.monitor.clear_pause_on_substate(Substate.sent_heartbeat)
         self.cluster.resume_all_paused_servers()
+        while time.time() - start_time < 4:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            pause_count = 0
+            for spec in servers.values():
+                if spec.pbt_server.paused:
+                    pause_count += 1
+            if pause_count == 0:
+                break
+        self.assertEqual(pause_count, 0)
         
     def test_pause_at_election_done_by_message(self):
         servers = self.cluster.prepare(timeout_basis=timeout_basis)
@@ -119,7 +133,25 @@ class TestPausing(unittest.TestCase):
         self.assertEqual(pause_count, 3,
                          msg=f"only {pause_count} servers pause on election")
 
+        for spec in servers.values():
+            inter = spec.pbt_server.interceptor
+            tcp = TwoCountPauser(spec.pbt_server)
+            inter.clear_trigger(InterceptorMode.out_after,
+                              TermStartMessage._code)
+            inter.clear_trigger(InterceptorMode.in_after,
+                                TermStartMessage._code)
         self.cluster.resume_all_paused_servers()
+        while time.time() - start_time < 4:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            pause_count = 0
+            for spec in servers.values():
+                if spec.pbt_server.paused:
+                    pause_count += 1
+            if pause_count == 0:
+                break
+        self.assertEqual(pause_count, 0)
   
 
 

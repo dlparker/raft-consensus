@@ -147,7 +147,7 @@ class PauseAfterElection(SubstatePauseStep):
                                                 old_substate,
                                                 new_substate)
         if new_substate == Substate.became_leader:
-            asyncio.create_task(leader_pause(spec))
+            await leader_pause(spec)
             return True
         return await monitor.substate_pause_method(monitor, state,
                                                    old_substate, new_substate)

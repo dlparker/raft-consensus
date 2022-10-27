@@ -42,7 +42,8 @@ class TestMap(unittest.TestCase):
         loop.close()
         
     async def inner_test_methods(self):
-        bt_server = MemoryBankTellerServer(0, Path('.'), "foo", (1,2), None)
+        bt_server = MemoryBankTellerServer(0, Path('.'), "foo",
+                                           (('l',1),('l',2)), None)
         smap = bt_server.state_map = StandardStateMap()
         # make sure all errors raise when calls made
         # before activate call
