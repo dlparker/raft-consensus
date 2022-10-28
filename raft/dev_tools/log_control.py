@@ -22,10 +22,11 @@ def set_levels(handler_names):
     log_loggers['raft.states.follower'] = debug_log
     #log_loggers['raft.states.follower:heartbeat'] = debug_log
     log_loggers['raft.states.leader'] = debug_log
-    #log_loggers['raft.states.leader:heartbeat'] = debug_log
+    log_loggers['raft.states.leader:heartbeat'] = debug_log
     #log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests'] = debug_log
     #log_loggers['raft.dev_tools.timer_wrapper'] = debug_log
+    log_loggers['raft.dev_tools.pausing_app'] = debug_log
     #log_loggers['raft.states.timer'] = debug_log
     #log_loggers['raft.comms.memory_comms'] = debug_log
     return log_loggers
@@ -133,7 +134,12 @@ def one_proc_log_setup(file_path="/tmp/raft_tests/test.log"):
                                           format_string=lfstring)
     
     # apply the caller's modifications to the level specs
-    dictConfig(config)
+    try:
+        dictConfig(config)
+    except:
+        from pprint import pprint
+        pprint(config)
+        raise
     return config
     
 def stop_logging_server():

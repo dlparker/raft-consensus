@@ -26,6 +26,7 @@ class Server:
         self.comms_task = None
         self.running = False
         self.unhandled_errors = []
+        self.handled_errors = []
 
     def start(self):
         if self.running:
@@ -85,6 +86,18 @@ class Server:
             self.unhandled_errors = []
         return result
 
+    def get_handled_errors(self, clear=False):
+        result = self.handled_errors
+        if clear:
+            self.handled_errors = []
+        return result
+
+    def record_unexpected_state(self, state, desc):
+        details = f"State {state} got {desc} \n"
+        e = dict(code="state_operation_unexpected",
+                 details=details)
+        self.handled_errors.append(e)
+
     def record_failed_state_change(self, old_state, target_state,
                                    error_data):
         details = f"Change from {old_state} to {target_state} failed. "
@@ -92,6 +105,15 @@ class Server:
         e = dict(code="state_change_failed",
                  details=details)
         self.unhandled_errors.append(e)
+        
+    def record_failed_state_operation(self, state, desc, 
+                                      error_data):
+        details = f"State {state} failed {desc} \n"
+        details += error_data
+        e = dict(code="state_operation_failed",
+                 details=details)
+        self.unhandled_errors.append(e)
+        
         
     async def on_message(self, message, recursed=False):
         try:

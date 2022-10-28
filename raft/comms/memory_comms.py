@@ -103,8 +103,9 @@ class MemoryComms(CommsAPI):
             # this can happen at startup, waiting for
             # other server threads to start
             if target not in queues:
-                self.logger.info("%s not connected to %s", self.endpoint,
-                                 target)
+                self.logger.info("%s not connected to %s," \
+                                 " not sending %s", self.endpoint,
+                                 target, message.code)
                 return
             if self.interceptor:
                 # let test code decide to pause things before

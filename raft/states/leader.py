@@ -79,8 +79,10 @@ class Leader(State):
         try:
             await self.send_term_start()
         except:
-            self.logger.error(traceback.format_exc())
+            sm = self.server.get_state_map()
             self.task = None
+            self.server.record_failed_state_operation(self, "send_term_start",
+                                                      traceback.format_exc())
             raise
         self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
@@ -98,7 +100,9 @@ class Leader(State):
         log = self.server.get_log()
         last_rec = log.read()
         if not last_rec:
-            self.logger.warning("Got append response when log is empty")
+            msg = "Got append response when log is empty"
+            self.logger.warning(msg)
+            self.server.record_unexpected_state(self, msg)
             return True
         last_index = last_rec.index
         last_term = last_rec.term
@@ -115,10 +119,11 @@ class Leader(State):
         # last_index could be None if append call was for first log
         # entry
         if sender_index and last_index and last_index != sender_index + 1:
-            self.logger.error("got append response message from %s"
-                              " for index %s but " \
-                              "log index is up to %s, should be one less",
-                              message.sender, sender_index, last_index)
+            msg = f"got append response message from {message.sender}" \
+                f" for index {sender_index} but" \
+                f" log index is up to {last_index}, should be one less"
+            self.logger.error(msg)
+            self.server.record_unexpected_state(self, msg)
             return True
             
         fc = self.followers[message.sender]
@@ -210,7 +215,9 @@ class Leader(State):
             return True
         if start_index is None:
             start_index = 0
-        if start_index > last_rec.index or start_index > log.get_commit_index():
+        if log.get_commit_index() is None:
+            index_limit = -1
+        if start_index > last_rec.index or start_index > index_limit:
             self.logger.info("follower %s asking for log pull %d beyond log limit %d or commit %d",
                              message.sender, start_index, last_rec.index, log.get_commit_index())
             reply = LogPullResponseMessage(
@@ -273,6 +280,8 @@ class Leader(State):
                 "leaderCommit": log.get_commit_index(),
             }
         )
+        self.heartbeat_logger.debug("sending heartbeat to all commit = %s",
+                                    message.data['leaderCommit'])
         await self.server.broadcast(message)
         self.heartbeat_logger.debug("sent heartbeat to all commit = %s",
                                     message.data['leaderCommit'])

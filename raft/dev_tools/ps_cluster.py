@@ -208,18 +208,25 @@ class PausingServerCluster:
         self.dir_recs = {}
         self.all_server_addrs = []
         self.pause_stepper = None
-        if self.logging_type == "devel_one_proc":
-            self.log_config = one_proc_log_setup()
-        else:
-            logging.getLogger().handlers = []
-            self.log_config = None
-        self.logger = logging.getLogger(__name__)
+        self.logger = None
         reset_queues()
 
     def get_servers(self):
         return self.server_specs
 
+    def ensure_logger_and_dirs(self):
+        if len(self.dir_recs) == 0:
+            self.dir_recs = self.setup_dirs()
+        if self.logger is None:
+            if self.logging_type == "devel_one_proc":
+                self.log_config = one_proc_log_setup()
+            else:
+                logging.getLogger().handlers = []
+                self.log_config = None
+            self.logger = logging.getLogger(__name__)
+        
     def prepare_one(self, name, restart=False, timeout_basis=1.0):
+        self.ensure_logger_and_dirs()
         if restart:
             self.setup_server_dir(name)
         others = []
@@ -240,11 +247,11 @@ class PausingServerCluster:
                           interceptor=pbt_server.interceptor)
         self.server_specs[spec.name] = spec
         return spec
-        
+
     def prepare(self, timeout_basis=1.0):
         if len(self.server_specs) > 0:
             raise Exception("cannot call prepare more than once")
-        self.dir_recs = self.setup_dirs()
+        self.ensure_logger_and_dirs()
         self.all_server_addrs = [ sdef['addr'] for sdef in 
                                   self.dir_recs.values() ]
         for name, dir_rec in self.dir_recs.items():

@@ -169,8 +169,6 @@ class TestMemoryLog(unittest.TestCase):
         self.assertEqual(mlog.get_term(), 11)
 
 
-    
-      
 class TestTimer(unittest.TestCase):
 
     def setUp(self):
@@ -280,7 +278,31 @@ class TestTimer(unittest.TestCase):
         self.assertTrue(self.counter > 2)
         self.assertFalse(self.exploded)
         await t5.terminate()
+
+        class QuickStop(Timer):
+            def start(self):
+                super().start()
+                self.keep_running = False
         
+        self.counter = 0
+        t6 = QuickStop('die', 0, 0.05, self.target)
+        # first make sure it doesn't start if it
+        # thinks it is running
+        t6.keep_running = True
+        t6.start()
+        self.assertIsNone(t6.timer_handle)
+        # Now make sure it exits the fire method early,
+        # without calling the callback
+        t6.keep_running = False
+        t6.start()
+        await asyncio.sleep(0.06)
+        self.assertIsNone(t6.timer_handle)
+        self.assertEqual(self.counter, 0)
+        
+        class StopOnStart(Timer):
+            def start(self):
+                super().start()
+                self.termintated = True
         
     def test_timer_1(self):
         try:

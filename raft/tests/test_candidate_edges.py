@@ -9,7 +9,9 @@ from pathlib import Path
 
 from raft.messages.termstart import TermStartMessage
 from raft.messages.heartbeat import HeartbeatMessage
+from raft.messages.heartbeat import HeartbeatResponseMessage
 from raft.messages.append_entries import AppendEntriesMessage
+from raft.messages.append_entries import AppendResponseMessage
 from raft.messages.request_vote import RequestVoteMessage
 from raft.messages.request_vote import RequestVoteResponseMessage
 from raft.messages.status import StatusQueryResponseMessage
@@ -173,11 +175,44 @@ class TestOddMsgArrivals(unittest.TestCase):
         self.loop.run_until_complete(spec.pbt_server.resume_all())
         
         
+    def test_b_msg_ignores(self):
+        spec = self.preamble()
+        monitor = spec.monitor
+        server = spec.server_obj # this is the servers/server.py Server
+        # leave the timer off but allow comms 
+        client =  MemoryBankTellerClient("localhost", 5000)
+        status = client.get_status()
+        self.assertIsNotNone(status)
+        tsm = RequestVoteMessage(("localhost", 5001),
+                               ("localhost", 5000),
+                               0,
+                               {})
+        self.logger.info("Sending request vote message" \
+                         " expecting no error ignore")
+        client.direct_message(tsm)
+        self.assertEqual(len(server.get_unhandled_errors()), 0)
+        tsm = AppendResponseMessage(("localhost", 5001),
+                                    ("localhost", 5000),
+                                    0,
+                                    {})
+        self.logger.info("Sending AppendEntries response message" \
+                         " expecting no error ignore")
+        client.direct_message(tsm)
+        self.assertEqual(len(server.get_unhandled_errors()), 0)
+        tsm = HeartbeatResponseMessage(("localhost", 5001),
+                                           ("localhost", 5000),
+                                           0,
+                                           {})
+        self.logger.info("Sending heartbeat response message" \
+                         " expecting no error ignore")
+        client.direct_message(tsm)
+        self.assertEqual(len(server.get_unhandled_errors()), 0)
+        
     def test_b_msg_rejects(self):
         spec = self.preamble()
         monitor = spec.monitor
         server = spec.server_obj # this is the servers/server.py Server
-        # leave the timer off but allow comms again
+        # leave the timer off but allow comms 
         self.logger.info("Candidate paused, sending status query")
         client =  MemoryBankTellerClient("localhost", 5000)
         status = client.get_status()

@@ -30,3 +30,11 @@ Maybe an "ErrorSink" class?
 Find all the state locations that can produce an unrecoverable
 error and have them report the error to the state machine, which
 will report it to the server, which will save it in unrecoverable.
+
+Build an unrecoverable error mechanism that calls app.restart to
+see if the server should die, restart, or whatever. Maybe a callback
+in the base server? (Maybe need to rename "Server" class to something
+like ServerCore?) Find all bad spots in the states and change the
+exception clauses to call this method, execute stop on self and return.
+
+

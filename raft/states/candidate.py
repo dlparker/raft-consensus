@@ -187,12 +187,12 @@ class Candidate(Voter):
         await self.dispose_client_command(message, self.server)
         return True
 
-    async def on_append_response(self, message): # pragma: no cover error
+    async def on_append_response(self, message):
         self.logger.warning("candidate unexpectedly got append response from %s",
                             message.sender)
         return True
 
-    async def on_heartbeat_response(self, message):  # pragma: no cover error
+    async def on_heartbeat_response(self, message): 
         self.logger.warning("candidate unexpectedly got heartbeat response from %s",
                             message.sender)
         return True

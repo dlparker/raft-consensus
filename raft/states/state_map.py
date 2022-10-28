@@ -156,7 +156,7 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 await monitor.new_substate(self, state, substate)
-            except GeneratorExit:
+            except GeneratorExit: # pragma: no cover error
                 pass
             except:
                 self.logger.error("Monitor new_substate call got" \
@@ -173,7 +173,7 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 follower = await monitor.new_state(self, self.state, follower)
-            except GeneratorExit:
+            except GeneratorExit: # pragma: no cover error
                 raise
             except:
                 self.logger.error("Monitor new_state call got exception \n\t%s",
@@ -198,7 +198,7 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 candidate = await monitor.new_state(self, self.state, candidate)
-            except GeneratorExit:
+            except GeneratorExit: # pragma: no cover error
                 pass
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
@@ -223,7 +223,7 @@ class StandardStateMap(StateMap):
         for monitor in self.monitors:
             try:
                 leader = await monitor.new_state(self, self.state, leader)
-            except GeneratorExit:
+            except GeneratorExit: # pragma: no cover error
                 pass
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",

@@ -23,7 +23,7 @@ fi
 if [ -z ${DO_COVERAGE+x} ]; then
     COVER_OPTION=""
 else
-    COVER_OPTION="--cov=raft --cov-config=`pwd`/raft/coverage.cfg --cov-report=html --cov-report=term"
+    COVER_OPTION="--cov=raft --cov-config=`pwd`/raft/coverage.cfg --cov-report=html --cov-report=term --cov-append"
 fi    
 
 

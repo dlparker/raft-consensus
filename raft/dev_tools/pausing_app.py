@@ -139,13 +139,13 @@ class PausingMonitor(StateChangeMonitor):
             print(f"\n\tsuiciding\n\n")
             os.system(f"kill {os.getpid()}")
 
-        if self.substate != substate:
-            self.logger.info(f"{self.name} {state} to substate {substate}")
         self.substate_history.append(self.substate)
         old_substate = self.substate
         self.substate = substate
         self.state_map = state_map
         method = self.pause_on_substates.get(substate, None)
+        self.logger.debug("state %s substate from %s to %s, method %s",
+                          state, old_substate, substate, method)
         if method:
             try:
                 self.logger.info(f"{self.name} calling substate method")
