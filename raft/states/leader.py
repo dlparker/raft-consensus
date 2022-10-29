@@ -376,13 +376,13 @@ class Leader(State):
         await self.server.broadcast(update_message)
         return True
 
-    async def on_vote_received(self, message): # pragma: no cover error
+    async def on_vote_received(self, message):
         log = self.server.get_log()
         self.logger.info("leader ignoring vote reply: message.term = %d local_term = %d",
                          message.term, log.get_term())
         return True
 
-    async def on_vote_request(self, message): # pragma: no cover error
+    async def on_vote_request(self, message): 
         log = self.server.get_log()
         self.logger.info("vote request from %s, sending am leader",
                          message.sender)
@@ -398,17 +398,17 @@ class Leader(State):
         await self.server.post_message(reply)
         return True
     
-    async def on_append_entries(self, message): # pragma: no cover error
+    async def on_append_entries(self, message):
         self.logger.warning("leader unexpectedly got append entries from %s",
                             message.sender)
         return True
     
-    async def on_term_start(self, message): # pragma: no cover error
+    async def on_term_start(self, message):
         self.logger.warning("leader got term start message from %s, makes no sense!",
                          message.sender) 
         return True
 
-    async def on_heartbeat(self, message): # pragma: no cover error
+    async def on_heartbeat(self, message):
         self.logger.warning("Why am I getting hearbeat when I am leader?")
         return True
 

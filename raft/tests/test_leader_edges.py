@@ -7,6 +7,11 @@ import os
 from pathlib import Path
 
 
+from raft.messages.request_vote import RequestVoteMessage
+from raft.messages.request_vote import RequestVoteResponseMessage
+from raft.messages.append_entries import AppendEntriesMessage
+from raft.messages.termstart import TermStartMessage
+from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.append_entries import AppendResponseMessage
 from raft.messages.log_pull import LogPullMessage
 from raft.comms.memory_comms import MemoryComms
@@ -197,35 +202,10 @@ class TestOddPaths(unittest.TestCase):
         time.sleep(0.1)
         self.loop.close()
         
-    def preamble(self):
-        # start just the one server and wait for it
-        # to pause in candidate state
-        spec = servers["server_0"]
-        spec.monitor = BranchTricksMonitor(spec.monitor)
-        monitor = spec.monitor
-        monitor.set_pause_on_substate(Substate.became_leader)
-        self.cluster.start_one_server("server_0")
-        self.logger.info("waiting for switch to leader")
-        start_time = time.time()
-        while time.time() - start_time < 3 and not monitor.pbt_server.paused:
-            time.sleep(0.05)
-        self.assertTrue(monitor.pbt_server.paused)
-        return spec
-
     def test_quick_stop(self):
-        servers = self.cluster.prepare(timeout_basis=timeout_basis)
-        spec = servers["server_0"]
+        # get a fully setup server, just ignore the existing state
+        spec = self.preamble()
         monitor = spec.monitor
-        # Wait for startup so that we know that
-        # server is initialized. The current state
-        # will be folower, but we are not going to let it run
-        monitor.set_pause_on_substate(Substate.leader_lost)
-        self.cluster.start_one_server("server_0")
-        self.logger.info("waiting for switch to leader_lost")
-        start_time = time.time()
-        while time.time() - start_time < 3 and not monitor.pbt_server.paused:
-            time.sleep(0.05)
-        self.assertTrue(monitor.pbt_server.paused)
         leader = BranchTricksLeader(spec.server_obj)
         # make sure that terminated leader does not
         # allow start
@@ -260,7 +240,7 @@ class TestOddPaths(unittest.TestCase):
         self.assertTrue(leader.broken)
         self.assertEqual(len(server.get_unhandled_errors()), 1)
         
-    def atest_running(self):
+    def preamble(self):
         servers = self.cluster.prepare(timeout_basis=timeout_basis)
         spec = servers["server_0"]
         monitor = spec.monitor
@@ -274,37 +254,13 @@ class TestOddPaths(unittest.TestCase):
         while time.time() - start_time < 3 and not monitor.pbt_server.paused:
             time.sleep(0.05)
         self.assertTrue(monitor.pbt_server.paused)
-        follower = monitor.state
-        follower.terminated = True
-        follower.leaderless_timer.terminated = True
-        server = spec.server_obj
-        self.assertEqual(len(server.get_unhandled_errors()), 0)
-        leader = PLeader(spec.server_obj)
-        sm = server.get_state_map()
-        sm.state = leader
-        monitor.set_pause_on_substate(Substate.sent_term_start)
-        self.loop.run_until_complete(spec.pbt_server.resume_all())
-        async def do_start():
-            leader.start()
-        self.loop.run_until_complete(do_start())
-        while time.time() - start_time < 3 and not monitor.pbt_server.paused:
-            time.sleep(0.05)
-        self.assertTrue(monitor.pbt_server.paused)
+        return spec
         
     def test_bad_appends(self):
-        servers = self.cluster.prepare(timeout_basis=timeout_basis)
-        spec = servers["server_0"]
+        # get a fully setup server, and change the state to leader
+        # from follower
+        spec = self.preamble()
         monitor = spec.monitor
-        # Wait for startup so that we know that
-        # server is initialized. The current state
-        # will be folower, but we are not going to let it run
-        monitor.set_pause_on_substate(Substate.leader_lost)
-        self.cluster.start_one_server("server_0")
-        self.logger.info("waiting for switch to leader_lost")
-        start_time = time.time()
-        while time.time() - start_time < 3 and not monitor.pbt_server.paused:
-            time.sleep(0.05)
-        self.assertTrue(monitor.pbt_server.paused)
         follower = monitor.state
         follower.terminated = True
         follower.leaderless_timer.terminated = True
@@ -388,17 +344,95 @@ class TestOddPaths(unittest.TestCase):
         # set back to follower so shutdown will work
         sm.state = follower
 
-        async def fix_timer():
-            # the shutdown code will blow up becase
-            # the leader
-            if leader.heartbeat_timer is None:
-                leader.heartbeat_timer.server.get_timer('leader-heartbeat',
-                                                        1,
-                                                        10,
-                                                        leader.send_heartbeat)
+    def test_odd_msgs(self):
+        # get a fully setup server, and change the state to leader
+        # from follower
+        spec = self.preamble()
+        monitor = spec.monitor
+        follower = monitor.state
+        follower.terminated = True
+        follower.leaderless_timer.terminated = True
+        server = spec.server_obj
+        self.assertEqual(len(server.get_handled_errors()), 0)
+        leader = PLeader(spec.server_obj)
+        sm = server.get_state_map()
+        sm.state = leader
+        log = server.get_log()
+        # some message methods care about term
+        term = 1
+        log.set_term(term)
+
+        self.assertEqual(len(server.get_handled_errors()), 0)
+        async def do_append_entries():
+            msg = AppendEntriesMessage((0,1),
+                                         (0,0),
+                                         term,
+                                         {})
+            await leader.on_append_entries(msg)
+            await asyncio.sleep(0.01)
+        self.loop.run_until_complete(do_append_entries())
+        self.assertEqual(len(server.get_handled_errors()), 0)
+
+        async def do_term_start():
+            msg = TermStartMessage((0,1),
+                                   (0,0),
+                                   term,
+                                   {})
+            await leader.on_term_start(msg)
+            await asyncio.sleep(0.01)
+        self.loop.run_until_complete(do_term_start())
+        self.assertEqual(len(server.get_handled_errors()), 0)
+
+        async def do_got_vote():
+            msg = RequestVoteResponseMessage((0,1),
+                                             (0,0),
+                                             term,
+                                             {})
+            await leader.on_vote_received(msg)
+            await asyncio.sleep(0.01)
+        self.loop.run_until_complete(do_got_vote())
+        self.assertEqual(len(server.get_handled_errors()), 0)
+
+
+        async def do_beat():
+            msg = HeartbeatMessage((0,1),
+                                             (0,0),
+                                             term,
+                                             {})
+            await leader.on_heartbeat(msg)
+            await asyncio.sleep(0.01)
+        self.loop.run_until_complete(do_beat())
+        self.assertEqual(len(server.get_handled_errors()), 0)
+        
+        class FakeServer:
             
+            def __init__(self):
+                self.in_queue = asyncio.Queue()
+                
+            async def on_message(self, message):
+                await self.in_queue.put(message)
         
-
-
-        
-
+        server_1 = FakeServer()
+        comms = MemoryComms()
+        async def do_vote():
+            # use non for start index, to trigger that
+            # tiny branch
+            await comms.start(server_1, ('localhost',5001))
+            message = RequestVoteMessage(('localhost',5001),
+                                         ('localhost',5000),
+                                         term,
+                                         {})
+            await leader.on_vote_request(message)
+            await asyncio.sleep(0.01)
+            start_time = time.time()
+            while time.time() - start_time < 0.1:
+                await asyncio.sleep(0.001)
+                if not server_1.in_queue.empty():
+                    break
+            self.assertFalse(server_1.in_queue.empty())
+            reply = await server_1.in_queue.get()
+            return reply
+        reply = self.loop.run_until_complete(do_vote())
+        self.assertTrue("already_leader" in reply.data)
+        # set back to follower so shutdown will work
+        sm.state = follower

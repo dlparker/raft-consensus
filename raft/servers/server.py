@@ -108,8 +108,7 @@ class Server:
         e = dict(code="state_operation_failed",
                  details=details)
         self.unhandled_errors.append(e)
-        
-        
+
     async def on_message(self, message, recursed=False):
         try:
             pre_state = self.state_map.state
