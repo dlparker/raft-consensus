@@ -21,7 +21,6 @@ class Server:
         self.comms = comms
         self.timer_class = Timer
         self.state_map = state_map
-        self.state = None # needed because activate will call set_state
         self.app = app
         self.comms_task = None
         self.running = False
@@ -38,7 +37,7 @@ class Server:
     async def _start(self):
         self.app.set_server(self)
         self.logger.info('Server on %s activating state map', self.endpoint)
-        self.state = await self.state_map.activate(self)
+        await self.state_map.activate(self)
         self.comms_task = task_logger.create_task(
             self.comms.start(self, self.endpoint),
             logger=self.logger,
@@ -50,8 +49,8 @@ class Server:
     async def stop(self):
         if self.comms_task:
             self.comms_task.cancel()
-        if self.state:
-            await self.state.stop()
+        if self.state_map.state:
+            await self.state_map.state.stop()
         self.running = False
         
     def get_log(self):
@@ -73,12 +72,8 @@ class Server:
     def set_timer_class(self, cls):
         self.timer_class = cls
 
-    def set_state(self, state):
-        if self.state != state:
-            self.state = state
-
     def get_state(self):
-        return self.state
+        return self.state_map.state 
 
     def get_unhandled_errors(self, clear=False):
         result = self.unhandled_errors
@@ -117,12 +112,12 @@ class Server:
         
     async def on_message(self, message, recursed=False):
         try:
-            pre_state = self.state
-            handled = await self.state.on_message(message)
+            pre_state = self.state_map.state
+            handled = await pre_state.on_message(message)
             if not handled:
                 self.logger.info("on_message handler of state %s rejected"\
                                  " message %s", pre_state, message.code)
-                if pre_state == self.state:
+                if pre_state == self.state_map.state:
                     start_time = time.time()
                     while (self.state_map.changing_state()
                             and time.time() - start_time < 0.2):
@@ -138,9 +133,9 @@ class Server:
                                  details="state changing timeout")
                         self.unhandled_errors.append(e)
                         return
-                if pre_state != self.state:
+                if pre_state != self.state_map.state:
                     self.logger.info("changed state from %s to %s, recursing",
-                                 pre_state, self.state)
+                                     pre_state, self.state_map.state)
                     if recursed:
                         details = "Recursed available handlers rejected message"
                         e = dict(code="message_rejected",
@@ -157,7 +152,7 @@ class Server:
         except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("State %s got exception %s on message %s",
-                              self.state, e, message)
+                              self.state_map.state, e, message)
 
     async def post_message(self, message):
         await self.comms.post_message(message)
@@ -172,6 +167,7 @@ class Server:
             # Have to create a deep copy of message to have different receivers
             send_message = copy.deepcopy(message)
             send_message._receiver = n
-            self.logger.debug("%s sending message %s to %s", self.state,
-                   send_message, n)
+            self.logger.debug("%s sending message %s to %s",
+                              self.state_map.state,
+                              send_message, n)
             await self.comms.post_message(send_message)

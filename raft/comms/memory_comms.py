@@ -130,7 +130,12 @@ class MemoryComms(CommsAPI):
         global queues
         while self.keep_running:
             try:
-                w = await self.queue.get()
+                try:
+                    w = await self.queue.get()
+                except RuntimeError as r_e:
+                    if "loop is closed" in str(r_e):
+                        self.keep_running = False
+                        return
                 addr = w.addr
                 data = w.data
                 try:

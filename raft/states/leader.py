@@ -29,7 +29,6 @@ class Leader(State):
         self.heartbeat_timeout = heartbeat_timeout
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        server.set_state(self)
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -215,11 +214,14 @@ class Leader(State):
             return True
         if start_index is None:
             start_index = 0
-        if log.get_commit_index() is None:
-            index_limit = -1
-        if start_index > last_rec.index or start_index > index_limit:
-            self.logger.info("follower %s asking for log pull %d beyond log limit %d or commit %d",
-                             message.sender, start_index, last_rec.index, log.get_commit_index())
+        commit_limit = log.get_commit_index()
+        if commit_limit is None:
+            commit_limit = -1
+        if start_index > last_rec.index or start_index > commit_limit:
+            self.logger.info("follower %s asking for log pull from index %s " \
+                             " beyond log limit %s or commit %s",
+                             message.sender, start_index,
+                             last_rec.index, log.get_commit_index())
             reply = LogPullResponseMessage(
                 self.server.endpoint,
                 message.sender,

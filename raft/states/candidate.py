@@ -19,7 +19,6 @@ class Candidate(Voter):
         self.timeout = timeout
         self.logger = logging.getLogger(__name__)
         self.server = server
-        server.set_state(self)
         self.yea_votes = {}
         self.all_votes = {}
         self.election_timeout = self.candidate_interval()

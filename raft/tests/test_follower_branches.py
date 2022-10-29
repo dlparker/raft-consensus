@@ -57,7 +57,7 @@ class TestMessageOps(unittest.TestCase):
                 follower = spec
                 break
         inner_server = follower.server_obj
-        initial_count = inner_server.state.heartbeat_count
+        initial_count = inner_server.state_map.state.heartbeat_count
         count = initial_count
         self.assertIsNotNone(follower)
         self.cluster.resume_from_stepper_pause()
@@ -66,7 +66,7 @@ class TestMessageOps(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.01)
-            count = inner_server.state.heartbeat_count
+            count = inner_server.state_map.state.heartbeat_count
         self.assertTrue(count > initial_count)
 
 

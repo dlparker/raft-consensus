@@ -178,7 +178,6 @@ class StandardStateMap(StateMap):
             except:
                 self.logger.error("Monitor new_state call got exception \n\t%s",
                                   traceback.format_exc())
-        self.server.set_state(follower)
         self.state = follower
         if old_state:
             os_name = old_state._type
@@ -203,7 +202,6 @@ class StandardStateMap(StateMap):
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
-        self.server.set_state(candidate)
         self.state = candidate
         if old_state:
             os_name = old_state._type
@@ -228,7 +226,6 @@ class StandardStateMap(StateMap):
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
-        self.server.set_state(leader)
         self.state = leader
         if old_state:
             os_name = old_state._type

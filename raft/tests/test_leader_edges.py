@@ -291,7 +291,7 @@ class TestOddPaths(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(monitor.pbt_server.paused)
         
-    def brokentest_bad_appends(self):
+    def test_bad_appends(self):
         servers = self.cluster.prepare(timeout_basis=timeout_basis)
         spec = servers["server_0"]
         monitor = spec.monitor
@@ -364,10 +364,9 @@ class TestOddPaths(unittest.TestCase):
         async def do_log_pull():
             # use non for start index, to trigger that
             # tiny branch
-            async def start_comms():
-                await comms.start(server_1, (0,0))
-            message = LogPullMessage((0,0),
-                                     (0.1),
+            await comms.start(server_1, ('localhost',5001))
+            message = LogPullMessage(('localhost',5001),
+                                     ('localhost',5000),
                                      term,
                                      {
                                          "start_index": None,
@@ -376,10 +375,28 @@ class TestOddPaths(unittest.TestCase):
                                      })
             await leader.on_log_pull(message)
             await asyncio.sleep(0.01)
+            start_time = time.time()
+            while time.time() - start_time < 0.1:
+                await asyncio.sleep(0.001)
+                if not server_1.in_queue.empty():
+                    break
+            self.assertFalse(server_1.in_queue.empty())
             msg = await server_1.in_queue.get()
             return msg
         msg = self.loop.run_until_complete(do_log_pull())
-        
+
+        # set back to follower so shutdown will work
+        sm.state = follower
+
+        async def fix_timer():
+            # the shutdown code will blow up becase
+            # the leader
+            if leader.heartbeat_timer is None:
+                leader.heartbeat_timer.server.get_timer('leader-heartbeat',
+                                                        1,
+                                                        10,
+                                                        leader.send_heartbeat)
+            
         
 
 
