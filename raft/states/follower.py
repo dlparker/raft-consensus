@@ -1,7 +1,7 @@
 import random
 import time
 import asyncio
-from dataclasses import asdict
+from dataclasses import dataclass, asdict
 import logging
 import traceback
 
@@ -12,6 +12,106 @@ from raft.messages.log_pull import LogPullMessage
 from .base_state import Substate
 from .voter import Voter
 
+@dataclass
+class StateDiff:
+
+    local_is_empty: int
+    local_index: int
+    local_commit: int
+    local_term: int
+    local_prev_term: int
+    leader_term: int
+    leader_prev_term: int
+    leader_commit: int
+    leader_index: int
+
+    @property
+    def same_term(self):
+        return self.local_term == self.leader_term
+    
+    @property
+    def same_index(self):
+        return self.local_index == self.leader_index
+    
+    @property
+    def same_commit(self):
+        return self.local_commit == self.leader_commit
+    
+    @property
+    def same_prev_term(self):
+        return self.local_prev_term == self.leader_prev_term
+    
+    @property
+    def local_term_none(self):
+        return self.local_term == -1
+    
+    @property
+    def local_commit_none(self):
+        return self.local_commit == -1
+
+    @property
+    def local_index_none(self):
+        return self.local_index == -1
+
+    @property
+    def leader_commit_none(self):
+        return self.leader_commit == -1
+    
+    @property
+    def leader_index_none(self):
+        return self.leader_index == -1
+    
+    @property
+    def leader_prev_term_none(self):
+        return self.leader_prev_term == -1
+    
+    @property
+    def leader_index_none(self):
+        return self.leader_index == -1
+
+    @property
+    def in_sync(self):
+        if self.same_commit and self.same_term and self.same_prev_term:
+            return True
+        return False
+    
+    @property
+    def needed_records(self):
+        if self.local_ahead:
+            return None
+        if self.same_index:
+            return None
+        if self.same_commit:
+            return None
+        if self.leader_commit < self.leader_index:
+            last = self.leader_commit
+        else:
+            last = self.leader_index
+        res = dict(start=self.local_index + 1,
+                   end=last)
+        return res
+
+    @property
+    def rollback_to(self):
+        if not self.local_ahead:
+            return None
+        if self.leader_index == -1:
+            return None
+        if self.leader_commit == -1:
+            return None
+        if self.leader_commit < self.leader_index:
+            return self.leader_commit
+        return self.leader_index
+    
+    @property
+    def local_ahead(self):
+        if self.local_index > self.leader_index:
+            return True
+        if self.local_commit > self.leader_commit:
+            return True
+        return False
+    
+        
 class Follower(Voter):
 
     my_type = "follower"
@@ -77,6 +177,57 @@ class Follower(Voter):
             self.logger.error(traceback.format_exc())
             raise
 
+    def decode_state(self, message):
+        #
+        # When we get a message from the leader, there are a number
+        # of values in the message that we need to compare to the
+        # local equivalents. All such values are in the log, and
+        # an empty log on either side means that we might have None
+        # values for things that are normally ints. Awkward. So
+        # lets clean this up by converting nones to meaninginfull
+        # ints and flags in the clearest way we can
+        data = message.data
+        log = self.server.get_log()
+        last_rec = log.read()
+        local_is_empty = False
+        if last_rec is None:
+            local_index = -1
+            local_commit = -1
+            local_prev_term = -1
+            local_is_empty = True
+        else:
+            local_index = last_rec.index
+            local_prev_term = last_rec.term
+            local_is_empty = False
+            local_commit = log.get_commit_index()
+            if local_commit is None:
+                local_commit = -1
+        local_term = log.get_term()
+        if local_term is None:
+            local_term = -1
+        leader_term = message.term
+        leader_commit = data['leaderCommit']
+        leader_index = data["prevLogIndex"]
+        leader_prev_term = data["prevLogTerm"]
+        if leader_commit is None:
+            leader_commit = -1
+        if leader_index is None:
+            leader_index = -1
+        if leader_prev_term is None:
+            leader_prev_term = -1
+
+        return StateDiff(local_is_empty,
+                         local_index,
+                         local_commit,
+                         local_term,
+                         local_prev_term,
+                         leader_term,
+                         leader_prev_term,
+                         leader_commit,
+                         leader_index)
+
+        
+    
     async def on_heartbeat(self, message):
         # reset timeout
         self.heartbeat_logger.debug("resetting leaderless_timer on heartbeat")

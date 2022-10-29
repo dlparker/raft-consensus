@@ -37,4 +37,14 @@ in the base server? (Maybe need to rename "Server" class to something
 like ServerCore?) Find all bad spots in the states and change the
 exception clauses to call this method, execute stop on self and return.
 
+Update the log api to have a call that commits each record it adds, cause
+that is always done for log_pull. STUDY THE PROTOCOL, what happens when
+leader has uncommitted record and follower does not, but follower was
+not present when leader sent append?
+
+Move the memory log, memory comms and udp comms to dev_tools.
+
+
+Remove rollback logic once rejoin logic developed.
+
 

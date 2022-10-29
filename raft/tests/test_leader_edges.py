@@ -44,44 +44,7 @@ class BranchTricksLeader(PLeader):
             raise Exception('faking term start send error')
         await super().send_term_start()
 
-class BranchTricksCandidate(PCandidate):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-
-    def start(self):
-        self.server.get_state_map().switch_to_leader(self)
-
-
-class BranchTricksMonitor(PausingMonitor):
-
-    def __init__(self, orig_monitor):
-        super().__init__(orig_monitor.pbt_server,
-                         orig_monitor.name,
-                         orig_monitor.logger)
-        self.state_map = orig_monitor.state_map
-        self.state = orig_monitor.state
-        self.substate = orig_monitor.substate
-        self.pbt_server.state_map.remove_state_change_monitor(orig_monitor)
-        self.pbt_server.state_map.add_state_change_monitor(self)
-        self.explode = False
-        self.leader = None
-        self.follower = None
-        
-    async def new_state(self, state_map, old_state, new_state):
-        if new_state._type == "candidate":
-            new_state = BranchTricksCandidate(new_state.server,
-                                         new_state.timeout)
-            return new_state
-        if new_state._type == "leader":
-            new_state = BranchTricksLeader(new_state.server,
-                                         new_state.heartbeat_timeout)
-            self.leader = new_state
-            return new_state
-        new_state = await super().new_state(state_map, old_state, new_state)
-        return new_state
-    
 class TestTerminated(unittest.TestCase):
 
     @classmethod
