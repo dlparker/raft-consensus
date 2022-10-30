@@ -147,7 +147,5 @@ class TestStateEdges(unittest.TestCase):
         
         
 
-
-
         
             

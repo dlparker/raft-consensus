@@ -105,6 +105,8 @@ class TestLogOps(unittest.TestCase):
             spec.monitor.clear_pause_on_substate(Substate.synced)
             spec.monitor.clear_pause_on_substate(Substate.sent_heartbeat)
 
+        # let's get obnoxious level of debug logging
+        follower.monitor.state.debug_dumper = False        
 
         # Setup pause for both when there is a new log entry
         # distributed, the first part of the commit dialog.
@@ -275,8 +277,6 @@ class TestLogOps(unittest.TestCase):
                                          HeartbeatMessage._code,
                                          follower_checker)
 
-        # let's get obnoxious level of debug logging
-        follower.monitor.state.debug_dumper = False        
         self.cluster.resume_all_paused_servers()
         self.pause_waiter("unsync noticed")
 
@@ -316,9 +316,73 @@ class TestLogOps(unittest.TestCase):
         leader.interceptor.clear_triggers()
         follower.interceptor.clear_triggers()
         self.cluster.resume_all_paused_servers()
-        if False:
-            leader.interceptor.add_trigger(InterceptorMode.out_after,
-                                           LogPullResponseMessage._code)
-            
-            follower.interceptor.add_trigger(InterceptorMode.out_after,
-                                             LogPullMessage._code)
+
+    def atest_2(self):
+        # The follower code allows for the leader to
+        # send a AppendEntries message containing one or
+        # more records that are already committed. This
+        # does not currently happen because the follower
+        # detects the possibility of such a case and calls
+        # log_pull. The leader does not currently do the
+        # raft sequence of backing down the log records until
+        # it finds the first one that the client will except.
+        # At some time in the future we may add a switch that
+        # gets rid of the log_pull sequence and uses the
+        # backdown sequence instead, so we want to keep the
+        # relevant follower code alive. So it should work,
+        # let's find out.
+        self.servers = self.cluster.prepare(timeout_basis=timeout_basis)
+        spec0 = self.servers["server_0"]
+        spec1 = self.servers["server_1"]
+        monitor0 = spec0.monitor
+        monitor1 = spec1.monitor
+        for spec in self.servers.values():
+            spec.monitor.set_pause_on_substate(Substate.synced)
+            spec.monitor.set_pause_on_substate(Substate.sent_heartbeat)
+        self.cluster.start_one_server(spec0.name)
+        self.cluster.start_one_server(spec1.name)
+        self.logger.info("waiting for pause on election results")
+
+        leader, follower = self.pause_waiter("election results")
+
+        for spec in self.servers.values():
+            spec.monitor.clear_pause_on_substate(Substate.synced)
+            spec.monitor.clear_pause_on_substate(Substate.sent_heartbeat)
+
+        self.cluster.resume_all_paused_servers()
+        client = leader.get_client()
+        client.do_query()
+        client.do_query()
+        client.do_query()
+
+        # now the log on both should have three entries, all
+        # committed
+        leader.interceptor.add_trigger(InterceptorMode.out_after,
+                                         HeartbeatMessage._code)
+        follower.interceptor.add_trigger(InterceptorMode.in_after,
+                                         HeartbeatMessage._code)
+
+        self.pause_waiter("hearbeat on 3")
+
+        # now delete the last records from the follower
+        # log and make pretend to send AppendEntries from the
+        # leader with the last entrie included. It will have
+        # the committed flag set, so the follower should commit
+        # the record.
+        # Catch the follower after it sends the AppendEntriesResponse
+        # and catch the leader after it processes the message.
+
+        leader.interceptor.clear_triggers()
+        follower.interceptor.clear_triggers()
+        
+        leader.interceptor.add_trigger(InterceptorMode.in_after,
+                                       AppendEntriesResponse._code)
+        follower.interceptor.add_trigger(InterceptorMode.out_after,
+                                         AppendEntriesResponse._code)
+
+        llog = leader.server_obj.get_log()
+        lrec = flog.read()
+        self.assertEqual(lrec.index, 2)
+        flog.trim_after(1)
+        
+        self.pause_waiter("hearbeat on 3")

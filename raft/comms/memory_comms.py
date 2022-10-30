@@ -110,8 +110,13 @@ class MemoryComms(CommsAPI):
             if self.interceptor:
                 # let test code decide to pause things before
                 # delivering
-                self.logger.debug("calling interceptor before %s", message.code)
+                self.logger.debug("calling interceptor before %s",
+                                  message.code)
                 deliver = await self.interceptor.before_out_msg(message)
+                if not deliver:
+                    self.logger.debug("not delivering posted message "\
+                                      "because interceptor said so")
+                    return
             queue = queues[target]
             data = Serializer.serialize(message)
             w = Wrapper(data, self.endpoint)
@@ -122,7 +127,7 @@ class MemoryComms(CommsAPI):
                 # let test code decide to pause things after
                 # delivering
                 self.logger.debug("calling interceptor after %s", message.code)
-                deliver = await self.interceptor.after_out_msg(message)
+                await self.interceptor.after_out_msg(message)
         except Exception: # pragma: no cover error
             self.logger.error(traceback.format_exc())
 
@@ -145,7 +150,7 @@ class MemoryComms(CommsAPI):
                         # delivering
                         deliver = await self.interceptor.before_in_msg(message)
                         if not deliver:
-                            self.logger.info("not delivering message %s on" \
+                            self.logger.info("not delivering message %s on " \
                                              "advice from interceptor",
                                              message.code)
                             continue
@@ -163,7 +168,7 @@ class MemoryComms(CommsAPI):
                 if self.interceptor:
                     # let test code decide to pause things after
                     # delivering
-                    keep_going = await self.interceptor.after_in_msg(message)
+                    await self.interceptor.after_in_msg(message)
             except asyncio.exceptions.CancelledError: # pragma: no cover error
                 self.keep_running = False
                 return

@@ -84,7 +84,7 @@ class TestOddPaths(unittest.TestCase):
         follower.terminated = False
 
 
-    def test_odd_msgs(self):
+    def test_state_diffs(self):
         # get a fully setup server, and change the state to leader
         # from follower
         spec = self.preamble()
@@ -107,6 +107,7 @@ class TestOddPaths(unittest.TestCase):
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertFalse(res.same_term)
+        self.assertTrue(res.local_term_none)
         self.assertTrue(res.same_index)
         self.assertTrue(res.same_commit)
         self.assertTrue(res.local_commit_none)
@@ -127,8 +128,8 @@ class TestOddPaths(unittest.TestCase):
         self.assertTrue(res.same_commit)
         self.assertTrue(res.same_prev_term)
         self.assertTrue(res.in_sync)
-        back_to = res.rollback_to
-        self.assertIsNone(back_to)
+        self.assertFalse(res.need_rollback)
+        self.assertIsNone(res.rollback_to)
 
         # Now claim that the leader has one log entry but still
         # no commit, that means we don't want any entries
@@ -147,8 +148,7 @@ class TestOddPaths(unittest.TestCase):
         self.assertFalse(res.leader_prev_term_none)
         needed = res.needed_records
         self.assertIsNone(needed)
-        back_to = res.rollback_to
-        self.assertIsNone(back_to)
+        self.assertFalse(res.need_rollback)
 
         # Now claim that the leader has one log entry and it 
         # is committed, that means we want one entry starting
@@ -169,8 +169,7 @@ class TestOddPaths(unittest.TestCase):
         self.assertIsNotNone(needed)
         self.assertEqual(needed['start'], 0)
         self.assertEqual(needed['end'], 0)
-        back_to = res.rollback_to
-        self.assertIsNone(back_to)
+        self.assertFalse(res.need_rollback)
         
         # Now claim that the leader has two log entries and 
         # only one is committed, that means we want one entry starting
@@ -191,8 +190,7 @@ class TestOddPaths(unittest.TestCase):
         self.assertIsNotNone(needed)
         self.assertEqual(needed['start'], 0)
         self.assertEqual(needed['end'], 0)
-        back_to = res.rollback_to
-        self.assertIsNone(back_to)
+        self.assertFalse(res.need_rollback)
         
         # Now claim that the leader has two log entries and 
         # both are committed, that means we want two entries starting
@@ -213,8 +211,7 @@ class TestOddPaths(unittest.TestCase):
         self.assertIsNotNone(needed)
         self.assertEqual(needed['start'], 0)
         self.assertEqual(needed['end'], 1)
-        back_to = res.rollback_to
-        self.assertIsNone(back_to)
+        self.assertFalse(res.need_rollback)
 
         # Now add a record to the local log, and resend the last
         # message. This should result in "needed" saying we need
@@ -238,8 +235,7 @@ class TestOddPaths(unittest.TestCase):
         self.assertIsNotNone(needed)
         self.assertEqual(needed['start'], 1)
         self.assertEqual(needed['end'], 1)
-        back_to = res.rollback_to
-        self.assertIsNone(back_to)
+        self.assertFalse(res.need_rollback)
 
         # Now add another record to the local log, and resend the last
         # message. This should result in "needed" saying need nothing,
@@ -262,8 +258,8 @@ class TestOddPaths(unittest.TestCase):
 
         needed = res.needed_records
         self.assertIsNone(needed)
-        back_to = res.rollback_to
-        self.assertIsNone(back_to)
+        self.assertFalse(res.need_rollback)
+
         
         # Now add another record to the local log, and resend the last
         # message. This should result in an indication that the local
@@ -276,8 +272,8 @@ class TestOddPaths(unittest.TestCase):
         self.assertTrue(res.local_ahead)
         needed = res.needed_records
         self.assertIsNone(needed)
-        back_to = res.rollback_to
-        self.assertEqual(back_to, 1)
+        self.assertTrue(res.need_rollback)
+        self.assertEqual(res.rollback_to, 1)
         
 
         # With three records committed to the local log, send
@@ -293,8 +289,8 @@ class TestOddPaths(unittest.TestCase):
         self.assertTrue(res.local_ahead)
         needed = res.needed_records
         self.assertIsNone(needed)
-        back_to = res.rollback_to
-        self.assertEqual(back_to, None)
+        self.assertTrue(res.need_rollback)
+        self.assertEqual(res.rollback_to, -1)
         
         # With three records committed to the local log, send
         # a message indicating that the leader has one uncommitted
@@ -310,9 +306,8 @@ class TestOddPaths(unittest.TestCase):
         self.assertTrue(res.local_ahead)
         needed = res.needed_records
         self.assertIsNone(needed)
-        back_to = res.rollback_to
-        self.assertEqual(back_to, None)
-        
+        self.assertTrue(res.need_rollback)
+        self.assertEqual(res.rollback_to, 0)
 
         monitor.clear_pause_on_substate(Substate.leader_lost)
         self.loop.run_until_complete(spec.pbt_server.resume_all())

@@ -59,10 +59,6 @@ class StateDiff:
         return self.leader_commit == -1
     
     @property
-    def leader_index_none(self):
-        return self.leader_index == -1
-    
-    @property
     def leader_prev_term_none(self):
         return self.leader_prev_term == -1
     
@@ -93,20 +89,33 @@ class StateDiff:
         return res
 
     @property
+    def need_rollback(self):
+        if self.local_ahead:
+            return True
+        if self.leader_index < self.local_index:
+            return True
+        # unless something is really, weirdly wrong,
+        # the leader will never have an uncommitted
+        # record when a follower has the same
+        # record but already committed.
+        # so no test like this:
+        # if self.leader_commit < self.local_commit:
+        return False
+    
+    @property
     def rollback_to(self):
-        if not self.local_ahead:
+        if not self.need_rollback:
             return None
         if self.leader_index == -1:
-            return None
-        if self.leader_commit == -1:
-            return None
-        if self.leader_commit < self.leader_index:
-            return self.leader_commit
+            return -1
         return self.leader_index
     
     @property
     def local_ahead(self):
         if self.local_index > self.leader_index:
+            return True
+        # leader commit can be less than leader index
+        if self.local_index > self.leader_commit:
             return True
         if self.local_commit > self.leader_commit:
             return True
@@ -256,7 +265,7 @@ class Follower(Voter):
             if self.debug_dumper:
                 self.logger.debug("state diff says we need records")
             await self.do_log_pull(message)
-        elif sd.rollback_to is not None:
+        elif sd.need_rollback:
             self.logger.info("heartbeat state diff says we need rollback")
             await self.do_rollback(message)
         else:
@@ -300,14 +309,15 @@ class Follower(Voter):
         # state is and roll back to that. 
         log = self.server.get_log()
         data = message.data
-        sd = self.decode_state(message) 
+        sd = self.decode_state(message)
         self.logger.debug("doing rollback %s", sd)
         if not sd.same_term:
             self.logger.info("rollback setting log term to %s, was %s",
                              message.term, log.get_term())
             log.set_term(message.term)
         last_rec = sd.rollback_to
-        if last_rec is None:
+        # if leader sends a reset, last_rec might be None
+        if last_rec == -1 or last_rec is None:
             # our whole log is bogus?!!!
             self.logger.warning("Leader log is empty, ours is not, discarding"\
                                 " everything")
@@ -366,7 +376,7 @@ class Follower(Voter):
             await self.send_response_message(message, votedYes=False)
             await self.do_log_pull(message)
             return True
-        elif sd.rollback_to is not None:
+        elif sd.need_rollback:
             await self.send_response_message(message, votedYes=False)
             self.logger.info("on_append_entries doing rollback to match leader")
             self.logger.debug("StateDiff is %s", sd)
