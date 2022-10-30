@@ -430,7 +430,7 @@ class Follower(Voter):
         if entries:
             del data['entries']
             last_rec = entries[-1]
-            data['last_entry_index'] = last_rec.index
+            data['last_entry_index'] = last_rec['index']
         else:
             data['last_entry_index'] = None
             

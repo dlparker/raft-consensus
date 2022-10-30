@@ -110,7 +110,7 @@ class Leader(State):
         fc.last_heartbeat_response_index = caller_index
         self.heartbeat_logger.debug("got heartbeat response from %s",
                                     message.sender)
-        if not self.use_log_pull and las
+        if not self.use_log_pull and last_index > caller_index:
             if caller_index < local_index:
                 await self.do_backdown(addr, local_index)
         return True
@@ -152,7 +152,7 @@ class Leader(State):
         # then it was just a commit.
         last_sent_index = message.data['last_entry_index']
         cursor.last_index = last_sent_index
-        if not last_sent_index:
+        if last_sent_index is None:
             # message was commit only
             cursor.last_commit = message.data['leaderCommit']
             self.logger.debug("Follower %s acknowledged commit %s",
@@ -169,6 +169,14 @@ class Leader(State):
                                            last_sent_index + 1)
             return True
         
+        if last_rec.index < last_sent_index:
+            msg = f"Follower {message.sender} claims record "\
+                f" {last_sent_index} but ours only go up to " \
+                f" {last_rec.index} "
+            self.logger.warning(msg)
+            self.server.record_unexpected_state(self, msg)
+            return True
+            
         # If we got here, then follower is up to date with
         # our log. If we have committed the record, then
         # we have alread acheived a quorum and committed
@@ -176,8 +184,11 @@ class Leader(State):
         # we just want to ignore the message.
         # If we have not committed it, then we need to see
         # if we can by checking the votes already counted
-        
-        if log.get_commit_index() >= last_sent_index:
+
+        local_commit = log.get_commit_index()
+        if local_commit is None:
+            local_commit = -1
+        if local_commit >= last_sent_index:
             # extra, we good
             self.logger.debug("Follower %s voted to commit %s, "\
                               "ignoring since commit completed",
@@ -191,7 +202,7 @@ class Leader(State):
                 received_confirms += 1
             self.logger.debug("confirmation of log rec %d received from %s "\
                               "brings total to %d out of %d",
-                              last_index, message.sender,
+                              last_sent_index, message.sender,
                               received_confirms, expected_confirms)
             
         if received_confirms < expected_confirms:
@@ -199,7 +210,7 @@ class Leader(State):
             return True
         # we have enough to commit, so do it
         log.commit(last_sent_index)
-        commit_rec = log.get(last_sent_index)
+        commit_rec = log.read(last_sent_index)
         if last_sent_index == 0:
             prev_index = None
             prev_term = None
@@ -207,7 +218,7 @@ class Leader(State):
                           log.get_commit_index())
 
         # now broadcast a commit append
-        await self.send_append_entries(all, commit_for_rec=commit_rec)
+        await self.send_append_entries('all', commit_for_rec=commit_rec)
 
         # now see if there is a client to send the reply to
         # for the completed record
@@ -223,7 +234,7 @@ class Leader(State):
                           reply_address)
         reply = ClientCommandResultMessage(self.server.endpoint,
                                            reply_address,
-                                           term,
+                                           log.get_term(),
                                            commit_rec.user_data)
         self.logger.debug("sending reply message %s", reply)
         await self.server.post_message(reply)
@@ -231,6 +242,7 @@ class Leader(State):
 
     async def send_append_entries(self, addr="all", start_index=None,
                                   end_index=None, commit_for_rec=None ):
+        log = self.server.get_log()
         entries = []
         if commit_for_rec is None:
             if start_index is None:
@@ -238,7 +250,7 @@ class Leader(State):
                 start_index = last_rec.index
                 entries.append(asdict(last_rec))
             else:
-                if end_index not None:
+                if end_index is not None:
                     for i in range(start_index, end_index+1):
                         rec = log.read(i)
                         entries.append(asdict(rec))
@@ -272,16 +284,16 @@ class Leader(State):
         if addr == "all":
             self.logger.debug("(term %d) sending log update to all" \
                               " followers: %s",
-                              log.get_term(), update_message.data)
-            await self.server.broadcast(update_message)
+                              log.get_term(), message.data)
+            await self.server.broadcast(message)
             if not commit_for_rec:
                 await self.set_substate(Substate.sent_new_entries)
         else:
             message._receiver = addr
             self.logger.debug("(term %d) sending log update with" \
                               " %d entries to %s",
-                              log.get_term(), len(entries), addr )
-            await self.server.post_message(reply)
+                              log.get_term(), len(entries), addr)
+            await self.server.post_message(message)
         
     async def do_backdown(self, target, rejected_index):
         log = self.server.get_log()

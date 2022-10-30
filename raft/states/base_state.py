@@ -165,10 +165,11 @@ class State(metaclass=abc.ABCMeta):
             # no log records yet
             last_index = -1
 
+        data = dict(last_index=last_index)
         reply = HeartbeatResponseMessage(message.receiver,
                                          message.sender,
                                          term=log.get_term(),
-                                         data=last_index)
+                                         data=data)
         await self.server.post_message(reply)
 
     async def dispose_client_command(self, message, server):

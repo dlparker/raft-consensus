@@ -17,6 +17,7 @@ from raft.messages.log_pull import LogPullMessage
 from raft.comms.memory_comms import MemoryComms
 from raft.log.log_api import LogRec
 from raft.states.base_state import Substate
+from raft.states.leader import FollowerCursor
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PCandidate, PLeader
 
@@ -234,11 +235,17 @@ class TestOddPaths(unittest.TestCase):
         sm.state = leader
         log = server.get_log()
         term = log.get_term()
+        # should hit the case where log is empty, leader doesn't
+        # know what the hell we are talking about
         async def do_strange_arm1():
+            leader.followers[(0,1)] = FollowerCursor((0,1), None)
             resp = AppendResponseMessage((0, 1),
                                          (0,0),
                                          term,
-                                         {})
+                                         {
+                                             "response": True,
+                                             "last_entry_index": 0,
+                                          })
             await leader.on_append_response(resp)
             await asyncio.sleep(0.01)
         self.loop.run_until_complete(do_strange_arm1())
@@ -256,15 +263,16 @@ class TestOddPaths(unittest.TestCase):
                                          (0,0),
                                          term,
                                          {
+                                             "response": True,
+                                             "last_entry_index": 2,
                                              "leaderCommit": None,
-                                             "prevLogIndex": 2
                                          })
             await leader.on_append_response(resp)
             await asyncio.sleep(0.01)
         self.loop.run_until_complete(do_strange_arm2())
         self.assertEqual(len(server.get_handled_errors()), 1)
         err = server.get_handled_errors(clear=True)[0]
-        self.assertTrue("one less" in err['details'])
+        self.assertTrue("claims record" in err['details'])
         
         # Send a log pull and capture the result to make sure it is
         # right
