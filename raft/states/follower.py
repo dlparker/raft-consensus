@@ -129,6 +129,7 @@ class Follower(Voter):
     def __init__(self, server, timeout=0.75):
         super().__init__(server, self.my_type)
         self.timeout = timeout
+        self.use_log_pull = True
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
@@ -373,11 +374,13 @@ class Follower(Voter):
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
         if sd.needed_records is not None:
-            await self.send_response_message(message, votedYes=False)
-            await self.do_log_pull(message)
+            await self.send_response_message(message,
+                                             reject_reason="no_match")
+            if self.log_pull:
+                await self.do_log_pull(message)
             return True
         elif sd.need_rollback:
-            await self.send_response_message(message, votedYes=False)
+            await self.send_response_message(message, reject_reason="ahead")
             self.logger.info("on_append_entries doing rollback to match leader")
             self.logger.debug("StateDiff is %s", sd)
             await self.do_rollback(message)
@@ -414,13 +417,23 @@ class Follower(Voter):
                          message, log.read().index)
         return True
     
-    async def send_response_message(self, msg, votedYes=True):
+    async def send_response_message(self, msg, reject_reason=None):
         log = self.server.get_log()
         data = {
-            "response": votedYes,
+            "response": reject_reason == None,
             "currentTerm": log.get_term(),
         }
+        if reject_reason:
+            data['reject_reason'] = reject_reason
         data.update(msg.data)
+        entries = data.get('entries', None)
+        if entries:
+            del data['entries']
+            last_rec = entries[-1]
+            data['last_entry_index'] = last_rec.index
+        else:
+            data['last_entry_index'] = None
+            
         response = AppendResponseMessage(
             self.server.endpoint,
             msg.sender,

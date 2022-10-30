@@ -163,7 +163,7 @@ class State(metaclass=abc.ABCMeta):
             last_index = last_rec.index
         else:
             # no log records yet
-            last_index = None
+            last_index = -1
 
         reply = HeartbeatResponseMessage(message.receiver,
                                          message.sender,
