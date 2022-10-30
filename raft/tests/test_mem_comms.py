@@ -299,6 +299,7 @@ class TestDebugControls(unittest.TestCase):
             pauses.append(dict(mode=mode, code=code, message=message))
             while self.hold_pause[mode]:
                 await asyncio.sleep(0.001)
+            return True
                           
         inter1 = MyInterceptor(self.logger, pause_method)
         inter1.add_trigger(InterceptorMode.out_before,

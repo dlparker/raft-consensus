@@ -258,7 +258,7 @@ class Follower(Voter):
             await self.do_log_pull(message)
         elif sd.rollback_to is not None:
             self.logger.info("heartbeat state diff says we need rollback")
-            await self.do_rollback_to_leader(message)
+            await self.do_rollback(message)
         else:
             msg = 'state diff decode failed to determine action'
             self.logger.error(msg + "\n%s\n%s", message.data, sd)
@@ -301,12 +301,10 @@ class Follower(Voter):
         log = self.server.get_log()
         data = message.data
         sd = self.decode_state(message) 
-        self.logger.info("setting log term to %d, was %d",
-                         message.term, log.get_term())
+        self.logger.debug("doing rollback %s", sd)
         if not sd.same_term:
-            if self.debug_dumper:
-                self.logger.debug("updating local term %s to match leader %s",
-                                  sd.local_term, message.term)
+            self.logger.info("rollback setting log term to %s, was %s",
+                             message.term, log.get_term())
             log.set_term(message.term)
         last_rec = sd.rollback_to
         if last_rec is None:
@@ -317,8 +315,7 @@ class Follower(Voter):
             return
         log.trim_after(last_rec)
         log.commit(last_rec)
-        if self.debug_dumper:
-            self.logger.debug("rolled back to message %d", last_rec.index)
+        self.logger.debug("rolled back to message %d", last_rec)
     
     async def on_log_pull_response(self, message):
         self.logger.debug("in log pull response")
@@ -330,7 +327,7 @@ class Follower(Voter):
             self.logger.warning("log pull response containted no entries!")
             if data.get('code', None) == "reset":
                 self.logger.warning("log pull response requires reset of log")
-                self.do_rollback(message)
+                await self.do_rollback(message)
             return
         self.logger.debug("updating log with %d entries",
                           len(data["entries"]))
@@ -353,7 +350,11 @@ class Follower(Voter):
         log = self.server.get_log()
         data = message.data
         self.logger.debug("append %s %s", message, message.data)
-        sd = self.decode_state(message) 
+        sd = self.decode_state(message)
+        if not sd.same_term:
+            self.logger.debug("on_append updating term from %s to %s",
+                              sd.local_term, sd.leader_term)
+            log.set_term(sd.leader_term)
         laddr = (sd.leader_addr[0], sd.leader_addr[1])
         if self.leader_addr != laddr:
             if self.leader_addr is None:

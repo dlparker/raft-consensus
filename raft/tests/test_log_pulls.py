@@ -261,7 +261,8 @@ class TestLogPulls(unittest.TestCase):
         # leader will think that the follower has asked for
         # records with a start index above the last index
         leader_log.trim_after(1)
-
+        ll  = leader_log.read()
+        self.assertEqual(ll.index, 1)
         # clear current pause
         follow_inter.clear_trigger(InterceptorMode.out_after,
                                  LogPullMessage._code)
