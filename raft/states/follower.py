@@ -24,6 +24,7 @@ class StateDiff:
     leader_prev_term: int
     leader_commit: int
     leader_index: int
+    leader_addr: tuple
 
     @property
     def same_term(self):
@@ -128,6 +129,7 @@ class Follower(Voter):
         self.leaderless_timer = None
         self.last_vote = None
         self.last_vote_time = None
+        self.debug_dumper = False
         
     def __str__(self):
         return "follower"
@@ -224,17 +226,20 @@ class Follower(Voter):
                          leader_term,
                          leader_prev_term,
                          leader_commit,
-                         leader_index)
+                         leader_index,
+                         data.get('leaderPort', None))
 
-        
-    
     async def on_heartbeat(self, message):
         # reset timeout
         self.heartbeat_logger.debug("resetting leaderless_timer on heartbeat")
         await self.leaderless_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
+        sd = self.decode_state(message) 
         data = message.data
-        laddr = (data["leaderPort"][0], data["leaderPort"][1])
+        laddr = (sd.leader_addr[0], sd.leader_addr[1])
+        if self.debug_dumper:
+            self.logger.debug("starting on_heartbeat with \n%s\nand\n%s",
+                              data, sd)
         self.heartbeat_count += 1
         if self.leader_addr != laddr:
             if self.leader_addr is None:
@@ -243,270 +248,159 @@ class Follower(Voter):
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
             self.heartbeat_count = 0
-        if await self.do_sync_action(message):
+        if sd.in_sync:
+            if self.debug_dumper:
+                self.logger.debug("state diff says we are in sync")
             await self.on_heartbeat_common(message)
-            self.heartbeat_logger.debug("heartbeat reply send")
-            await self.set_substate(Substate.synced)
+        elif sd.needed_records is not None:
+            if self.debug_dumper:
+                self.logger.debug("state diff says we need records")
+            await self.do_log_pull(message)
+        elif sd.rollback_to is not None:
+            self.logger.info("heartbeat state diff says we need rollback")
+            await self.do_rollback_to_leader(message)
+        else:
+            msg = 'state diff decode failed to determine action'
+            self.logger.error(msg + "\n%s\n%s", message.data, sd)
+            raise Exception('state diff decode failed to determine action')
+        self.heartbeat_logger.debug("heartbeat reply send")
+        await self.set_substate(Substate.synced)
         return True
 
-    async def on_log_pull_response(self, message):
-        self.logger.debug("in log pull response")
-        await self.leaderless_timer.reset()
-        data = message.data
-        log = self.server.get_log()
-        last_rec = log.read()
-        if len(data["entries"]) == 0:
-            self.logger.warning("log pull response containted no entries!")
-            if data.get('code', None) == "reset":
-                self.logger.warning("log pull response requires reset of log")
-                last_index = data['prevLogIndex']
-                if last_index is None:
-                    self.logger.warning("Leader says log is empty!")
-                    log.clear_all()
-                elif last_index < last_rec.index:
-                    self.logger.warning("Trimming log back to %s", last_index)
-                    log.trim_after(last_index)
-            return
-        self.logger.debug("updating log with %d entries",
-                          len(data["entries"]))
-        for ent in data["entries"]:
-            log.append([LogRec(term=ent['term'], user_data=ent['user_data']),])
-            if ent['committed']:
-                log.commit(ent['index'])
-        leader_commit = data['leaderCommit']
-        return True
-        
-    async def do_sync_action(self, message):
-        data = message.data
-        leader_commit = data['leaderCommit']
-        leader_last_rec_index = data["prevLogIndex"]
-        leader_last_rec_term = data["prevLogTerm"]
-        log = self.server.get_log()
-        last_rec = log.read()
-        local_commit = log.get_commit_index()
-
-        # before comparing log index and commit index, we need
-        # to make sure we are operating in the same term as the
-        # leader
-        local_term = log.get_term()
-        if local_term != message.term:
-            if local_term is None:
-                self.logger.info("changing local term to match leader %d",
-                                 message.term)
-                log.set_term(message.term)
-            elif message.term is None:
-                self.logger.warning("Leader says term is %d but we think %d," \
-                                    " doing rollback",
-                                    message.term, local_term)
-                await self.do_rollback_to_leader(message)
-                return False
-            elif message.term > local_term:
-                self.logger.info("changing local term to match leader %d",
-                                 message.term)
-                log.set_term(message.term)
-            else:
-                self.logger.warning("Leader says term is %d but we think %d," \
-                                    " doing rollback",
-                                    message.term, local_term)
-                await self.do_rollback_to_leader(message)
-                return False
-        
-        if not last_rec:
-            # local log is empty
-            if leader_last_rec_index is None:
-                # all logs are empty (ish), that's in sync,
-                # just return a hearbeat response
-                return True
-            # we got nothing, leader got something, get it all
-            self.logger.debug("leader sent index %d, but our" \
-                              " log is empty, asking for pull",
-                              leader_commit)
-            await self.do_log_pull(message)
-            return False
-        if leader_last_rec_index is None:
-            # we have something, leader has nothing,
-            # we have a problem, so rollback
-            await self.do_rollback_to_leader(message)
-            return False
-        # can trust last_rec.index and leader_last_rec_index for comparisons
-        # at this point after null tests above
-        if (last_rec.index == leader_last_rec_index
-            and leader_commit == local_commit):
-            # all same, just heartbeat
-            return True
-        # no matter what the commit indexes say, the
-        # record indexes can tell us we need pull or rollback
-        if last_rec.index < leader_last_rec_index:
-            self.logger.info("Leader says last index %d our last index is" \
-                             " %d, asking for pull",
-                             leader_last_rec_index, last_rec.index)
-            await self.do_log_pull(message)
-            return False
-        if last_rec.index > leader_last_rec_index:
-            self.logger.info("Leader says last index %d our last index is" \
-                             " %d, doing rollback",
-                             leader_last_rec_index, last_rec.index)
-            await self.do_rollback_to_leader(message)
-            return False
-        #
-        # We didn't get a direction from the indexes, see if
-        # the commit indexes say something clear
-        # this could be None == None or int == int
-        if leader_commit == local_commit:
-            # nothing needs recording
-            return True
-        if leader_commit is None:
-            # local_commit cannot be None or above would match
-            self.logger.warning("Leader says commit is %d but " \
-                                " we think %d," \
-                                " doing rollback",
-                                leader_commit, local_commit)
-            await self.do_rollback_to_leader(message)
-            return False
-        if leader_commit < local_commit:
-            self.logger.warning("Leader says commit is %d but " \
-                                " we think %d," \
-                                " doing rollback",
-                                leader_commit, local_commit)
-            await self.do_rollback_to_leader(message)
-            return False
-        if leader_commit <= last_rec.index:
-            # we have the committed record, so commit from
-            # wherever we are up to the leader_commit index
-            self.logger.info("updating local commit index to match " \
-                             " leader %d",
-                             leader_commit)
-            await self.set_substate(Substate.syncing_commit)
-            for i in range(local_commit, leader_commit + 1):
-                log.commit(i)
-                return True
-        # At this point there are no more out of sync conditions to
-        # detect, so just reply with a hearbeat
-        return True
-        
     async def do_log_pull(self, message):
         # just tell the leader where we are and have him
         # send what we are missing
 
         log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec is None:
-            start_index = 0
-        else:
-            start_index = last_rec.index + 1
+        sd = self.decode_state(message) 
         self.logger.info("asking leader for log pull starting at %d",
-                         start_index)
+                         sd.needed_records['start'])
         message = LogPullMessage(
             self.server.endpoint,
             message.sender,
             log.get_term(),
             {
-                "start_index": start_index
+                "start_index": sd.needed_records['start']
             }
         )
+        if self.debug_dumper:
+            self.logger.debug("prepped log pull message for leader\n%s",
+                              message.data)
         await self.server.send_message_response(message)
+        if self.debug_dumper:
+            self.logger.debug("sent log pull message to leader\n%s",
+                              message.data)
         # getting here might have been slow, let's reset the
         # timer
         if not self.terminated:
             await self.leaderless_timer.reset()
 
-    async def do_rollback_to_leader(self, message):
+    async def do_rollback(self, message):
         # figure out what the leader's actual
         # state is and roll back to that. 
-        
-        data = message.data
-        leader_commit = data['leaderCommit']
-        leader_last_rec_index = data["prevLogIndex"]
-        leader_last_rec_term = data["prevLogIndex"]
         log = self.server.get_log()
-        last_rec = log.read()
-        self.logger.info("setting log term to %d, was %d", message.term, log.get_term())
-        log.set_term(message.term)
+        data = message.data
+        sd = self.decode_state(message) 
+        self.logger.info("setting log term to %d, was %d",
+                         message.term, log.get_term())
+        if not sd.same_term:
+            if self.debug_dumper:
+                self.logger.debug("updating local term %s to match leader %s",
+                                  sd.local_term, message.term)
+            log.set_term(message.term)
+        last_rec = sd.rollback_to
         if last_rec is None:
-            self.logger.warning("in call to rollback, we have nothing in the log, nothing to do")
-            return
-        if leader_commit is None:
             # our whole log is bogus?!!!
             self.logger.warning("Leader log is empty, ours is not, discarding"\
                                 " everything")
             log.clear_all()
             return
-        if last_rec.index <= leader_commit:
-            self.logger.warning("in call to rollback, our log matches leader commit, nothing to do")
+        log.trim_after(last_rec)
+        log.commit(last_rec)
+        if self.debug_dumper:
+            self.logger.debug("rolled back to message %d", last_rec.index)
+    
+    async def on_log_pull_response(self, message):
+        self.logger.debug("in log pull response")
+        await self.leaderless_timer.reset()
+        data = message.data
+        log = self.server.get_log()
+        sd = self.decode_state(message) 
+        if len(data["entries"]) == 0:
+            self.logger.warning("log pull response containted no entries!")
+            if data.get('code', None) == "reset":
+                self.logger.warning("log pull response requires reset of log")
+                self.do_rollback(message)
             return
-        self.logger.warning("in call to rollback, discarding messages after %d, to %d",
-                            leader_commit, last_rec.index)
-        log.trim_after(leader_commit)
-        log.commit(leader_commit)
-            
+        self.logger.debug("updating log with %d entries",
+                          len(data["entries"]))
+        for ent in data["entries"]:
+            log.append([LogRec(term=ent['term'],
+                               user_data=ent['user_data']),])
+            new_rec = log.read()
+            commit = False
+            if ent['committed']:
+                log.commit(new_rec.index)
+                commit = True
+            if self.debug_dumper:
+                self.logger.debug("added log rec %d, commit = %s",
+                                  new_rec.index, commit)
+        return True
+        
     async def on_append_entries(self, message):
         self.logger.info("resetting leaderless_timer on append entries")
         await self.leaderless_timer.reset()
         log = self.server.get_log()
         data = message.data
         self.logger.debug("append %s %s", message, message.data)
-        laddr = (data["leaderPort"][0], data["leaderPort"][1])
+        sd = self.decode_state(message) 
+        laddr = (sd.leader_addr[0], sd.leader_addr[1])
         if self.leader_addr != laddr:
             if self.leader_addr is None:
                 await self.set_substate(Substate.joined)
             else:
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
+        if sd.needed_records is not None:
+            await self.send_response_message(message, votedYes=False)
+            await self.do_log_pull(message)
+            return True
+        elif sd.rollback_to is not None:
+            await self.send_response_message(message, votedYes=False)
+            self.logger.info("on_append_entries doing rollback to match leader")
+            self.logger.debug("StateDiff is %s", sd)
+            await self.do_rollback(message)
+            return True
+            
+        # log the records in the message
+        if len(data['entries']) == 0:
+            start = sd.local_commit
+            if start == -1:
+                start = 0
+            end = sd.leader_commit + 1
+            self.logger.debug("on_append_entries commit %s to %s",
+                              start, end-1)
+            for i in range(start, end):
+                log.commit(i)
+            if False:
+                await self.send_response_message(message)
+                self.logger.info("Sent log update ack %s, local last rec = %d",
+                                 message, log.read().index)
+            return True
         entry_count = len(data["entries"]) 
-
         self.logger.debug("on_append_entries %d entries message %s",
                           entry_count, message)
-        if log.get_term() and message.term < log.get_term():
-            await self.send_response_message(message, votedYes=False)
-            self.logger.info("rejecting message because sender term is less than mine %s", message)
-            return True
-        # log the records in the message
-        if entry_count > 0:
-            await self.set_substate(Substate.log_appending)
-            self.logger.debug("updating log with %d entries",
-                              len(data["entries"]))
-            for ent in data["entries"]:
-                log.append([LogRec(term=ent['term'], user_data=ent['user_data']),])
-                if ent['committed']:
-                    log.commit(ent['index'])
-            await self.send_response_message(message)
-            self.logger.info("Sent log update ack %s, local last rec = %d",
-                             message, log.read().index)
-            return True
-        # must be a commit trigger for an existing record
-        leader_commit = data['leaderCommit']
-        leader_last_rec_index = data["prevLogIndex"]
-        leader_last_rec_term = data["prevLogIndex"]
-        last_rec = log.read()
-        if last_rec is None:
-            self.logger.info("leader sent an append message with no entries, but we have no local log records, trying to sync up")
-            if await self.do_sync_action(message):
-                await self.send_response_message(message)
-                self.logger.info("Sent log update ack %s", message)
-                return True
-        local_commit = log.get_commit_index()
-        self.logger.debug("append leader_commit %s, local_commit %s," \
-                          " leader_last_index %s, last_rec.index %s",
-                          leader_commit, local_commit,
-                          leader_last_rec_index, last_rec.index)
-        if leader_commit is not None:
-            if last_rec.index >= leader_commit:
-                if local_commit is not None:
-                    start = local_commit
-                else:
-                    start = 0
-                if start <= leader_commit:
-                    self.logger.debug("Leader sent commit %d, local is %s committing from %d",
-                                      leader_commit, local_commit, start)
-                    for i in range(start, leader_commit + 1):
-                        log.commit(i)
-                    return True
-        # we are not in sync, fix that
-        self.logger.debug("append entry empty and indexes and commits did not make sense against local log, trying to sync with leader")
-        if await self.do_sync_action(message):
-            await self.send_response_message(message)
-            self.logger.info("Sent log update ack %s", message)
-
+        await self.set_substate(Substate.log_appending)
+        self.logger.debug("updating log with %d entries",
+                          len(data["entries"]))
+        for ent in data["entries"]:
+            log.append([LogRec(term=ent['term'], user_data=ent['user_data']),])
+            readback = log.read()
+            if ent['committed']:
+                log.commit(readback.index)
+        await self.send_response_message(message)
+        self.logger.info("Sent log update ack %s, local last rec = %d",
+                         message, log.read().index)
         return True
     
     async def send_response_message(self, msg, votedYes=True):
@@ -537,7 +431,7 @@ class Follower(Voter):
         log.set_term(message.term)
         data = message.data
         self.last_vote = None
-        laddr = (data["leaderPort"][0], data["leaderPort"][1])
+        laddr = (data['leaderPort'][0], data['leaderPort'][1])
         if self.leader_addr != laddr:
             if self.leader_addr is None:
                 self.logger.debug("follower setting new substate %s",
@@ -572,6 +466,7 @@ class Follower(Voter):
         # our last log record index is max.
         # If we have already voted, then we say no. Election
         # will resolve or restart.
+        sd = self.decode_state(message) 
         log = self.server.get_log()
         # get the last record in the log
         last_rec = log.read()
@@ -583,16 +478,10 @@ class Follower(Voter):
             last_index = None
             last_term = None
         approve = False
-        if self.last_vote is None and last_index is None:
+        if self.last_vote is None and sd.local_is_empty:
             self.logger.info("everything None, voting true")
             approve = True
-        elif (self.last_vote is None 
-              and message.data["lastLogIndex"] is None and last_rec is None):
-            self.logger.info("last vote None, logs empty, voting true")
-            approve = True
-        elif (self.last_vote is None
-              and message.data["lastLogIndex"] is not None
-              and message.data["lastLogIndex"] >= last_index):
+        elif self.last_vote is None and not sd.local_ahead:
             self.logger.info("last vote None, logs match, voting true")
             approve = True
         elif self.last_vote == message.sender:

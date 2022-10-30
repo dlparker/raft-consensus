@@ -147,8 +147,11 @@ class Candidate(Voter):
             None,
             log.get_term(),
             {
-                "lastLogIndex": last_index,
-                "lastLogTerm": last_term,
+                "leaderId": self.server.name,
+                "leaderPort": None,
+                "prevLogIndex": last_index,
+                "prevLogTerm": last_term,
+                "leaderCommit": log.get_commit_index(),
             }
         )
         await self.server.broadcast(election)

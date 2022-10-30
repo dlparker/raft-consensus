@@ -48,3 +48,4 @@ Move the memory log, memory comms and udp comms to dev_tools.
 Remove rollback logic once rejoin logic developed.
 
 
+Change serializer to an API and rename original

@@ -322,11 +322,11 @@ class PausingServerCluster:
             self.pause_stepper.resume(spec)
         self.pause_stepper = None
 
-    def resume_all_paused_servers(self):
+    def resume_all_paused_servers(self, wait=True):
         async def do_resume():
             for name, spec in self.server_specs.items():
                 if spec.running:
-                    await spec.pbt_server.resume_all()
+                    await spec.pbt_server.resume_all(wait=wait)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

@@ -144,6 +144,11 @@ class MemoryComms(CommsAPI):
                         # let test code decide to pause things before
                         # delivering
                         deliver = await self.interceptor.before_in_msg(message)
+                        if not deliver:
+                            self.logger.info("not delivering message %s on" \
+                                             "advice from interceptor",
+                                             message.code)
+                            continue
                 except Exception as e:  # pragma: no cover error
                     self.logger.error(traceback.format_exc())
                     self.logger.error("cannot deserialze incoming data '%s...'",

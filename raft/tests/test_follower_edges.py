@@ -10,11 +10,14 @@ from pathlib import Path
 from raft.messages.append_entries import AppendEntriesMessage
 from raft.messages.termstart import TermStartMessage
 from raft.messages.heartbeat import HeartbeatMessage
+from raft.messages.command import ClientCommandMessage
+from raft.messages.log_pull import LogPullMessage, LogPullResponseMessage
 from raft.comms.memory_comms import MemoryComms
 from raft.log.log_api import LogRec
 from raft.states.base_state import Substate
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PFollower
+from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -100,7 +103,7 @@ class TestOddPaths(unittest.TestCase):
                                    {})
 
         msg._data = dict(leaderCommit=None, prevLogIndex=None,
-                           prevLogTerm=None)
+                           prevLogTerm=None, leaderAddr=(0,0))
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertFalse(res.same_term)
@@ -130,7 +133,7 @@ class TestOddPaths(unittest.TestCase):
         # Now claim that the leader has one log entry but still
         # no commit, that means we don't want any entries
         msg._data = dict(leaderCommit=None, prevLogIndex=0,
-                           prevLogTerm=0)
+                           prevLogTerm=0,leaderAddr=(0,0))
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertTrue(res.same_term)
@@ -151,7 +154,7 @@ class TestOddPaths(unittest.TestCase):
         # is committed, that means we want one entry starting
         # at index 0
         msg._data = dict(leaderCommit=0, prevLogIndex=0,
-                           prevLogTerm=0)
+                           prevLogTerm=0, leaderAddr=(0,0))
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertFalse(res.same_index)
@@ -173,7 +176,7 @@ class TestOddPaths(unittest.TestCase):
         # only one is committed, that means we want one entry starting
         # at index 0
         msg._data = dict(leaderCommit=0, prevLogIndex=1,
-                           prevLogTerm=0)
+                           prevLogTerm=0, leaderAddr=(0,0))
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertFalse(res.same_index)
@@ -195,7 +198,7 @@ class TestOddPaths(unittest.TestCase):
         # both are committed, that means we want two entries starting
         # at index 0
         msg._data = dict(leaderCommit=1, prevLogIndex=1,
-                           prevLogTerm=0)
+                           prevLogTerm=0, leaderAddr=(0,0))
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertFalse(res.same_index)
@@ -283,7 +286,7 @@ class TestOddPaths(unittest.TestCase):
         # logic for re-configuration on merging segmented networks.
         # TODO: Remove this when that is done
         msg._data = dict(leaderCommit=None, prevLogIndex=None,
-                           prevLogTerm=None)
+                           prevLogTerm=None, leaderAddr=(0,0))
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertFalse(res.same_commit)
@@ -300,7 +303,7 @@ class TestOddPaths(unittest.TestCase):
         # logic for re-configuration on merging segmented networks.
         # TODO: Remove this when that is done
         msg._data = dict(leaderCommit=None, prevLogIndex=0,
-                           prevLogTerm=0)
+                           prevLogTerm=0, leaderAddr=(0,0))
         res = follower.decode_state(msg)
         self.assertFalse(res.in_sync)
         self.assertFalse(res.same_commit)
@@ -314,3 +317,194 @@ class TestOddPaths(unittest.TestCase):
         monitor.clear_pause_on_substate(Substate.leader_lost)
         self.loop.run_until_complete(spec.pbt_server.resume_all())
 
+class TestLogOps(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.logger = None
+        pass
+    
+    @classmethod
+    def tearDownClass(cls):
+        pass
+    
+    def setUp(self):
+        self.cluster = PausingServerCluster(server_count=3,
+                                            logging_type=LOGGING_TYPE,
+                                            base_port=5000)
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+        self.logger = logging.getLogger("raft.tests." + __name__)
+                
+    def tearDown(self):
+        self.cluster.stop_all_servers()
+        time.sleep(0.1)
+        self.loop.close()
+
+    def pause_waiter(self, label, expected=2, timeout=2):
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            pause_count = 0
+            for spec in self.servers.values():
+                if spec.pbt_server.paused:
+                    pause_count += 1
+                    if spec.monitor.state._type == "leader":
+                        leader = spec
+                    if spec.monitor.state._type == "follower":
+                       follower = spec
+            if pause_count == expected:
+                break
+        self.assertEqual(pause_count, expected,
+                         msg=f"only {pause_count} servers paused on {label}")
+        return leader, follower
+
+    def resume_waiter(self):
+        start_time = time.time()
+        while time.time() - start_time < 4:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            pause_count = 0
+            for spec in self.servers.values():
+                if spec.pbt_server.paused:
+                    pause_count += 1
+            if pause_count == 0:
+                break
+        self.assertEqual(pause_count, 0)
+        
+    def test_it(self):
+        self.servers = self.cluster.prepare(timeout_basis=timeout_basis)
+        spec0 = self.servers["server_0"]
+        spec1 = self.servers["server_1"]
+        monitor0 = spec0.monitor
+        monitor1 = spec1.monitor
+        for spec in self.servers.values():
+            spec.monitor.set_pause_on_substate(Substate.synced)
+            spec.monitor.set_pause_on_substate(Substate.sent_heartbeat)
+        self.cluster.start_one_server(spec0.name)
+        self.cluster.start_one_server(spec1.name)
+        self.logger.info("waiting for pause on election results")
+
+        leader, follower = self.pause_waiter("election results")
+
+        for spec in self.servers.values():
+            spec.monitor.clear_pause_on_substate(Substate.synced)
+            spec.monitor.clear_pause_on_substate(Substate.sent_heartbeat)
+
+
+        leader.monitor.set_pause_on_substate(Substate.sent_new_entries)
+                                         
+        follower.interceptor.add_trigger(InterceptorMode.in_after,
+                                         AppendEntriesMessage._code)
+                                         
+        self.cluster.resume_all_paused_servers()
+        self.resume_waiter()
+        
+        # can't do this:
+        #client = leader.get_client()
+        #client.do_credit(10)
+        # because it will timeout
+        class FakeServer:
+
+            def __init__(self):
+                self.in_queue = asyncio.Queue()
+                
+            async def on_message(self, message):
+                await self.in_queue.put(message)
+        
+        server_1 = FakeServer()
+        comms = MemoryComms()
+        my_addr = ('localhost', 6000)
+        async def do_query():
+            await comms.start(server_1, my_addr)
+            command = ClientCommandMessage(my_addr,
+                                           leader.server_obj.endpoint,
+                                           None,
+                                           "query")
+            await comms.post_message(command)
+        self.loop.run_until_complete(do_query())
+        
+        self.pause_waiter("update via append")
+        # at this point append entries has run and follower should
+        # have a record in its log
+        flog = follower.server_obj.get_log()
+        frec = flog.read()
+        self.assertIsNotNone(frec)
+        
+        leader.monitor.clear_pause_on_substate(Substate.sent_new_entries)
+        leader.monitor.set_pause_on_substate(Substate.sent_commit)
+        self.cluster.resume_all_paused_servers()
+        # they'll pause again quit, so don't try to wait:
+        # self.resume_waiter()
+        
+        self.pause_waiter("commit via append")
+        # At this point append entries for commit has run and follower
+        # should have commited the record
+        frec = flog.read()
+        self.assertIsNotNone(frec)
+        self.assertTrue(frec.committed)
+
+        
+        leader.monitor.clear_pause_on_substate(Substate.sent_commit)
+
+        leader.interceptor.add_trigger(InterceptorMode.out_after,
+                                       HeartbeatMessage._code)
+
+        follower.interceptor.add_trigger(InterceptorMode.in_after,
+                                         HeartbeatMessage._code)
+
+        self.cluster.resume_all_paused_servers()
+        self.pause_waiter("next append")
+        # At this point leader should have sent reply
+        self.reply = None
+        async def get_reply():
+            start_time = time.time()
+            while time.time() - start_time < 2:
+                if not server_1.in_queue.empty():
+                    self.reply = await server_1.in_queue.get()
+                    break
+        self.loop.run_until_complete(get_reply())
+        self.assertIsNotNone(self.reply)
+
+        # add a couple of records to the leader log, then let
+        # them run and log pull should happen
+        
+        llog = leader.server_obj.get_log()
+        lrec = flog.read()
+        llog.append([lrec,lrec])
+        lrec = flog.read()
+        # commit only the first one
+        llog.commit(1)
+        leader.monitor.clear_substate_pauses()
+        leader.interceptor.clear_triggers()
+        follower.monitor.clear_substate_pauses()
+        follower.interceptor.clear_triggers()
+
+        async def checker(mode, code, message):
+            if message.data['leaderCommit'] == 1:
+                await leader.pbt_server.pause_all(TriggerType.interceptor,
+                                                  dict(mode=mode,
+                                                       code=code))
+        follower.monitor.set_pause_on_substate(Substate.debug_point)
+        leader.interceptor.add_trigger(InterceptorMode.out_after,
+                                       HeartbeatMessage._code,
+                                       checker)
+
+
+        self.cluster.resume_all_paused_servers()
+        self.pause_waiter("log_pull")
+        leader.interceptor.clear_triggers()
+        follower.interceptor.clear_triggers()
+        self.cluster.resume_all_paused_servers()
+        if False:
+            leader.interceptor.add_trigger(InterceptorMode.out_after,
+                                           LogPullResponseMessage._code)
+            
+            follower.interceptor.add_trigger(InterceptorMode.out_after,
+                                             LogPullMessage._code)

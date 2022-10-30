@@ -197,6 +197,13 @@ class PausingMonitor(StateChangeMonitor):
         if substate in self.pause_on_substates:
             del self.pause_on_substates[substate]
 
+    def clear_substate_pauses(self):
+        self.pause_on_substates = {}
+
+    def clear_state_pauses(self):
+        self.pause_on_states = {}
+            
+
 class InterceptorMode(str, Enum):
     in_before = "IN_BEFORE"
     out_before = "OUT_BEFORE"
@@ -212,6 +219,7 @@ class PausingInterceptor(MessageInterceptor):
         self.in_afters = {}
         self.out_befores = {}
         self.out_afters = {}
+        self.pausing_message = None
         
     async def before_in_msg(self, message) -> bool:
         method = self.in_befores.get(message.code, None)
@@ -221,9 +229,11 @@ class PausingInterceptor(MessageInterceptor):
         try:
             self.logger.info("Before message %s in calling method",
                               message.code)
+            self.pausing_message = message
             go_on = await method(InterceptorMode.in_before,
                            message.code,
                            message)
+            self.pausing_message = None
         except:
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
@@ -242,9 +252,11 @@ class PausingInterceptor(MessageInterceptor):
         try:
             self.logger.info("After message %s in calling method",
                               message.code)
+            self.pausing_message = message
             go_on = await method(InterceptorMode.in_after,
                                  message.code,
                                  message)
+            self.pausing_message = None
         except:
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
@@ -259,9 +271,11 @@ class PausingInterceptor(MessageInterceptor):
         try:
             self.logger.info("Before message %s out calling method",
                              message.code)
+            self.pausing_message = message
             go_on = await method(InterceptorMode.out_before,
                                  message.code,
                                  message)
+            self.pausing_message = None
         except:
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
@@ -276,9 +290,11 @@ class PausingInterceptor(MessageInterceptor):
         try:
             self.logger.info("After message %s out calling method",
                              message.code)
+            self.pausing_message = message
             go_on = await method(InterceptorMode.out_after,
                                  message.code,
                                  message)
+            self.pausing_message = None
         except:
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
@@ -393,9 +409,12 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         if not wait:
             return
         start_time = time.time()
-        while time.time() - start_time < 1 and self.paused:
+        # don't check paused, it might happen again before we
+        # can check, just check to see if the do_resume
+        # was cleared, which means resume happened
+        while time.time() - start_time < 1 and self.do_resume:
             await asyncio.sleep(0.01)
-        if self.paused:
+        if self.do_resume:
             raise Exception('resume did not happen!')
         self.logger.info("%s resumed", self.port)
 

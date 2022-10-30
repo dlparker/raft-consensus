@@ -25,15 +25,6 @@ class Substate(str, Enum):
     """ Was already following, now have new leader """
     new_leader = "NEW_LEADER"
     
-    """ Just got elected """
-    became_leader = "BECAME_LEADER"
-    
-    """ Just sent term start (as leader) """
-    sent_term_start = "SENT_TERM_START"
-    
-    """ Just sent term start (as leader) """
-    sent_heartbeat = "SENT_HEARTBEAT"
-    
     """ As of last call from leader, log is in sync """
     synced = "SYNCED"                 
 
@@ -45,7 +36,21 @@ class Substate(str, Enum):
 
     """ Starting election """
     voting = "VOTING"
+
+    """ Just got elected """
+    became_leader = "BECAME_LEADER"
     
+    """ Just sent term start (as leader) """
+    sent_term_start = "SENT_TERM_START"
+    
+    """ Just sent term start (as leader) """
+    sent_heartbeat = "SENT_HEARTBEAT"
+    
+    """ Just sent new log entries append (as leader) """
+    sent_new_entries = "SENT_NEW_ENTRIES"
+    
+    """ Just sent log entrie commit (as leader) """
+    sent_commit = "SENT_COMMIT"
 
 
 # abstract class for all server states

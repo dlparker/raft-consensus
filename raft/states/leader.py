@@ -108,11 +108,12 @@ class Leader(State):
         message_commit = message.data['leaderCommit']
         if log.get_commit_index() != message_commit:
             # this is a common occurance since we commit after a quorum
-            self.logger.debug("got append response message from %s but " \
-                                "all log messages already committed",
-                              message.sender)
-            self.logger.debug("ignoring message because sender is consistent " \
-                              "with our log to that point")
+            self.logger.debug("got append response message from %s"\
+                              " for commit_index %s, but" \
+                              " all log messages already committed" \
+                              " ignoring message because sender is" \
+                              " consistent with our log to that point",
+                              message.sender, message_commit)
             return True
         sender_index = message.data['prevLogIndex']
         # last_index could be None if append call was for first log
@@ -157,6 +158,14 @@ class Leader(State):
             # we are commiting
             old_index = message.data['prevLogIndex']
             old_term = message.data['prevLogTerm']
+
+            # the prevLogIndex value should now represent
+            # the index of the log record we shared around,
+            # it will be committed now.
+            if old_index is None:
+                new_index = 0
+            else:
+                new_index = old_index + 1
             commit_message = AppendEntriesMessage(
                 self.server.endpoint,
                 None,
@@ -164,7 +173,7 @@ class Leader(State):
                 {
                     "leaderId": self.server.name,
                     "leaderPort": self.server.endpoint,
-                    "prevLogIndex": old_index,
+                    "prevLogIndex": new_index,
                     "prevLogTerm": old_term,
                     "entries": [],
                     "leaderCommit": log.get_commit_index(),
@@ -173,6 +182,7 @@ class Leader(State):
             self.logger.debug("(term %d) sending log commit to all followers: %s",
                               log.get_term(), commit_message.data)
             await self.server.broadcast(commit_message)
+            await self.set_substate(Substate.sent_commit)
             if last_rec.context is not None:
                 reply_address = last_rec.context.get('client_addr', None)
                 if reply_address:
@@ -239,7 +249,7 @@ class Leader(State):
             await self.server.post_message(reply)
             return True
         entries = []
-        for i in range(start_index, log.get_commit_index() +1):
+        for i in range(start_index, last_rec.index +1):
             a_rec = log.read(i)
             entries.append(asdict(a_rec))
         reply = LogPullResponseMessage(
@@ -374,6 +384,7 @@ class Leader(State):
         self.logger.debug("(term %d) sending log update to all followers: %s",
                           log.get_term(), update_message.data)
         await self.server.broadcast(update_message)
+        await self.set_substate(Substate.sent_new_entries)
         return True
 
     async def on_vote_received(self, message):
