@@ -37,11 +37,13 @@ class ServerSpec:
         
 class UDPServerCluster:
 
-    def __init__(self, server_count, logging_type=None, base_port=5000):
+    def __init__(self, server_count, logging_type=None,
+                 base_port=5000, use_log_pull=True):
         self.base_dir = Path("/tmp/raft_tests")
         self.server_count = server_count
         self.logging_type = logging_type
         self.base_port = base_port
+        self.use_log_pull = use_log_pull
         self.server_specs = {}
         self.dir_recs = {}
         self.all_server_addrs = []
@@ -65,7 +67,7 @@ class UDPServerCluster:
                 others.append(addr)
         args = [dir_rec['port'], dir_rec['working_dir'],
                 dir_rec['name'], others, self.log_config,
-                timeout_basis]
+                timeout_basis, self.use_log_pull]
         
         spec = ServerSpec(dir_rec['name'], dir_rec['port'],
                           dir_rec['addr'], dir_rec['working_dir'],

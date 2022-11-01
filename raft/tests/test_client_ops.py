@@ -15,6 +15,10 @@ class MemTestClientOps(BaseCase.TestClientOps):
     def get_process_flag(self):
         return False
 
+    @property
+    def use_log_pull(self):
+        return True
+
     def get_client(self, port):
         return MemoryBankTellerClient("localhost", port)
         
@@ -31,6 +35,10 @@ class UDPTestClientOps(BaseCase.TestClientOps):
         return LOGGING_TYPE
 
     def get_process_flag(self):
+        return True
+
+    @property
+    def use_log_pull(self):
         return True
 
     def get_client(self, port):

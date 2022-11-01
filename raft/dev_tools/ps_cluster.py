@@ -199,7 +199,8 @@ pause_map = {
     
 class PausingServerCluster:
 
-    def __init__(self, server_count, logging_type=None, base_port=5000):
+    def __init__(self, server_count, logging_type=None,
+                 base_port=5000, timeout_basis=0.2, use_log_pull=True):
         self.base_dir = Path("/tmp/raft_tests")
         self.server_count = server_count
         self.logging_type = logging_type
@@ -209,6 +210,8 @@ class PausingServerCluster:
         self.all_server_addrs = []
         self.pause_stepper = None
         self.logger = None
+        self.timeout_basis = timeout_basis
+        self.use_log_pull = use_log_pull
         reset_queues()
 
     def get_servers(self):
@@ -225,7 +228,7 @@ class PausingServerCluster:
                 self.log_config = None
             self.logger = logging.getLogger(__name__)
         
-    def prepare_one(self, name, restart=False, timeout_basis=1.0):
+    def prepare_one(self, name, restart=False, timeout_basis=None):
         self.ensure_logger_and_dirs()
         if restart:
             self.setup_server_dir(name)
@@ -234,9 +237,11 @@ class PausingServerCluster:
         for addr in self.all_server_addrs:
             if addr[1] != dir_rec['port']:
                 others.append(addr)
+        if timeout_basis is None:
+            timeout_basis = self.timeout_basis
         args = [dir_rec['port'], dir_rec['working_dir'],
                 dir_rec['name'], others, self.log_config,
-                timeout_basis]
+                timeout_basis, self.use_log_pull]
         pbt_server = PausingBankTellerServer(*args)
         spec = ServerSpec(dir_rec['name'], dir_rec['port'],
                           dir_rec['addr'], dir_rec['working_dir'],

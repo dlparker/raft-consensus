@@ -126,10 +126,10 @@ class Follower(Voter):
 
     my_type = "follower"
     
-    def __init__(self, server, timeout=0.75):
+    def __init__(self, server, timeout=0.75, use_log_pull=True):
         super().__init__(server, self.my_type)
         self.timeout = timeout
-        self.use_log_pull = True
+        self.use_log_pull = use_log_pull
         # get this too soon and logging during testing does not work
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
@@ -258,6 +258,13 @@ class Follower(Voter):
                 await self.set_substate(Substate.new_leader)
             self.leader_addr = laddr
             self.heartbeat_count = 0
+        if not sd.same_term:
+            self.logger.debug("leader %s term differnt, updating local %s",
+                              sd.leader_term, sd.local_term)
+            log = self.server.get_log()
+            log.set_term(sd.leader_term)
+            # get a new decode
+            sd = self.decode_state(message)
         if sd.in_sync:
             if self.debug_dumper:
                 self.logger.debug("state diff says we are in sync")
@@ -265,7 +272,12 @@ class Follower(Voter):
         elif sd.needed_records is not None:
             if self.debug_dumper:
                 self.logger.debug("state diff says we need records")
-            await self.do_log_pull(message)
+            if self.use_log_pull:
+                self.logger.debug("requesting log pull")
+                await self.do_log_pull(message)
+            else:
+                self.logger.debug("expecting catch-up append entry msgs")
+                await self.on_heartbeat_common(message)
         elif sd.need_rollback:
             self.logger.info("heartbeat state diff says we need rollback")
             await self.do_rollback(message)
@@ -376,7 +388,7 @@ class Follower(Voter):
         if sd.needed_records is not None:
             await self.send_response_message(message,
                                              reject_reason="no_match")
-            if self.log_pull:
+            if self.use_log_pull:
                 await self.do_log_pull(message)
             return True
         elif sd.need_rollback:

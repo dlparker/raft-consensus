@@ -68,11 +68,14 @@ class BaseCase:
             if self.get_process_flag():
                 c = UDPServerCluster(server_count=3,
                                      logging_type=self.get_logging_type(),
-                                     base_port=5000)
+                                     base_port=5000,
+                                     use_log_pull=self.use_log_pull)
             else:
                 c = PausingServerCluster(server_count=3,
                                          logging_type=self.get_logging_type(),
-                                         base_port=5000)
+                                         base_port=5000,
+                                         use_log_pull=self.use_log_pull)
+
                 
             self.cluster = c
             if self.logger is None:
@@ -260,6 +263,7 @@ class BaseCase:
             
             if not restart:
                 return
+            self.logger.info("\n\n\tRESTARTING\n\n")
             self.do_restart(second.name)
             self.do_op_seq_3(client1)
 

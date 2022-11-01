@@ -34,6 +34,22 @@ class StateMap(metaclass=abc.ABCMeta):
         to be used in type hints.
         """
         raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_state(self) -> State:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def changing_state(self) -> bool:
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def set_use_log_pull(self, flag: bool) -> None:
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def is_log_pull_used(self) -> bool:
+        raise NotImplementedError
     
     @abc.abstractmethod
     def add_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
@@ -41,14 +57,6 @@ class StateMap(metaclass=abc.ABCMeta):
         
     @abc.abstractmethod
     def remove_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
-        raise NotImplementedError
-        
-    @abc.abstractmethod
-    def get_state(self) -> State:
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def changing_state(self) -> bool:
         raise NotImplementedError
         
     @abc.abstractmethod
@@ -87,6 +95,7 @@ class StandardStateMap(StateMap):
         self.leader_heartbeat_timeout = 0.5 * timeout_basis
         self.changing = False
         self.pre_change = None
+        self.use_log_pull = True
         
     # can't be done with init because instance
     # of this class required for server class init
@@ -126,6 +135,12 @@ class StandardStateMap(StateMap):
     def changing_state(self) -> bool:
         return self.changing
 
+    def set_use_log_pull(self, flag: bool) -> None:
+        self.use_log_pull = flag
+
+    def is_log_pull_used(self) -> bool:
+        return self.set_use_log_pull
+    
     def start_state_change(self, old_state: Union[str, None],
                            new_state: str) -> None:
         self.changing = True
@@ -169,7 +184,8 @@ class StandardStateMap(StateMap):
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to follower", self.state)
         follower =  Follower(server=self.server,
-                             timeout=self.follower_leaderless_timeout)
+                             timeout=self.follower_leaderless_timeout,
+                             use_log_pull=self.use_log_pull)
         for monitor in self.monitors:
             try:
                 follower = await monitor.new_state(self, self.state, follower)
@@ -217,7 +233,9 @@ class StandardStateMap(StateMap):
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to leader", self.state)
         leader =  Leader(server=self.server,
-                         heartbeat_timeout=self.leader_heartbeat_timeout)
+                         heartbeat_timeout=self.leader_heartbeat_timeout,
+                         use_log_pull=self.use_log_pull)
+
         for monitor in self.monitors:
             try:
                 leader = await monitor.new_state(self, self.state, leader)

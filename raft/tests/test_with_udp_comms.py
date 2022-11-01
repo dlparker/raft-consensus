@@ -20,6 +20,10 @@ class UDPTestThreeServers(BaseCase.TestThreeServers):
     def get_process_flag(self):
         return True
 
+    @property
+    def use_log_pull(self):
+        return True
+
     def get_client(self, port):
         return UDPBankTellerClient("localhost", port)
         

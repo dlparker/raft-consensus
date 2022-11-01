@@ -98,13 +98,15 @@ class PausingMonitor(StateChangeMonitor):
         self.state_history.append(old_state)
         self.substate_history = []
         if new_state._type == "follower":
-            new_state = PFollower(new_state.server, new_state.timeout)
+            new_state = PFollower(new_state.server, new_state.timeout,
+                                  new_state.use_log_pull)
         elif new_state._type == "candidate":
             new_state = PCandidate(new_state.server,
                                    new_state.election_timeout)
         elif new_state._type == "leader":
             new_state = PLeader(new_state.server,
-                                new_state.heartbeat_timeout)
+                                new_state.heartbeat_timeout,
+                                new_state.use_log_pull)
         self.state = new_state
         self.state_map = state_map
         method = self.pause_on_states.get(str(new_state), None)
@@ -242,6 +244,7 @@ class PausingInterceptor(MessageInterceptor):
             except KeyError:
                 # might have been cleared by test code
                 pass
+        self.pausing_message = None
         return go_on
 
     async def after_in_msg(self, message) -> bool:
@@ -261,6 +264,7 @@ class PausingInterceptor(MessageInterceptor):
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
             del self.in_afters[message.code]
+        self.pausing_message = None
         return go_on
 
     async def before_out_msg(self, message) -> bool:
@@ -280,6 +284,7 @@ class PausingInterceptor(MessageInterceptor):
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
             del self.out_befores[message.code]
+        self.pausing_message = None
         return go_on
 
     async def after_out_msg(self, message) -> bool:
@@ -299,6 +304,7 @@ class PausingInterceptor(MessageInterceptor):
             self.logger.error("Clearing interceptor because exception %s",
                               traceback.format_exc())
             del self.out_afters[message.code]
+        self.pausing_message = None
         return go_on
 
     async def pause_method(self, mode, code, message):
@@ -345,11 +351,12 @@ class PausingInterceptor(MessageInterceptor):
 class PausingBankTellerServer(MemoryBankTellerServer):
 
     def __init__(self, port, working_dir, name, others,
-                 log_config=None, timeout_basis=1.0):
+                 log_config=None, timeout_basis=1.0, use_log_pull=True):
         super().__init__(port, working_dir, name, others,
-                         log_config, timeout_basis)
+                         log_config, timeout_basis, use_log_pull)
         self.logger = logging.getLogger(__name__)
         self.state_map = StandardStateMap(timeout_basis=timeout_basis)
+        self.state_map.set_use_log_pull(self.use_log_pull)
         self.interceptor = PausingInterceptor(self, self.logger)
         self.comms.set_interceptor(self.interceptor)
         self.monitor = PausingMonitor(self, f"{port}", self.logger)
@@ -396,7 +403,7 @@ class PausingBankTellerServer(MemoryBankTellerServer):
                 await asyncio.sleep(0.01)
             except asyncio.exceptions.CancelledError:
                 pass
-
+            
     async def resume_all(self, wait=True):
         # If you have an interceptor or monitor setup to
         # do a pause and you call this, the timeout
@@ -416,7 +423,6 @@ class PausingBankTellerServer(MemoryBankTellerServer):
             await asyncio.sleep(0.01)
         if self.do_resume:
             raise Exception('resume did not happen!')
-        self.logger.info("%s resumed", self.port)
 
     async def in_loop_check(self):
         if self.do_resume:
@@ -424,3 +430,4 @@ class PausingBankTellerServer(MemoryBankTellerServer):
             timer_set.resume_all()
             self.paused = False
             self.do_resume = False
+            self.logger.info("%s resumed", self.port)

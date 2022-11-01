@@ -26,10 +26,10 @@ class Leader(State):
 
     my_type = "leader"
     
-    def __init__(self, server, heartbeat_timeout=0.5):
+    def __init__(self, server, heartbeat_timeout=0.5, use_log_pull=True):
         super().__init__(server, self.my_type)
         self.heartbeat_timeout = heartbeat_timeout
-        self.use_log_pull = True
+        self.use_log_pull = use_log_pull
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
         log = self.server.get_log()
@@ -110,9 +110,8 @@ class Leader(State):
         fc.last_heartbeat_response_index = caller_index
         self.heartbeat_logger.debug("got heartbeat response from %s",
                                     message.sender)
-        if not self.use_log_pull and last_index > caller_index:
-            if caller_index < local_index:
-                await self.do_backdown(addr, local_index)
+        if not self.use_log_pull and local_index > caller_index:
+            await self.do_backdown(addr, local_index)
         return True
     
     async def on_append_response(self, message):
@@ -282,7 +281,7 @@ class Leader(State):
             }
         )
         if addr == "all":
-            self.logger.debug("(term %d) sending log update to all" \
+            self.logger.debug("(term %d) sending AppendEntries to all" \
                               " followers: %s",
                               log.get_term(), message.data)
             await self.server.broadcast(message)
@@ -290,9 +289,9 @@ class Leader(State):
                 await self.set_substate(Substate.sent_new_entries)
         else:
             message._receiver = addr
-            self.logger.debug("(term %d) sending log update with" \
-                              " %d entries to %s",
-                              log.get_term(), len(entries), addr)
+            self.logger.debug("(term %d) sending AppendEntries " \
+                              " %d entries to %s, first is %s",
+                              log.get_term(), len(entries), addr, start_index)
             await self.server.post_message(message)
         
     async def do_backdown(self, target, rejected_index):

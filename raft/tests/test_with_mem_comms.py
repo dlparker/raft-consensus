@@ -18,6 +18,10 @@ class MemTestThreeServers(BaseCase.TestThreeServers):
     def get_process_flag(self):
         return False
 
+    @property
+    def use_log_pull(self):
+        return False
+
     def get_client(self, port):
         return MemoryBankTellerClient("localhost", port)
         
