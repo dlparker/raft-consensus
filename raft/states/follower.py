@@ -68,13 +68,13 @@ class StateDiff:
 
     @property
     def in_sync(self):
-        if self.same_commit and self.same_term and self.same_prev_term:
+        if self.same_commit and self.same_term and self.same_index:
             return True
         return False
     
     @property
     def needed_records(self):
-        if self.local_ahead:
+        if self.need_rollback:
             return None
         if self.same_index:
             return None
@@ -90,9 +90,7 @@ class StateDiff:
 
     @property
     def need_rollback(self):
-        if self.local_ahead:
-            return True
-        if self.leader_index < self.local_index:
+        if self.local_index > self.leader_index:
             return True
         # unless something is really, weirdly wrong,
         # the leader will never have an uncommitted
@@ -110,16 +108,6 @@ class StateDiff:
             return -1
         return self.leader_index
     
-    @property
-    def local_ahead(self):
-        if self.local_index > self.leader_index:
-            return True
-        # leader commit can be less than leader index
-        if self.local_index > self.leader_commit:
-            return True
-        if self.local_commit > self.leader_commit:
-            return True
-        return False
     
         
 class Follower(Voter):
@@ -139,7 +127,6 @@ class Follower(Voter):
         self.leaderless_timer = None
         self.last_vote = None
         self.last_vote_time = None
-        self.debug_dumper = False
         
     def __str__(self):
         return "follower"
@@ -247,9 +234,8 @@ class Follower(Voter):
         sd = self.decode_state(message) 
         data = message.data
         laddr = (sd.leader_addr[0], sd.leader_addr[1])
-        if self.debug_dumper:
-            self.logger.debug("starting on_heartbeat with \n%s\nand\n%s",
-                              data, sd)
+        self.heartbeat_logger.debug("starting on_heartbeat with \n%s\nand\n%s",
+                          data, sd)
         self.heartbeat_count += 1
         if self.leader_addr != laddr:
             if self.leader_addr is None:
@@ -259,31 +245,32 @@ class Follower(Voter):
             self.leader_addr = laddr
             self.heartbeat_count = 0
         if not sd.same_term:
-            self.logger.debug("leader %s term differnt, updating local %s",
+            self.heartbeat_logger.debug("leader %s term differnt, " \
+                                        "updating local %s",
                               sd.leader_term, sd.local_term)
             log = self.server.get_log()
             log.set_term(sd.leader_term)
             # get a new decode
             sd = self.decode_state(message)
         if sd.in_sync:
-            if self.debug_dumper:
-                self.logger.debug("state diff says we are in sync")
+            self.heartbeat_logger.debug("state diff says we are in sync")
             await self.on_heartbeat_common(message)
         elif sd.needed_records is not None:
-            if self.debug_dumper:
-                self.logger.debug("state diff says we need records")
+            self.heartbeat_logger.debug("state diff says we need records")
             if self.use_log_pull:
                 self.logger.debug("requesting log pull")
                 await self.do_log_pull(message)
             else:
-                self.logger.debug("expecting catch-up append entry msgs")
+                self.heartbeat_logger.debug("expecting catch-up append" \
+                                            " entry msgs")
                 await self.on_heartbeat_common(message)
         elif sd.need_rollback:
-            self.logger.info("heartbeat state diff says we need rollback")
+            self.heartbeat_logger.info("heartbeat state diff says we" \
+                                       " need rollback")
             await self.do_rollback(message)
         else:
             msg = 'state diff decode failed to determine action'
-            self.logger.error(msg + "\n%s\n%s", message.data, sd)
+            self.heartbeat_logger.error(msg + "\n%s\n%s", message.data, sd)
             raise Exception('state diff decode failed to determine action')
         self.heartbeat_logger.debug("heartbeat reply send")
         await self.set_substate(Substate.synced)
@@ -305,13 +292,11 @@ class Follower(Voter):
                 "start_index": sd.needed_records['start']
             }
         )
-        if self.debug_dumper:
-            self.logger.debug("prepped log pull message for leader\n%s",
+        self.logger.debug("prepped log pull message for leader\n%s",
                               message.data)
         await self.server.send_message_response(message)
-        if self.debug_dumper:
-            self.logger.debug("sent log pull message to leader\n%s",
-                              message.data)
+        self.logger.debug("sent log pull message to leader\n%s",
+                          message.data)
         # getting here might have been slow, let's reset the
         # timer
         if not self.terminated:
@@ -362,9 +347,8 @@ class Follower(Voter):
             if ent['committed']:
                 log.commit(new_rec.index)
                 commit = True
-            if self.debug_dumper:
-                self.logger.debug("added log rec %d, commit = %s",
-                                  new_rec.index, commit)
+            self.logger.debug("added log rec %d, commit = %s",
+                              new_rec.index, commit)
         return True
         
     async def on_append_entries(self, message):
@@ -517,7 +501,7 @@ class Follower(Voter):
         if self.last_vote is None and sd.local_is_empty:
             self.logger.info("everything None, voting true")
             approve = True
-        elif self.last_vote is None and not sd.local_ahead:
+        elif self.last_vote is None and not sd.need_rollback:
             self.logger.info("last vote None, logs match, voting true")
             approve = True
         elif self.last_vote == message.sender:

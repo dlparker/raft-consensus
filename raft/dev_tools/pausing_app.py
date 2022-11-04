@@ -369,17 +369,6 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         await timer_set.pause_all()
         self.paused = True
         self.state_map.state.pause = True
-        if False:
-            try:
-                start_time = time.time()
-                while (time.time() - start_time < 2 and
-                       not self.comms.queue.empty()):
-                    await asyncio.sleep(0.01)
-                if not self.comms.queue.empty():
-                    self.logger.error("comms queue never emptied, runnaway")
-            except:
-                self.logger.error(traceback.format_exc())
-                raise
         if trigger_type == TriggerType.interceptor:
             self.logger.info("%s pausing all on interceptor %s %s",
                              self.port,
@@ -398,11 +387,15 @@ class PausingBankTellerServer(MemoryBankTellerServer):
                              trigger_data['new_substate'])
         self.logger.info("%s paused all timers this thread and comms",
                          self.port)
+        self.logger.info(">>>>>>> %s %s entering pause loop", self.port,
+                         self.state_map.state._type)
         while self.paused:
             try:
                 await asyncio.sleep(0.01)
             except asyncio.exceptions.CancelledError:
                 pass
+        self.logger.info("++++++++ %s %s continuing", self.port,
+                         self.state_map.state._type)
             
     async def resume_all(self, wait=True):
         # If you have an interceptor or monitor setup to
@@ -426,8 +419,9 @@ class PausingBankTellerServer(MemoryBankTellerServer):
 
     async def in_loop_check(self):
         if self.do_resume:
+            self.paused = False
             timer_set = get_timer_set()
             timer_set.resume_all()
-            self.paused = False
             self.do_resume = False
-            self.logger.info("%s resumed", self.port)
+            self.logger.info("<<<<<<< %s %s resumed", self.port,
+                             self.state_map.state._type)

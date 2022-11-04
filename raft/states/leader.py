@@ -2,6 +2,7 @@ from collections import defaultdict
 import asyncio
 import logging
 from dataclasses import dataclass, field, asdict
+import time
 import traceback
 
 from ..log.log_api import LogRec
@@ -48,6 +49,7 @@ class Leader(State):
             # first heartbeat, and we will catch them up
             self.followers[other] = FollowerCursor(other, last_index)
         self.heartbeat_timer = None
+        self.last_hb_time = time.time()
         self.task = None
 
     def __str__(self):
@@ -115,6 +117,10 @@ class Leader(State):
         return True
     
     async def on_append_response(self, message):
+        # we need to make sure we don't starve heartbeat
+        # if there is a big recovery in progress
+        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+            await self.send_heartbeat()
         log = self.server.get_log()
         last_rec = log.read()
         if not last_rec:
@@ -241,6 +247,10 @@ class Leader(State):
 
     async def send_append_entries(self, addr="all", start_index=None,
                                   end_index=None, commit_for_rec=None ):
+        # we need to make sure we don't starve heartbeat
+        # if there is a big recovery in progress
+        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+            await self.send_heartbeat()
         log = self.server.get_log()
         entries = []
         if commit_for_rec is None:
@@ -303,6 +313,10 @@ class Leader(State):
         
     async def on_log_pull(self, message):
         # follwer wants log messages that it has not received
+        # we need to make sure we don't starve heartbeat
+        # if there is a big recovery in progress
+        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+            await self.send_heartbeat()
         start_index = message.data['start_index']
         log = self.server.get_log()
         last_rec = log.read()
@@ -372,6 +386,11 @@ class Leader(State):
         return True
         
     async def send_heartbeat(self):
+        elapsed =  time.time() - self.last_hb_time
+        if elapsed > self.heartbeat_timeout + (self.heartbeat_timeout * 0.1):
+            self.logger.info("slow heartbeat, expected %f.6f, got %f.6f",
+                             self.heartbeat_timeout, elapsed)
+
         log = self.server.get_log()
         last_rec = log.read()
         if last_rec:
@@ -400,6 +419,7 @@ class Leader(State):
         self.heartbeat_logger.debug("sent heartbeat to all commit = %s",
                                     message.data['leaderCommit'])
         await self.set_substate(Substate.sent_heartbeat)
+        self.last_hb_time = time.time()
 
     async def send_term_start(self):
         log = self.server.get_log()
@@ -432,6 +452,10 @@ class Leader(State):
         await self.set_substate(Substate.sent_term_start)
 
     async def on_client_command(self, message):
+        # we need to make sure we don't starve heartbeat
+        # if there is a big recovery in progress
+        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+            await self.send_heartbeat()
         target = message.sender
         if message.original_sender:
             target = message.original_sender
@@ -490,6 +514,10 @@ class Leader(State):
         return True
 
     async def on_vote_received(self, message):
+        # we need to make sure we don't starve heartbeat
+        # if there is a big recovery in progress
+        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+            await self.send_heartbeat()
         log = self.server.get_log()
         self.logger.info("leader ignoring vote reply: message.term = %d local_term = %d",
                          message.term, log.get_term())
@@ -522,7 +550,8 @@ class Leader(State):
         return True
 
     async def on_heartbeat(self, message):
-        self.logger.warning("Why am I getting hearbeat when I am leader?")
+        self.logger.warning("Why am I getting hearbeat when I am leader?"\
+                            "\n\t%s", message)
         return True
 
 

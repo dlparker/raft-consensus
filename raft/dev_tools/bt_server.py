@@ -274,6 +274,7 @@ class ServerThread(threading.Thread):
             while self.keep_running:
                 await asyncio.sleep(0.01)
                 await self.bt_server.in_loop_check()
+            self.logger.info("server %s stopping", self.bt_server.endpoint)
             await self.bt_server.comms.stop()
             await self.server.stop()
         except:
@@ -281,11 +282,10 @@ class ServerThread(threading.Thread):
             traceback.print_exc()
         tasks = asyncio.all_tasks()
         start_time = time.time()
-        while time.time() - start_time < 0.5:
-            undone = []
-            for t in [t for t in tasks if not (t.done() or t.cancelled())]:
-                if t != asyncio.current_task():
-                    undone.append(t)
+        undone = []
+        for t in [t for t in tasks if not (t.done() or t.cancelled())]:
+            if t != asyncio.current_task():
+                undone.append(t)
         for t in undone:
             self.logger.info("cancelling %s", t)
             t.cancel()

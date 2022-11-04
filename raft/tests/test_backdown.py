@@ -73,7 +73,6 @@ class TestLogOps(unittest.TestCase):
                 break
         self.assertEqual(pause_count, expected,
                          msg=f"only {pause_count} servers paused on {label}")
-        self.logger.info("resumed after pause %s", label)
         return leader, follower
 
     def resume_waiter(self):

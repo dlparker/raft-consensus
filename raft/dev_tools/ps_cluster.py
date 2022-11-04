@@ -152,7 +152,6 @@ class PauseAfterElection(SubstatePauseStep):
         return await monitor.substate_pause_method(monitor, state,
                                                    old_substate, new_substate)
             
-            
         
 class MessageSplitStep(PauseStep):
 
@@ -253,7 +252,9 @@ class PausingServerCluster:
         self.server_specs[spec.name] = spec
         return spec
 
-    def prepare(self, timeout_basis=1.0):
+    def prepare(self, timeout_basis=None):
+        if timeout_basis is None:
+            timeout_basis = self.timeout_basis
         if len(self.server_specs) > 0:
             raise Exception("cannot call prepare more than once")
         self.ensure_logger_and_dirs()
