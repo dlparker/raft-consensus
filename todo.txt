@@ -15,17 +15,16 @@ correct __subclasshook__ method logic
 add a setup step for comms api to install serializer class instead
 of hard coding to original
 
-
 clean up log api around storing pending response to client, the whole
 context thing is a fudge, we should be more agressive about log
 data format, probably adding context there.
 
-
+---
 Build something to collect and clear unhandled errors in server.py,
 including a logging mechanism that is robust against errors, so
 the errors go in an in-memory log and then into a disk log such
 that the second call will not kill the process or result in a loop.
-Maybe an "ErrorSink" class?
+Maybe an "ErrorSink" class? 
 
 Find all the state locations that can produce an unrecoverable
 error and have them report the error to the state machine, which
@@ -36,6 +35,7 @@ see if the server should die, restart, or whatever. Maybe a callback
 in the base server? (Maybe need to rename "Server" class to something
 like ServerCore?) Find all bad spots in the states and change the
 exception clauses to call this method, execute stop on self and return.
+---
 
 Update the log api to have a call that commits each record it adds, cause
 that is always done for log_pull. STUDY THE PROTOCOL, what happens when
@@ -44,8 +44,9 @@ not present when leader sent append?
 
 Move the memory log, memory comms and udp comms to dev_tools.
 
-
-Remove rollback logic once rejoin logic developed.
-
+Remove rollback logic if possible once rejoin logic developed.
 
 Change serializer to an API and rename original
+
+Examing voting logic in follower, shouldn't it explicitly look for
+wrong term? Or is StateDiff property good enough? Comment in code.

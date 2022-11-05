@@ -117,6 +117,8 @@ class TestMap(unittest.TestCase):
         await leader.heartbeat_timer.stop()
         bt_server.stop()
 
+        smap.use_log_pull = True
+        self.assertTrue(smap.is_log_pull_used())
         # Just a little sequence to excersize the normal
         # path of activate being called before adding state change
         # monitors

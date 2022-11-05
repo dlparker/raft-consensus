@@ -176,7 +176,7 @@ class Follower(Voter):
             self.logger.error(traceback.format_exc())
             raise
 
-    def decode_state(self, message):
+    def decode_state(self, message, inspect_term=True):
         #
         # When we get a message from the leader, there are a number
         # of values in the message that we need to compare to the
@@ -215,6 +215,14 @@ class Follower(Voter):
         if leader_prev_term is None:
             leader_prev_term = -1
 
+        if inspect_term:
+            if leader_term < local_term:
+                msg  = "Leader claims term is %s, but local is %s, illegal"
+                msg += " condition according to raft, voting corrupt"
+                self.server.record_illegal_message_state(message.sender,
+                                                         msg,
+                                                         None)
+                raise Exception(msg)
         return StateDiff(local_is_empty,
                          local_index,
                          local_commit,
@@ -233,17 +241,14 @@ class Follower(Voter):
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
         sd = self.decode_state(message) 
         data = message.data
-        laddr = (sd.leader_addr[0], sd.leader_addr[1])
         self.heartbeat_logger.debug("starting on_heartbeat with \n%s\nand\n%s",
                           data, sd)
         self.heartbeat_count += 1
-        if self.leader_addr != laddr:
-            if self.leader_addr is None:
-                await self.set_substate(Substate.joined)
-            else:
-                await self.set_substate(Substate.new_leader)
+        laddr = (sd.leader_addr[0], sd.leader_addr[1])
+        if self.leader_addr is None:
             self.leader_addr = laddr
             self.heartbeat_count = 0
+            await self.set_substate(Substate.joined)
         if not sd.same_term:
             self.heartbeat_logger.debug("leader %s term differnt, " \
                                         "updating local %s",
@@ -363,12 +368,9 @@ class Follower(Voter):
                               sd.local_term, sd.leader_term)
             log.set_term(sd.leader_term)
         laddr = (sd.leader_addr[0], sd.leader_addr[1])
-        if self.leader_addr != laddr:
-            if self.leader_addr is None:
-                await self.set_substate(Substate.joined)
-            else:
-                await self.set_substate(Substate.new_leader)
+        if self.leader_addr is None:
             self.leader_addr = laddr
+            await self.set_substate(Substate.joined)
         if sd.needed_records is not None:
             await self.send_response_message(message,
                                              reject_reason="no_match")
@@ -486,7 +488,7 @@ class Follower(Voter):
         # our last log record index is max.
         # If we have already voted, then we say no. Election
         # will resolve or restart.
-        sd = self.decode_state(message) 
+        sd = self.decode_state(message, inspect_term=False) 
         log = self.server.get_log()
         # get the last record in the log
         last_rec = log.read()
@@ -498,7 +500,10 @@ class Follower(Voter):
             last_index = None
             last_term = None
         approve = False
-        if self.last_vote is None and sd.local_is_empty:
+        if sd.leader_term < sd.local_term:
+            self.logger.info("voting false, term %s less that local term %s",
+                             sd.leader_term, sd.local_term)
+        elif self.last_vote is None and sd.local_is_empty:
             self.logger.info("everything None, voting true")
             approve = True
         elif self.last_vote is None and not sd.need_rollback:

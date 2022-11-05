@@ -22,9 +22,6 @@ class Substate(str, Enum):
     """ Leader has called us at least once """
     joined = "JOINED"                  
 
-    """ Was already following, now have new leader """
-    new_leader = "NEW_LEADER"
-    
     """ As of last call from leader, log is in sync """
     synced = "SYNCED"                 
 

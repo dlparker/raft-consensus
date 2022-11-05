@@ -112,7 +112,7 @@ class PauseAfterElection(SubstatePauseStep):
         super().__init__(cluster, PausePoint.election_done)
 
     def configure(self, server_spec: ServerSpec):
-        substates = [Substate.joined, Substate.new_leader,
+        substates = [Substate.joined,
                     Substate.became_leader]
         super().configure(server_spec, substates)
 

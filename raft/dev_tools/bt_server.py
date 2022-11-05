@@ -48,7 +48,7 @@ class UDPBankTellerServer:
 
     @classmethod
     def make_and_start(cls, port, working_dir, name, others,
-                       log_config, timeout_basis=1.0, use_log_pull=True):
+                       log_config, timeout_basis=0.1, use_log_pull=True):
         from pytest_cov.embed import cleanup_on_sigterm
         cleanup_on_sigterm()
         import sys
