@@ -110,8 +110,12 @@ class TestOddMsgArrivals(unittest.TestCase):
         time.sleep(0.1)
         self.loop.close()
 
-    def preamble(self):
-        servers = self.cluster.prepare(timeout_basis=timeout_basis)
+    def preamble(self, slow=False):
+        if slow:
+            tb = 1.0
+        else:
+            tb = timeout_basis
+        servers = self.cluster.prepare(timeout_basis=tb)
         # start just the one server and wait for it
         # to pause in candidate state
         spec = servers["server_0"]
@@ -222,12 +226,12 @@ class TestOddMsgArrivals(unittest.TestCase):
         monitor.state.terminated = True
         self.assertTrue(monitor.state.is_terminated())
         # any old message would do
-        tsm = HeartbeatMessage(("localhost", 5001),
+        hbm = HeartbeatMessage(("localhost", 5001),
                                ("localhost", 5000),
                                0,
                                {})
         self.logger.info("Sending heartbeat message expecting reject")
-        client.direct_message(tsm)
+        client.direct_message(hbm)
         self.assertEqual(len(server.get_unhandled_errors()), 0)
         start_time = time.time()
         while time.time() - start_time < 3:
@@ -295,8 +299,8 @@ class TestOddMsgArrivals(unittest.TestCase):
         self.loop.run_until_complete(method())
         monitor.clear_pause_on_substate(Substate.leader_lost)
 
-    def test_b_heartbeat_reject(self):
-        spec = self.preamble()
+    def test_b_heartbeat_resign(self):
+        spec = self.preamble(slow=True)
         monitor = spec.monitor
         candidate = monitor.state
         async def try_heartbeat():
@@ -313,7 +317,10 @@ class TestOddMsgArrivals(unittest.TestCase):
                                    })
             await candidate.on_heartbeat(hbm)
             await asyncio.sleep(0)
-        self.release_to_resign(spec, try_heartbeat)
+        monitor.clear_pause_on_substate(Substate.voting)
+        monitor.set_pause_on_substate(Substate.leader_lost)
+        self.loop.run_until_complete(spec.pbt_server.resume_all())
+        self.loop.run_until_complete(try_heartbeat())
         self.assertFalse(monitor.state == candidate)
         self.loop.run_until_complete(spec.pbt_server.resume_all())
         
