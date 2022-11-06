@@ -76,6 +76,9 @@ class Follower(State):
             await self.stop()
         except: # pragma: no cover error
             self.logger.error(traceback.format_exc())
+            sm = self.server.get_state_map()
+            sm.failed_state_change("follower","candidate",
+                                   traceback.format_exc())
             raise
 
     async def on_heartbeat(self, message):
@@ -161,6 +164,10 @@ class Follower(State):
             self.logger.info("leader %s term is less than local %s, " \
                                         "telling leader about it",
                              message.sender, message.term, self.log.get_term())
+            msg = f"leader term is {message.term} but ours is " \
+                f"{self.log.get_term()}"
+            self.server.record_illegal_message_state(message.sender,
+                                                     msg, message.data)
             return await self.do_bad_append(message)
         # If we don't have the record prior to the current appends,
         # the leader should backdown till we do

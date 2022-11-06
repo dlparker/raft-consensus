@@ -137,7 +137,7 @@ class MemoryComms(CommsAPI):
             try:
                 try:
                     w = await self.queue.get()
-                except RuntimeError as r_e:
+                except RuntimeError as r_e: # pragma: no cover error
                     if "loop is closed" in str(r_e):
                         self.keep_running = False
                         return

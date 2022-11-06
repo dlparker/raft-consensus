@@ -364,6 +364,23 @@ class Leader(State):
         await self.set_substate(Substate.sent_new_entries)
         return True
 
+    async def resign(self):
+        if self.terminated:
+            # order in async makes race for server states
+            # switch and new timer fire
+            return
+        try:
+            sm = self.server.get_state_map()
+            sm.start_state_change("leader", "follower")
+            self.terminated = True
+            await self.heartbeat_timer.terminate() # never run again
+            follower = await sm.switch_to_follower(self)
+            self.logger.info("leader resigned")
+            await self.stop()
+        except:
+            sm.failed_state_change("leader", "follower",
+                                   traceback.format_exc())
+            
     async def on_vote_received(self, message):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress

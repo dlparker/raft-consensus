@@ -12,10 +12,6 @@ class Records:
         self.index = 0
         self.entries = []
 
-    @property
-    def entry_count(self):
-        return len(self.entries)
-    
     def get_entry_at(self, index):
         if index < 1 or self.index == 0:
             return None
@@ -32,9 +28,6 @@ class Records:
 
     def insert_entry(self, rec: LogRec) -> LogRec:
         index = rec.index
-        if index > self.index + 1:
-            raise Exception("cannot insert record at %d, max is %d",
-                            index, self.index + 1)
         self.entries[index-1] = rec
     
     def save_entry(self, rec: LogRec) -> LogRec:
@@ -99,10 +92,6 @@ class MemoryLog(Log):
             self.records.insert_entry(save_rec)
         return deepcopy(save_rec)
     
-    def clear_all(self):
-        self.entries = []
-        self.commit_index = None
-        
     def commit(self, index: int) -> None:
         if index < 1:
             raise Exception(f"cannot commit index {index}, not in records")

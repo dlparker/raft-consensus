@@ -55,10 +55,6 @@ class Log(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def clear_all(self):
-        raise NotImplementedError
-
-    @abc.abstractmethod
     def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:
         raise NotImplementedError
 

@@ -71,6 +71,9 @@ class TestMemoryLog(unittest.TestCase):
         x = mlog.replace_or_append(rec)
         self.assertEqual(x.index, 15)
         self.assertEqual(x.user_data, "foo")
+        rec.index = None
+        with self.assertRaises(Exception) as context:
+            y = mlog.replace_or_append(rec)
         rec.index = 0
         with self.assertRaises(Exception) as context:
             y = mlog.replace_or_append(rec)
@@ -78,3 +81,7 @@ class TestMemoryLog(unittest.TestCase):
         y = mlog.replace_or_append(rec)
         self.assertEqual(y.index, limit1 + 1)
         
+        with self.assertRaises(Exception) as context:
+            mlog.read(0)
+        with self.assertRaises(Exception) as context:
+            mlog.read(1000)
