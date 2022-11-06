@@ -57,13 +57,10 @@ class Candidate(State):
         return True
 
     async def on_heartbeat(self, message):
-        if self.terminated:
-            return False
         self.logger.info("candidate resigning because we" \
                          "got hearbeat from leader")
         await self.resign()
-        self.logger.debug("rejecting heartbeat")
-        return False
+        return True
 
     async def on_timer(self):
         self.logger.info("candidate resigning because timer ended")

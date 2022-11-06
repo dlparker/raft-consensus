@@ -34,11 +34,6 @@ class Leader(State):
         self.logger.info('Leader on %s in term %s', self.server.endpoint,
                          self.log.get_term())
         self.cursors = {}
-        for other in self.server.other_nodes:
-            # Assume follower is in sync, meaning we only send on new
-            # log entry. If they are not, they will tell us that on
-            # first heartbeat, and we will catch them up
-            self.cursors[other] = FollowerCursor(other, last_index)
         self.heartbeat_timer = None
         self.last_hb_time = time.time()
         self.election_time = time.time()
@@ -47,6 +42,14 @@ class Leader(State):
     def __str__(self):
         return "leader"
 
+    def get_cursor(self, addr):
+        if addr in self.cursors:
+            cursor = self.cursors[addr]
+        else:
+            cursor = FollowerCursor(addr)
+            self.cursors[addr] = cursor
+        return cursor
+        
     def start(self):
         if self.terminated:
             raise Exception("cannot start a terminated state")
@@ -82,13 +85,8 @@ class Leader(State):
     async def on_heartbeat_response(self, message):
         self.heartbeat_logger.debug("got heartbeat response from %s",
                                     message.sender)
-        addr = message.sender
+        cursor = self.get_cursor(message.sender)
         sender_index = message.data['last_index']
-        if addr in self.cursors:
-            cursor = self.cursors[addr]
-        else:
-            cursor = FollowerCursor(addr, sender_index)
-            self.cursors[addr] = cursor
         cursor.last_heartbeat_index = sender_index
         if sender_index < self.log.get_last_index():
             self.logger.debug("Sender %s needs catch up, "\
@@ -127,7 +125,7 @@ class Leader(State):
             return True
         # must have been happy with the message. Now let's
         # see what it was about, a append or a commit
-        cursor = self.cursors[message.sender]
+        cursor = self.get_cursor(message.sender)
 
         if message.data.get('commit_only', False):
             cursor.last_commit = message.leaderCommit
@@ -272,7 +270,7 @@ class Leader(State):
                 "leaderCommit": self.log.get_commit_index(),
             }
         )
-        cursor = self.cursors[addr]
+        cursor = self.get_cursor(addr)
         cursor.last_sent_index = entries[-1]['index']
         message._receiver = addr
         self.logger.debug("(term %d) sending AppendEntries " \
