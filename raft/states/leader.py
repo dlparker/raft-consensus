@@ -7,49 +7,41 @@ import traceback
 
 from ..log.log_api import LogRec
 from ..messages.append_entries import AppendEntriesMessage
-from ..messages.command import ClientCommandResultMessage
 from ..messages.request_vote import RequestVoteResponseMessage
+from ..messages.command import ClientCommandResultMessage
 from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
-from ..messages.termstart import TermStartMessage
-from ..messages.log_pull import LogPullResponseMessage
 from ..utils import task_logger
-from .base_state import State, Substate
+from .base_state import State, Substate, StateCode
 
 @dataclass
 class FollowerCursor:
     addr: str
-    next_index: int
-    last_index: int = field(default=-1)
-    last_commit: int = field(default=-1)
-    last_heartbeat_response_index: int = field(default=-1)
+    last_sent_index: int = field(default=0)
+    last_saved_index: int = field(default=0)
+    last_commit: int = field(default=0)
+    last_heartbeat_index: int = field(default=0)
 
 class Leader(State):
 
-    my_type = "leader"
+    my_code = StateCode.leader
     
-    def __init__(self, server, heartbeat_timeout=0.5, use_log_pull=True):
-        super().__init__(server, self.my_type)
+    def __init__(self, server, heartbeat_timeout=0.5):
+        super().__init__(server, self.my_code)
         self.heartbeat_timeout = heartbeat_timeout
-        self.use_log_pull = use_log_pull
         self.logger = logging.getLogger(__name__)
         self.heartbeat_logger = logging.getLogger(__name__ + ":heartbeat")
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec:
-            last_index = last_rec.index + 1
-        else:
-            # no log records yet
-            last_index = -1
+        last_index = self.log.get_last_index()
         self.logger.info('Leader on %s in term %s', self.server.endpoint,
-                         log.get_term())
-        self.followers = {}
+                         self.log.get_term())
+        self.cursors = {}
         for other in self.server.other_nodes:
             # Assume follower is in sync, meaning we only send on new
             # log entry. If they are not, they will tell us that on
             # first heartbeat, and we will catch them up
-            self.followers[other] = FollowerCursor(other, last_index)
+            self.cursors[other] = FollowerCursor(other, last_index)
         self.heartbeat_timer = None
         self.last_hb_time = time.time()
+        self.election_time = time.time()
         self.task = None
 
     def __str__(self):
@@ -58,9 +50,8 @@ class Leader(State):
     def start(self):
         if self.terminated:
             raise Exception("cannot start a terminated state")
-        log = self.server.get_log()
         self.heartbeat_timer = self.server.get_timer("leader-heartbeat",
-                                                     log.get_term(),
+                                                     self.log.get_term(),
                                                      self.heartbeat_timeout,
                                                      self.send_heartbeat)
         self.task = task_logger.create_task(self.on_start(),
@@ -80,14 +71,7 @@ class Leader(State):
             return
         self.logger.debug("in on_start")
         self.heartbeat_timer.start()
-        try:
-            await self.send_term_start()
-        except:
-            sm = self.server.get_state_map()
-            self.task = None
-            self.server.record_failed_state_operation(self, "send_term_start",
-                                                      traceback.format_exc())
-            raise
+        await self.send_heartbeat(first=True)
         self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
         self.task = None
@@ -96,24 +80,23 @@ class Leader(State):
         return self.server.endpoint
     
     async def on_heartbeat_response(self, message):
-        addr = message.sender
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec is None:
-            local_index = -1
-        else:
-            local_index = last_rec.index
-        if addr in self.followers:
-            fc = self.followers[addr]
-        else:
-            fc = FollowerCursor(addr, local_index)
-            self.followers[addr] = fc
-        caller_index = message.data['last_index']
-        fc.last_heartbeat_response_index = caller_index
         self.heartbeat_logger.debug("got heartbeat response from %s",
                                     message.sender)
-        if not self.use_log_pull and local_index > caller_index:
-            await self.do_backdown(addr, local_index)
+        addr = message.sender
+        sender_index = message.data['last_index']
+        if addr in self.cursors:
+            cursor = self.cursors[addr]
+        else:
+            cursor = FollowerCursor(addr, sender_index)
+            self.cursors[addr] = cursor
+        cursor.last_heartbeat_index = sender_index
+        if sender_index < self.log.get_last_index():
+            self.logger.debug("Sender %s needs catch up, "\
+                              "Sender index %d, last_sent %d, "\
+                              "local_last %d", message.sender,
+                              sender_index, cursor.last_sent_index,
+                              self.log.get_last_index())
+            await self.do_backdown(message)
         return True
     
     async def on_append_response(self, message):
@@ -121,112 +104,102 @@ class Leader(State):
         # if there is a big recovery in progress
         if time.time() - self.last_hb_time >= self.heartbeat_timeout:
             await self.send_heartbeat()
-        log = self.server.get_log()
-        last_rec = log.read()
-        if not last_rec:
+        last_index = self.log.get_last_index()
+        if last_index == 0:
             msg = "Got append response when log is empty"
             self.logger.warning(msg)
             self.server.record_unexpected_state(self, msg)
             return True
-        if not message.data['response']:
-            if self.use_log_pull:
-                self.logger.debug("follower %s rejected append, expecting " \
-                                  " log_pull to follow",
-                                  message.sender)
+        if not message.data['success']:
+            if self.log.get_term() < message.term:
+                self.logger.debug("Follower %s rejected append because" \
+                                  " term there is %s but here only %s",
+                                  message.sender, message.term,
+                                  self.log.get_term())
+                await self.resign()
                 return True
-            reason = message.data.get("reject_reason", None)
-            self.logger.debug("follower %s rejected append for reason %s",
-                              message.sender, reason)
-            if reason != "no_match":
-                return True
-            last_sent_rec = message.data['prevLogIndex']
             # follower did not have the prev rec, so back down
             # by one and try again
-            self.logger.debug("calling do_backdown for follower %s",
-                              message.sender)
-            await self.do_backdown(message.sender,
-                                   message.data['leaderCommit'])
+            self.logger.debug("calling do_backdown for follower %s"\
+                              "\nresponse = %s",
+                              message.sender, message.data)
+            await self.do_backdown(message)
             return True
         # must have been happy with the message. Now let's
         # see what it was about, a append or a commit
-        cursor = self.followers[message.sender]
+        cursor = self.cursors[message.sender]
 
-        # Follower will tell us last inserted record when
-        # we sent new entries, so that means it wasn't just
-        # a commit message. If 'last_entry_index' is None,
-        # then it was just a commit.
-        last_sent_index = message.data['last_entry_index']
-        cursor.last_index = last_sent_index
-        if last_sent_index is None:
-            # message was commit only
-            cursor.last_commit = message.data['leaderCommit']
+        if message.data.get('commit_only', False):
+            cursor.last_commit = message.leaderCommit
             self.logger.debug("Follower %s acknowledged commit %s",
                               message.sender, cursor.last_commit)
             return True
-            
-        if last_rec.index > last_sent_index:
+        # Follower will tell us last inserted record when
+        # we sent new entries, so that means it wasn't just
+        # a commit message.
+        last_saved_index = message.data['last_entry_index']
+        if last_saved_index > cursor.last_saved_index:
+            # might have had out of order things cause
+            # a resend
+            cursor.last_saved_index = last_saved_index
+        if self.log.get_last_index() > cursor.last_saved_index:
             self.logger.debug("Follower %s not up to date, "\
                               "follower index %s but leader %s, " \
                               "doing sending next",
-                              message.sender, last_sent_index,
-                              last_rec.index)
+                              message.sender, last_saved_index,
+                              self.log.get_last_index())
             await self.send_append_entries(message.sender,
-                                           last_sent_index + 1)
+                                           cursor.last_saved_index + 1)
             return True
         
-        if last_rec.index < last_sent_index:
+        if self.log.get_last_index() < last_saved_index:
             msg = f"Follower {message.sender} claims record "\
-                f" {last_sent_index} but ours only go up to " \
-                f" {last_rec.index} "
+                f" {last_saved_index} but ours only go up to " \
+                f" {self.log.get_last_index()} "
             self.logger.warning(msg)
             self.server.record_unexpected_state(self, msg)
             return True
             
         # If we got here, then follower is up to date with
         # our log. If we have committed the record, then
-        # we have alread acheived a quorum and committed
-        # the record. If that is true, then
-        # we just want to ignore the message.
+        # we have alread acheived a quorum so we can
+        # ignore the follower message.
         # If we have not committed it, then we need to see
         # if we can by checking the votes already counted
 
-        local_commit = log.get_commit_index()
+        local_commit = self.log.get_commit_index()
         if local_commit is None:
             local_commit = -1
-        if local_commit >= last_sent_index:
-            # extra, we good
+        if local_commit >= last_saved_index:
+            # extra message, we good
             self.logger.debug("Follower %s voted to commit %s, "\
                               "ignoring since commit completed",
-                              message.sender, last_sent_index)
+                              message.sender, last_saved_index)
             return True
         # counting this node, so replies plus 1
         expected_confirms = (self.server.total_nodes - 1) / 2
         received_confirms = 0
-        for follower in self.followers.values():
-            if follower.last_index == last_sent_index:
+        for cursor in self.cursors.values():
+            if cursor.last_saved_index == last_saved_index:
                 received_confirms += 1
-            self.logger.debug("confirmation of log rec %d received from %s "\
-                              "brings total to %d out of %d",
-                              last_sent_index, message.sender,
-                              received_confirms, expected_confirms)
-            
+        self.logger.debug("confirmation of log rec %d received from %s "\
+                          "brings total to %d plus me out of %d",
+                          last_saved_index, message.sender,
+                          received_confirms, len(self.cursors) + 1)
         if received_confirms < expected_confirms:
             self.logger.debug("not enough votes to commit yet")
             return True
         # we have enough to commit, so do it
-        log.commit(last_sent_index)
-        commit_rec = log.read(last_sent_index)
-        if last_sent_index == 0:
-            prev_index = None
-            prev_term = None
+        self.log.commit(last_saved_index)
+        commit_rec = self.log.read(last_saved_index)
         self.logger.debug("after commit, commit_index = %s",
-                          log.get_commit_index())
+                          last_saved_index)
+        # now broadcast a commit AppendEntries message
+        await self.broadcast_commit(commit_rec)
 
-        # now broadcast a commit append
-        await self.send_append_entries('all', commit_for_rec=commit_rec)
-
-        # now see if there is a client to send the reply to
-        # for the completed record
+        # Now see if there is a client to send the reply to
+        # for the completed record. Since we committed it
+        # we can now respond to client
         if commit_rec.context is None:
             return True
         reply_address = commit_rec.context.get('client_addr', None)
@@ -239,180 +212,99 @@ class Leader(State):
                           reply_address)
         reply = ClientCommandResultMessage(self.server.endpoint,
                                            reply_address,
-                                           log.get_term(),
+                                           self.log.get_term(),
                                            commit_rec.user_data)
         self.logger.debug("sending reply message %s", reply)
         await self.server.post_message(reply)
         return True
 
-    async def send_append_entries(self, addr="all", start_index=None,
-                                  end_index=None, commit_for_rec=None ):
+    async def broadcast_commit(self, commit_rec):
+        prev_index = commit_rec.index
+        prev_term = commit_rec.term
+        message = AppendEntriesMessage(
+            self.server.endpoint,
+            None,
+            self.log.get_term(),
+            {
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
+                "prevLogIndex": prev_index,
+                "prevLogTerm": prev_term,
+                "entries": [],
+                "leaderCommit": prev_index,
+                "commitOnly": True
+            }
+        )
+        self.logger.debug("(term %d) sending AppendEntries commit %d to all" \
+                          " followers: %s",
+                          self.log.get_term(), prev_index, message.data)
+        await self.server.broadcast(message)
+        
+    async def send_append_entries(self, addr, start_index, end_index=None):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress
         if time.time() - self.last_hb_time >= self.heartbeat_timeout:
             await self.send_heartbeat()
-        log = self.server.get_log()
         entries = []
-        if commit_for_rec is None:
-            if start_index is None:
-                last_rec = log.read()
-                start_index = last_rec.index
-                entries.append(asdict(last_rec))
-            else:
-                if end_index is not None:
-                    for i in range(start_index, end_index+1):
-                        rec = log.read(i)
-                        entries.append(asdict(rec))
-                else:
-                    rec = log.read(start_index)
-                    entries.append(asdict(rec))
-            if start_index == 0:
-                prev_index = None
-                prev_term = None
-            else:
-                prev_rec = log.read(start_index -1)
-                prev_index = prev_rec.index
-                prev_term = prev_rec.term
+        rec = self.log.read(start_index)
+        if start_index == 1:
+            prev_index = 0
+            prev_term = 0
         else:
-            prev_index = commit_for_rec.index
-            prev_term = commit_for_rec.term
-            entries = []
+            prev_rec = self.log.read(start_index - 1)
+            prev_index = prev_rec.index
+            prev_term = prev_rec.term
+        entries.append(asdict(rec))
+        if end_index:
+            for i in range(start_index + 1, end_index + 1):
+                rec = self.log_read(i)
+                entries.append(asdict(rec))
         message = AppendEntriesMessage(
             self.server.endpoint,
             None,
-            log.get_term(),
+            self.log.get_term(),
             {
                 "leaderId": self.server.name,
                 "leaderPort": self.server.endpoint,
                 "prevLogIndex": prev_index,
                 "prevLogTerm": prev_term,
                 "entries": entries,
-                "leaderCommit": log.get_commit_index(),
+                "leaderCommit": self.log.get_commit_index(),
             }
         )
-        if addr == "all":
-            self.logger.debug("(term %d) sending AppendEntries to all" \
-                              " followers: %s",
-                              log.get_term(), message.data)
-            await self.server.broadcast(message)
-            if not commit_for_rec:
-                await self.set_substate(Substate.sent_new_entries)
-        else:
-            message._receiver = addr
-            self.logger.debug("(term %d) sending AppendEntries " \
-                              " %d entries to %s, first is %s",
-                              log.get_term(), len(entries), addr, start_index)
-            await self.server.post_message(message)
+        cursor = self.cursors[addr]
+        cursor.last_sent_index = entries[-1]['index']
+        message._receiver = addr
+        self.logger.debug("(term %d) sending AppendEntries " \
+                          " %d entries to %s, first is %s",
+                          self.log.get_term(),
+                          len(entries), addr, start_index)
+        await self.server.post_message(message)
         
-    async def do_backdown(self, target, rejected_index):
-        log = self.server.get_log()
-        if rejected_index == 0:
-            raise Exception('cannot back down beyond index 0')
-        new_index = rejected_index - 1
-        await self.send_append_entries(target, new_index)
+    async def do_backdown(self, message):
+
+        start_index = message.data['last_index'] + 1
+        await self.send_append_entries(message.sender, start_index)
         
-    async def on_log_pull(self, message):
-        # follwer wants log messages that it has not received
-        # we need to make sure we don't starve heartbeat
-        # if there is a big recovery in progress
-        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
-            await self.send_heartbeat()
-        start_index = message.data['start_index']
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec is None:
-            self.logger.info("follower %s asking for log pull but log empty", message.sender)
-            reply = LogPullResponseMessage(
-                self.server.endpoint,
-                message.sender,
-                log.get_term(),
-                {
-                    "code": "reset",
-                    "leaderId": self.server.name,
-                    "leaderPort": self.server.endpoint,
-                    "prevLogIndex": None,
-                    "prevLogTerm": None,
-                    "entries": [],
-                    "leaderCommit": log.get_commit_index(),
-                }
-            )
-            await self.server.post_message(reply)
-            return True
-        if start_index is None:
-            start_index = 0
-        commit_limit = log.get_commit_index()
-        if commit_limit is None:
-            commit_limit = -1
-        if start_index > last_rec.index or start_index > commit_limit:
-            self.logger.info("follower %s asking for log pull from index %s " \
-                             " beyond log limit %s or commit %s",
-                             message.sender, start_index,
-                             last_rec.index, log.get_commit_index())
-            reply = LogPullResponseMessage(
-                self.server.endpoint,
-                message.sender,
-                log.get_term(),
-                {
-                    "code": "reset",
-                    "leaderId": self.server.name,
-                    "leaderPort": self.server.endpoint,
-                    "prevLogIndex": last_rec.index,
-                    "prevLogTerm": last_rec.term,
-                    "entries": [],
-                    "leaderCommit": log.get_commit_index(),
-                }
-            )
-            await self.server.post_message(reply)
-            return True
-        entries = []
-        for i in range(start_index, last_rec.index +1):
-            a_rec = log.read(i)
-            entries.append(asdict(a_rec))
-        reply = LogPullResponseMessage(
-            self.server.endpoint,
-            message.sender,
-            log.get_term(),
-            {
-                "code": "apply",
-                "leaderId": self.server.name,
-                "leaderPort": self.server.endpoint,
-                "prevLogIndex": last_rec.index,
-                "prevLogTerm": last_rec.term,
-                "entries": entries,
-                "leaderCommit": log.get_commit_index(),
-            }
-        )
-        await self.server.post_message(reply)
-        return True
-        
-    async def send_heartbeat(self):
+    async def send_heartbeat(self, first=False):
         elapsed =  time.time() - self.last_hb_time
         if elapsed > self.heartbeat_timeout + (self.heartbeat_timeout * 0.1):
             self.logger.info("slow heartbeat, expected %f.6f, got %f.6f",
                              self.heartbeat_timeout, elapsed)
 
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec:
-            last_index = last_rec.index
-            last_term = last_rec.term
-        else:
-            # no log records yet
-            last_index = None
-            last_term = None
-        message = HeartbeatMessage(
-            self.server.endpoint,
-            None,
-            log.get_term(),
-            {
-                "leaderId": self.server.name,
-                "leaderPort": self.server.endpoint,
-                "prevLogIndex": last_index,
-                "prevLogTerm": last_term,
-                "entries": [],
-                "leaderCommit": log.get_commit_index(),
+        data = {
+            "leaderId": self.server.name,
+            "leaderPort": self.server.endpoint,
+            "prevLogIndex": self.log.get_last_index(),
+            "prevLogTerm": self.log.get_last_term(),
+            "entries": [],
+            "leaderCommit": self.log.get_commit_index(),
             }
-        )
+        if first:
+            data["first_in_term"] = True
+
+        message = HeartbeatMessage(self.server.endpoint, None,
+                                   self.log.get_term(), data)
         self.heartbeat_logger.debug("sending heartbeat to all commit = %s",
                                     message.data['leaderCommit'])
         await self.server.broadcast(message)
@@ -420,36 +312,6 @@ class Leader(State):
                                     message.data['leaderCommit'])
         await self.set_substate(Substate.sent_heartbeat)
         self.last_hb_time = time.time()
-
-    async def send_term_start(self):
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec:
-            last_index = last_rec.index
-            last_term = last_rec.term
-        else:
-            # no log records yet
-            last_index = None
-            last_term = None
-        data = {
-            "leaderId": self.server.name,
-            "leaderPort": self.server.endpoint,
-            "prevLogIndex": last_index,
-            "prevLogTerm": last_term,
-            "leaderCommit": log.get_commit_index(),
-        }
-        message = TermStartMessage(
-            self.server.endpoint,
-            None,
-            log.get_term(),
-            data
-        )
-        # lets wait for messages to go out before noting change
-        self.logger.info("sending term start message to all %s %s",
-                         message, data)
-        await self.server.broadcast(message)
-        self.logger.info("sent term start message to all %s %s", message, data)
-        await self.set_substate(Substate.sent_term_start)
 
     async def on_client_command(self, message):
         # we need to make sure we don't starve heartbeat
@@ -459,18 +321,6 @@ class Leader(State):
         target = message.sender
         if message.original_sender:
             target = message.original_sender
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec:
-            new_index = last_rec.index + 1
-            last_index = last_rec.index
-            last_term = last_rec.term
-        else:
-            new_index = 0
-            # no log records yet
-            last_index = None
-            last_term = None
-
         # call the user app 
         result = self.server.get_app().execute_command(message.data)
         if not result.log_response:
@@ -479,7 +329,7 @@ class Leader(State):
                               target)
             reply = ClientCommandResultMessage(self.server.endpoint,
                                                target,
-                                               last_term,
+                                               self.log.get_term(),
                                                result.response)
             self.logger.debug("sending no-log reply message %s", reply)
             await self.server.post_message(reply)
@@ -489,26 +339,27 @@ class Leader(State):
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
-        last_rec = log.read()
-        new_rec = LogRec(term=log.get_term(), user_data=result.response,
+        last_index = self.log.get_last_index()
+        last_term = self.log.get_last_term()
+        new_rec = LogRec(term=self.log.get_term(), user_data=result.response,
                          context=dict(client_addr=target))
-        log.append([new_rec,])
-        new_rec = log.read()
+        self.log.append([new_rec,])
+        new_rec = self.log.read()
         update_message = AppendEntriesMessage(
             self.server.endpoint,
             None,
-            log.get_term(),
+            self.log.get_term(),
             {
                 "leaderId": self.server.name,
                 "leaderPort": self.server.endpoint,
                 "prevLogIndex": last_index,
                 "prevLogTerm": last_term,
                 "entries": [asdict(new_rec),],
-                "leaderCommit": log.get_commit_index(),
+                "leaderCommit": self.log.get_commit_index(),
             }
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
-                          log.get_term(), update_message.data)
+                          self.log.get_term(), update_message.data)
         await self.server.broadcast(update_message)
         await self.set_substate(Substate.sent_new_entries)
         return True
@@ -518,23 +369,21 @@ class Leader(State):
         # if there is a big recovery in progress
         if time.time() - self.last_hb_time >= self.heartbeat_timeout:
             await self.send_heartbeat()
-        log = self.server.get_log()
         self.logger.info("leader ignoring vote reply: message.term = %d local_term = %d",
-                         message.term, log.get_term())
+                         message.term, self.log.get_term())
         return True
 
     async def on_vote_request(self, message): 
-        log = self.server.get_log()
         self.logger.info("vote request from %s, sending am leader",
                          message.sender)
         reply = RequestVoteResponseMessage(self.server.endpoint,
-                                         message.sender,
-                                         log.get_term(),
-                                         {
-                                             "already_leader":
-                                             self.server.endpoint,
-                                             "response": False
-                                         })
+                                           message.sender,
+                                           self.log.get_term(),
+                                           {
+                                               "already_leader":
+                                               self.server.endpoint,
+                                               "response": False
+                                           })
 
         await self.server.post_message(reply)
         return True

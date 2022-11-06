@@ -40,7 +40,7 @@ class MPStandardStateMap(StandardStateMap):
         
     async def set_substate(self, state, substate):
         await super().set_substate(state, substate)
-        csns.status[self.bt_server_name]['state_type'] = state._type
+        csns.status[self.bt_server_name]['state_type'] = str(state)
         csns.status[self.bt_server_name]['substate'] = substate
     
     
@@ -48,7 +48,7 @@ class UDPBankTellerServer:
 
     @classmethod
     def make_and_start(cls, port, working_dir, name, others,
-                       log_config, timeout_basis=0.1, use_log_pull=True):
+                       log_config, timeout_basis=0.1):
         from pytest_cov.embed import cleanup_on_sigterm
         cleanup_on_sigterm()
         import sys
@@ -68,7 +68,7 @@ class UDPBankTellerServer:
                 raise
         try:
             instance = cls(port, working_dir, name, others,
-                           timeout_basis, use_log_pull)
+                           timeout_basis)
             instance.start()
         except Exception as e:
             traceback.print_exc()
@@ -76,14 +76,13 @@ class UDPBankTellerServer:
         return instance
 
     def __init__(self, port, working_dir, name, others,
-                 timeout_basis, use_log_pull):
+                 timeout_basis):
         self.host = "localhost"
         self.port = port
         self.name = name
         self.working_dir = working_dir
         self.others = others
         self.timeout_basis = timeout_basis
-        self.use_log_pull = use_log_pull
         self.running = False
         
     async def _run(self):
@@ -92,10 +91,6 @@ class UDPBankTellerServer:
             logger.info("bank teller server starting")
             state_map = MPStandardStateMap(bt_server_name=self.name,
                                            timeout_basis=self.timeout_basis)
-            if self.use_log_pull:
-                state_map.set_use_log_pull(True)
-            else:
-                state_map.set_use_log_pull(False)
             data_log = MemoryLog()
             loop = asyncio.get_running_loop()
             logger.info('creating server')
@@ -134,7 +129,7 @@ class UDPBankTellerServer:
 class MemoryBankTellerServer:
 
     def __init__(self, port, working_dir, name, others,
-                 log_config=None, timeout_basis=1.0, use_log_pull=True):
+                 log_config=None, timeout_basis=1.0):
         # log_config is ignored, kept just to match process launching
         # versions to make control code cleaner
         self.host = "localhost"
@@ -152,11 +147,6 @@ class MemoryBankTellerServer:
         self.thread_started = False
         self.thread.name = f"{self.port}"
         self.thread_ident = None
-        self.use_log_pull = use_log_pull
-        if self.use_log_pull:
-            self.state_map.set_use_log_pull(True)
-        else:
-            self.state_map.set_use_log_pull(False)
 
     def add_other_server(self, other):
         self.thread.add_other_server(other)

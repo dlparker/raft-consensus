@@ -126,49 +126,6 @@ class TestUtils(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             new_msg = Serializer.deserialize(bad_data)
 
-
-
-class TestMemoryLog(unittest.TestCase):
-
-    def test_mem_log(self):
-        mlog = MemoryLog()
-        rec = mlog.read()
-        self.assertIsNone(rec)
-        self.assertEqual(mlog.get_term(), None)
-        mlog.incr_term()
-        self.assertEqual(mlog.get_term(), 0)
-        limit1 = 100
-        for i in range(limit1):
-            rec = LogRec(term=1, user_data=dict(index=i))
-            mlog.append([rec,])
-        with self.assertRaises(Exception) as context:
-            mlog.commit(111)
-        with self.assertRaises(Exception) as context:
-            mlog.commit(-2)
-
-        mlog.commit(0)
-        self.assertEqual(mlog.get_commit_index(), 0)
-        rec1 = mlog.read(1)
-        self.assertFalse(rec1.committed)
-        for i in range(1, limit1):
-            mlog.commit(i)
-        self.assertEqual(mlog.get_commit_index(), 99)
-        for i in range(limit1):
-            rec = mlog.read(i)
-            self.assertTrue(rec.committed)
-        self.assertIsNone(mlog.read(100))
-
-        mlog.trim_after(50)
-        rec = mlog.read()
-        self.assertEqual(rec.index, 50)
-        self.assertEqual(mlog.get_commit_index(), 50)
-
-        mlog.set_term(10)
-        self.assertEqual(mlog.get_term(), 10)
-        mlog.incr_term()
-        self.assertEqual(mlog.get_term(), 11)
-
-
 class TestTimer(unittest.TestCase):
 
     def setUp(self):

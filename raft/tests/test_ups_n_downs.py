@@ -9,8 +9,8 @@ from pathlib import Path
 
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.heartbeat import HeartbeatResponseMessage
-from raft.messages.termstart import TermStartMessage
 from raft.messages.command import ClientCommandMessage
+from raft.states.base_state import StateCode
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
 
@@ -18,7 +18,7 @@ LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-timeout_basis = 0.1
+timeout_basis = 0.5
         
 class Pauser:
     
@@ -84,8 +84,7 @@ class TestLogOps(unittest.TestCase):
         self.cluster = PausingServerCluster(server_count=3,
                                             logging_type=LOGGING_TYPE,
                                             base_port=5000,
-                                            timeout_basis=timeout_basis,
-                                            use_log_pull=True)
+                                            timeout_basis=timeout_basis)
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -111,9 +110,9 @@ class TestLogOps(unittest.TestCase):
             for spec in self.servers.values():
                 if spec.pbt_server.paused:
                     pause_count += 1
-                    if spec.monitor.state._type == "leader":
+                    if spec.monitor.state.get_code() == StateCode.leader:
                         self.leader = spec
-                    if spec.monitor.state._type == "follower":
+                    elif spec.monitor.state.get_code() == StateCode.follower:
                        self.followers.append(spec)
             if pause_count >= expected:
                 break
@@ -153,17 +152,32 @@ class TestLogOps(unittest.TestCase):
         for spec in self.servers.values():
             self.pausers[spec.name] = Pauser(spec, self)
         
+        self.set_hb_intercept()
         
         for spec in self.servers.values():
             spec.interceptor.add_trigger(InterceptorMode.out_after, 
-                                         TermStartMessage._code,
+                                         HeartbeatMessage._code,
                                          self.pausers[spec.name].leader_pause)
             spec.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         TermStartMessage._code,
+                                         HeartbeatMessage._code,
                                          self.pausers[spec.name].follower_pause)
         self.cluster.start_all_servers()
-        self.pause_waiter("waiting for pause first election done (termstart)")
+        self.pause_waiter("waiting for pause first election done (heartbeat)")
 
+    def set_hb_intercept(self, clear=True):
+        for spec in self.servers.values():
+            if clear:
+                spec.interceptor.clear_triggers()
+            spec.interceptor.add_trigger(InterceptorMode.out_after, 
+                                         HeartbeatMessage._code,
+                                         self.pausers[spec.name].leader_pause)
+            spec.interceptor.add_trigger(InterceptorMode.in_before, 
+                                         HeartbeatMessage._code,
+                                         self.pausers[spec.name].follower_pause)
+    def clear_intercepts(self):
+        for spec in self.servers.values():
+            spec.interceptor.clear_triggers()
+        
     def postamble(self):
     
         for spec in self.servers.values():
@@ -185,9 +199,12 @@ class TestLogOps(unittest.TestCase):
         client = self.leader.get_client()
         client.do_credit(10)
         log_record_count = 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
         log_record_count += 1
         self.assertEqual(res['balance'], 10)
+        time.sleep(0.01) # allow time for the commit messages to flow
+        
 
         # clear the role references
         orig_leader = self.leader
@@ -206,19 +223,19 @@ class TestLogOps(unittest.TestCase):
         res2 = client2.do_query()
         log_record_count += 1
         self.assertEqual(res2['balance'], 10)
+
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        time.sleep(0.01) # allow time for the commit messages to flow
         
-        self.logger.debug("\n\n\tRestarting %s \n\n", orig_leader.name)
+        self.logger.debug("\n\n\tRestarting original leader %s \n\n",
+                          orig_leader.name)
         tname = orig_leader.name
+        
         restarted = self.cluster.prepare_one(tname)
         self.pausers[tname] = Pauser(restarted, self)
-        restarted.interceptor.add_trigger(InterceptorMode.out_after, 
-                                          TermStartMessage._code,
-                                          self.pausers[tname].leader_pause)
-        restarted.interceptor.add_trigger(InterceptorMode.in_before, 
-                                          TermStartMessage._code,
-                                          self.pausers[tname].follower_pause)
-        self.cluster.resume_all_paused_servers()
         self.cluster.start_one_server(tname)
+        self.logger.debug("\n\n\tActivating heartbeat intercepts \n\n")
         # wait for restarted server to catch up
         start_time = time.time()
         trec = None
@@ -244,6 +261,14 @@ class TestLogOps(unittest.TestCase):
         self.logger.debug("\n\n\tRestarting follower %s \n\n", target.name)
         new_target = self.cluster.prepare_one(target.name)
         self.cluster.start_one_server(new_target.name)
+        if False:
+            time.sleep(1)
+            self.reset_pausers()
+            self.set_hb_intercept()
+            breakpoint()
+            self.clear_intercepts()
+            self.cluster.resume_all_paused_servers()
+            
         start_time = time.time()
         trec = None
         while time.time() - start_time < 4:

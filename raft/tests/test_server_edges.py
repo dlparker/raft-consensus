@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 
-from raft.states.base_state import Substate
+from raft.states.base_state import Substate, StateCode
 from raft.dev_tools.ps_cluster import PausingServerCluster, PausePoint
 from raft.dev_tools.pausing_app import PausingMonitor, PLeader
 
@@ -89,7 +89,7 @@ class RejectingMonitor(PausingMonitor):
         
     async def new_state(self, state_map, old_state, new_state):
         new_state = await super().new_state(state_map, old_state, new_state)
-        if new_state._type == "leader":
+        if new_state.code == StateCode.leader:
             self.state = RejectingLeader(new_state.server,
                                          new_state.heartbeat_timeout)
             return self.state
@@ -171,7 +171,7 @@ class TestEdges(unittest.TestCase):
 
         self.assertEqual(len(ready), 3)
         for spec in self.cluster.get_servers().values():
-            if spec.monitor.state._type == "leader":
+            if spec.monitor.state.code == StateCode.leader:
                 target = spec
             
         self.assertIsNotNone(target)

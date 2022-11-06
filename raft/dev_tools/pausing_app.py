@@ -6,7 +6,7 @@ import traceback
 import threading
 from enum import Enum
 from typing import Union
-from raft.states.base_state import State, Substate
+from raft.states.base_state import State, Substate, StateCode
 from raft.states.follower import Follower
 from raft.states.candidate import Candidate
 from raft.states.leader import Leader
@@ -97,16 +97,14 @@ class PausingMonitor(StateChangeMonitor):
         self.logger.info(f"{self.name} from {old_state} to {new_state}")
         self.state_history.append(old_state)
         self.substate_history = []
-        if new_state._type == "follower":
-            new_state = PFollower(new_state.server, new_state.timeout,
-                                  new_state.use_log_pull)
-        elif new_state._type == "candidate":
+        if new_state.get_code() == StateCode.follower:
+            new_state = PFollower(new_state.server, new_state.timeout)
+        elif new_state.get_code() == StateCode.candidate:
             new_state = PCandidate(new_state.server,
                                    new_state.election_timeout)
-        elif new_state._type == "leader":
+        elif new_state.get_code() == StateCode.leader:
             new_state = PLeader(new_state.server,
-                                new_state.heartbeat_timeout,
-                                new_state.use_log_pull)
+                                new_state.heartbeat_timeout)
         self.state = new_state
         self.state_map = state_map
         method = self.pause_on_states.get(str(new_state), None)
@@ -222,6 +220,7 @@ class PausingInterceptor(MessageInterceptor):
         self.out_befores = {}
         self.out_afters = {}
         self.pausing_message = None
+        self.state = None
         
     async def before_in_msg(self, message) -> bool:
         method = self.in_befores.get(message.code, None)
@@ -351,12 +350,11 @@ class PausingInterceptor(MessageInterceptor):
 class PausingBankTellerServer(MemoryBankTellerServer):
 
     def __init__(self, port, working_dir, name, others,
-                 log_config=None, timeout_basis=1.0, use_log_pull=True):
+                 log_config=None, timeout_basis=0.1):
         super().__init__(port, working_dir, name, others,
-                         log_config, timeout_basis, use_log_pull)
+                         log_config, timeout_basis)
         self.logger = logging.getLogger(__name__)
         self.state_map = StandardStateMap(timeout_basis=timeout_basis)
-        self.state_map.set_use_log_pull(self.use_log_pull)
         self.interceptor = PausingInterceptor(self, self.logger)
         self.comms.set_interceptor(self.interceptor)
         self.monitor = PausingMonitor(self, f"{port}", self.logger)
@@ -368,6 +366,8 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         timer_set = get_timer_set()
         await timer_set.pause_all()
         self.paused = True
+        self.monitor.state = self.state_map.state
+        self.interceptor.state = self.state_map.state
         self.state_map.state.pause = True
         if trigger_type == TriggerType.interceptor:
             self.logger.info("%s pausing all on interceptor %s %s",
@@ -388,14 +388,14 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.logger.info("%s paused all timers this thread and comms",
                          self.port)
         self.logger.info(">>>>>>> %s %s entering pause loop", self.port,
-                         self.state_map.state._type)
+                         self.state_map.state)
         while self.paused:
             try:
                 await asyncio.sleep(0.01)
             except asyncio.exceptions.CancelledError:
                 pass
         self.logger.info("++++++++ %s %s continuing", self.port,
-                         self.state_map.state._type)
+                         self.state_map.state)
             
     async def resume_all(self, wait=True):
         # If you have an interceptor or monitor setup to
@@ -424,4 +424,4 @@ class PausingBankTellerServer(MemoryBankTellerServer):
             timer_set.resume_all()
             self.do_resume = False
             self.logger.info("<<<<<<< %s %s resumed", self.port,
-                             self.state_map.state._type)
+                             self.state_map.state)

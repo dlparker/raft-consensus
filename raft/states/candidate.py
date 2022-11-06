@@ -7,16 +7,16 @@ from ..messages.request_vote import RequestVoteMessage
 from ..utils import task_logger
 from .voter import Voter
 from .leader import Leader
-from .base_state import Substate
+from .base_state import State, Substate, StateCode
 
 
-class Candidate(Voter):
+class Candidate(State):
 
-    my_type = "candidate"
+    my_code = StateCode.candidate
     
     def __init__(self, server, timeout=0.5):
-        super().__init__(server, self.my_type)
         self.timeout = timeout
+        super().__init__(server, self.my_code)
         self.logger = logging.getLogger(__name__)
         self.server = server
         self.yea_votes = {}
@@ -32,9 +32,8 @@ class Candidate(Voter):
         if self.terminated:
             raise Exception("cannot start a terminated state")
 
-        log = self.server.get_log()
         self.candidate_timer = self.server.get_timer("candidate-interval",
-                                                     log.get_term(),
+                                                     self.log.get_term(),
                                                      self.election_timeout,
                                                      self.on_timer)
         self.candidate_timer.start()
@@ -52,11 +51,6 @@ class Candidate(Voter):
             
     def candidate_interval(self):
         return random.uniform(0.01, self.timeout)
-        
-    async def on_term_start(self, message):
-        self.logger.info("candidate resigning because we got a term start message")
-        await self.resign()
-        return False
     
     async def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
@@ -64,6 +58,8 @@ class Candidate(Voter):
         return True
 
     async def on_heartbeat(self, message):
+        if self.terminated:
+            return False
         self.logger.info("candidate resigning because we" \
                          "got hearbeat from leader")
         await self.resign()
@@ -123,35 +119,28 @@ class Candidate(Voter):
                                        traceback.format_exc())
         return True
 
-    # start elections by increasing term, voting for itself and send out vote requests
     async def start_election(self):
         if self.terminated:
             return
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec:
-            last_index = last_rec.index
-            last_term = last_rec.term
-        else:
-            # no log records yet
-            last_index = None
-            last_term = None
+        last_index = self.log.get_last_index()
+        last_term = self.log.get_last_term()
         await self.candidate_timer.reset()
-        log.incr_term()
-        self.term = log.get_term()
-        self.logger.info("candidate starting election term is %d, timeout is %f",
+        self.log.incr_term()
+        self.term = self.log.get_term()
+        self.logger.info("candidate starting election term is %d,"\
+                         " timeout is %f",
                          self.term, self.election_timeout)
         
         election = RequestVoteMessage(
             self.server.endpoint,
             None,
-            log.get_term(),
+            self.log.get_term(),
             {
                 "leaderId": self.server.name,
                 "leaderPort": None,
                 "prevLogIndex": last_index,
                 "prevLogTerm": last_term,
-                "leaderCommit": log.get_commit_index(),
+                "leaderCommit": self.log.get_commit_index(),
             }
         )
         await self.server.broadcast(election)

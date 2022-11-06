@@ -50,3 +50,53 @@ Change serializer to an API and rename original
 
 Examing voting logic in follower, shouldn't it explicitly look for
 wrong term? Or is StateDiff property good enough? Comment in code.
+
+
+
+=================
+Simplify plan:
+
+1. Log changes
+   1. Start Log with 1, as in docs, start term with 0, always incr on candidate
+      PDF: page for state for all servers
+   2. Add log record typing, "no-op" for new term, "client" for client command
+      and include client serial number PDF: page 13, section 8
+   3. Change log append api to support append as new index and
+      insert at index, because leader can tell you to overwrite
+
+2. Protocol
+   1. Remove term start message
+   2. Remove "log pull, replace it with regular append entries"
+   3. Convert messages to dataclasses
+   4. Check for leader noting that it is out of date and resigning
+
+3. State logic changes:
+   1. Remove rollback, as it is a dumb way to do log overwrite
+   2. Find in PDF the logic on heartbeat when term does not match,
+      fix it in follower and refernce PDF
+   3. Add a set of queues to do client comms process, where
+      incoming client command queues, something reads it and starts
+      command processing sequence, then when the resulting log
+      record is committed that goes into out queue. A flag indicates
+      that we are in progress between the queue operations, so no
+      new read can start. This serializes operations. 
+   4. Fix the way the client log records are created, get rid of
+      the context thing. Just put the client record inside an envelope
+      with return address info.
+   5. Make provision for client command to come from within server
+      instead of from actual client, thus allowing consensus in servers.
+      Prolly make some form of internal addressing scheme instead of real
+      comm address. Can use some special type instead of tuple. Good
+      place to test non-tuple address usage. Consider how this might
+      also support a queue based mechanism where GRPC is used to put and
+      pull from the queues. Client ops can put, then await pull. Server
+      ops can put and return.
+    6. Is there an issue with tracking follower cursor when follower
+       restarts? Do we have to detect it and reset?
+     
+   
+==== Upgrades =====
+1. Log
+   3. Add serializer logic for log ops, with a dummy serializer for memory
+   4. Make it async
+

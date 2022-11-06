@@ -10,10 +10,8 @@ from pathlib import Path
 from raft.messages.request_vote import RequestVoteMessage
 from raft.messages.request_vote import RequestVoteResponseMessage
 from raft.messages.append_entries import AppendEntriesMessage
-from raft.messages.termstart import TermStartMessage
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.append_entries import AppendResponseMessage
-from raft.messages.log_pull import LogPullMessage
 from raft.comms.memory_comms import MemoryComms
 from raft.log.log_api import LogRec
 from raft.states.base_state import Substate
@@ -32,18 +30,11 @@ class BranchTricksLeader(PLeader):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.terminate_on_start = False
-        self.break_on_term_start = False
         self.broken = False
 
     async def on_start(self):
         self.terminated = self.terminate_on_start
         await super().on_start()
-
-    async def send_term_start(self):
-        if self.break_on_term_start:
-            self.broken = True
-            raise Exception('faking term start send error')
-        await super().send_term_start()
 
 
 class TestTerminated(unittest.TestCase):
@@ -81,9 +72,9 @@ class TestTerminated(unittest.TestCase):
         spec1 = servers["server_1"]
         monitor1 = spec1.monitor
         monitor0.set_pause_on_substate(Substate.joined)
-        monitor0.set_pause_on_substate(Substate.sent_term_start)
+        monitor0.set_pause_on_substate(Substate.sent_heartbeat)
         monitor1.set_pause_on_substate(Substate.joined)
-        monitor1.set_pause_on_substate(Substate.sent_term_start)
+        monitor1.set_pause_on_substate(Substate.sent_heartbeat)
         self.cluster.start_one_server(spec0.name)
         self.cluster.start_one_server(spec1.name)
         self.logger.info("waiting for election")
@@ -131,9 +122,9 @@ class TestTerminated(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             leader.start()
         self.assertTrue("terminated" in str(context.exception))
-        leader_spec.monitor.clear_pause_on_substate(Substate.sent_term_start)
+        leader_spec.monitor.clear_pause_on_substate(Substate.sent_heartbeat)
         leader_spec.monitor.clear_pause_on_substate(Substate.joined)
-        follower_spec.monitor.clear_pause_on_substate(Substate.sent_term_start)
+        follower_spec.monitor.clear_pause_on_substate(Substate.sent_heartbeat)
         follower_spec.monitor.clear_pause_on_substate(Substate.joined)
         self.loop.run_until_complete(leader_spec.pbt_server.resume_all())
         self.loop.run_until_complete(follower_spec.pbt_server.resume_all())
@@ -190,19 +181,6 @@ class TestOddPaths(unittest.TestCase):
         self.assertEqual(leader.substate, Substate.starting)
         self.assertFalse(leader.heartbeat_timer.keep_running)
 
-        # make sure that a failure to send term start messages
-        # results in an error report to the server level
-        leader.terminate_on_start = False
-        server = spec.server_obj
-        self.assertEqual(len(server.get_unhandled_errors()), 0)
-        leader.break_on_term_start = True
-        leader.terminated = False
-        async def do_start():
-            leader.start()
-        self.loop.run_until_complete(do_start())
-        time.sleep(0.01)
-        self.assertTrue(leader.broken)
-        self.assertEqual(len(server.get_unhandled_errors()), 1)
         
     def preamble(self):
         servers = self.cluster.prepare(timeout_basis=timeout_basis)
@@ -238,12 +216,12 @@ class TestOddPaths(unittest.TestCase):
         # should hit the case where log is empty, leader doesn't
         # know what the hell we are talking about
         async def do_strange_arm1():
-            leader.followers[(0,1)] = FollowerCursor((0,1), None)
+            leader.cursors[(0,1)] = FollowerCursor((0,1), None)
             resp = AppendResponseMessage((0, 1),
                                          (0,0),
                                          term,
                                          {
-                                             "response": True,
+                                             "success": True,
                                              "last_entry_index": 0,
                                           })
             await leader.on_append_response(resp)
@@ -263,9 +241,9 @@ class TestOddPaths(unittest.TestCase):
                                          (0,0),
                                          term,
                                          {
-                                             "response": True,
-                                             "last_entry_index": 2,
-                                             "leaderCommit": None,
+                                             "success": True,
+                                             "last_entry_index": 3,
+                                             "leaderCommit": 0,
                                          })
             await leader.on_append_response(resp)
             await asyncio.sleep(0.01)
@@ -288,30 +266,6 @@ class TestOddPaths(unittest.TestCase):
         
         server_1 = FakeServer()
         comms = MemoryComms()
-        async def do_log_pull():
-            # use non for start index, to trigger that
-            # tiny branch
-            await comms.start(server_1, ('localhost',5001))
-            message = LogPullMessage(('localhost',5001),
-                                     ('localhost',5000),
-                                     term,
-                                     {
-                                         "start_index": None,
-                                         "leaderCommit": None,
-                                         "prevLogIndex": None,
-                                     })
-            await leader.on_log_pull(message)
-            await asyncio.sleep(0.01)
-            start_time = time.time()
-            while time.time() - start_time < 0.1:
-                await asyncio.sleep(0.001)
-                if not server_1.in_queue.empty():
-                    break
-            self.assertFalse(server_1.in_queue.empty())
-            msg = await server_1.in_queue.get()
-            return msg
-        msg = self.loop.run_until_complete(do_log_pull())
-
         # set back to follower so shutdown will work
         sm.state = follower
 
@@ -342,16 +296,6 @@ class TestOddPaths(unittest.TestCase):
             await leader.on_append_entries(msg)
             await asyncio.sleep(0.01)
         self.loop.run_until_complete(do_append_entries())
-        self.assertEqual(len(server.get_handled_errors()), 0)
-
-        async def do_term_start():
-            msg = TermStartMessage((0,1),
-                                   (0,0),
-                                   term,
-                                   {})
-            await leader.on_term_start(msg)
-            await asyncio.sleep(0.01)
-        self.loop.run_until_complete(do_term_start())
         self.assertEqual(len(server.get_handled_errors()), 0)
 
         async def do_got_vote():

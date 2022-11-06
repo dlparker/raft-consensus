@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 
 
-from raft.messages.termstart import TermStartMessage
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.heartbeat import HeartbeatResponseMessage
 from raft.messages.append_entries import AppendEntriesMessage
@@ -223,11 +222,11 @@ class TestOddMsgArrivals(unittest.TestCase):
         monitor.state.terminated = True
         self.assertTrue(monitor.state.is_terminated())
         # any old message would do
-        tsm = TermStartMessage(("localhost", 5001),
+        tsm = HeartbeatMessage(("localhost", 5001),
                                ("localhost", 5000),
                                0,
                                {})
-        self.logger.info("Sending term start message expecting reject")
+        self.logger.info("Sending heartbeat message expecting reject")
         client.direct_message(tsm)
         self.assertEqual(len(server.get_unhandled_errors()), 0)
         start_time = time.time()
@@ -259,26 +258,6 @@ class TestOddMsgArrivals(unittest.TestCase):
         self.logger.info("Reject resulted in server saving error\n%s",
                          server.get_unhandled_errors()[1])
         
-        # now simulate a new message indicating the term needs to go up
-        log = server.get_log()
-        log_term = log.get_term()
-        self.logger.info("Releasing pause and resuming candidate")
-        monitor.clear_pause_on_substate(Substate.voting)
-        self.loop.run_until_complete(spec.pbt_server.resume_all())
-        tsm = TermStartMessage(("localhost", 5001),
-                               ("localhost", 5000),
-                               log_term + 1,
-                               {"leaderPort":('localhost', 5001)})
-        self.logger.info("Sending term start that should cause term" \
-                         " value change from %s to %s", log_term,
-                         log_term + 1)
-        client.direct_message(tsm)
-        start_time = time.time()
-        while time.time() - start_time < 3:
-            time.sleep(0.05)
-            if log.get_term() == log_term + 1:
-                break
-        self.assertEqual(log.get_term(), log_term + 1)
         self.logger.info("starting other two servers and waiting for election")
         self.cluster.start_one_server("server_1")
         self.cluster.start_one_server("server_2")

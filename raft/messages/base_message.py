@@ -77,3 +77,21 @@ class BaseMessage:
     def msg_number(self):
         return self._msg_number
 
+    @property
+    def prevLogIndex(self):
+        """ This will only work on certain message types, namely
+        heartbeats and AppendEntries """
+        return self._data["prevLogIndex"]
+
+    @property
+    def prevLogTerm(self):
+        """ This will only work on certain message types, namely
+        heartbeats and AppendEntries """
+        return self._data["prevLogTerm"]
+    
+    @property
+    def leaderCommit(self):
+        """ This will only work on AppendEntries messages """
+        return self._data["leaderCommit"]
+    
+

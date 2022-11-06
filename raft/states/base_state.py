@@ -12,6 +12,21 @@ from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
 from ..messages.command import ClientCommandResultMessage
 from ..messages.regy import get_message_registry
 
+class StateCode(str, Enum):
+
+    """ A startup phase that allows app code to do things before 
+    joining or after leaving cluster """
+    paused = "PAUSED"
+
+    """ Follower state, as defined in raft protocol """
+    follower = "FOLLOWER"
+
+    """ Candidate state, as defined in raft protocol """
+    candidate = "CANDIDATE"
+
+    """ Leader state, as defined in raft protocol """
+    leader = "LEADER"
+    
 class Substate(str, Enum):
     """ Before any connections """
     starting = "STARTING"
@@ -19,17 +34,17 @@ class Substate(str, Enum):
     """ Follower has not received timely leader contact """
     leader_lost = "LEADER_LOST"
 
-    """ Leader has called us at least once """
+    """ Follower, leader has called us at least once """
     joined = "JOINED"                  
 
-    """ As of last call from leader, log is in sync """
+    """ Follower, as of last call from leader, log is in sync """
     synced = "SYNCED"                 
+
+    """ Follower, leader log is different than ours """
+    out_of_sync = "OUT_OF_SYNC"
 
     """ Last call from leader synced commit, no new records """
     syncing_commit = "SYNCING_COMMIT"
-
-    """ Last call from leader had new records """
-    log_appending = "log_appending"
 
     """ Starting election """
     voting = "VOTING"
@@ -38,26 +53,24 @@ class Substate(str, Enum):
     became_leader = "BECAME_LEADER"
     
     """ Just sent term start (as leader) """
-    sent_term_start = "SENT_TERM_START"
-    
-    """ Just sent term start (as leader) """
     sent_heartbeat = "SENT_HEARTBEAT"
     
     """ Just sent new log entries append (as leader) """
     sent_new_entries = "SENT_NEW_ENTRIES"
     
-    """ Just sent log entrie commit (as leader) """
+    """ Just sent log entry commit (as leader) """
     sent_commit = "SENT_COMMIT"
 
 
 # abstract class for all server states
 class State(metaclass=abc.ABCMeta):
 
-    def __init__(self, server, my_type):
-        self._type = my_type
+    def __init__(self, server, my_code):
         self.substate = Substate.starting
         self.server = server
         self.terminated = False
+        self.log = server.get_log()
+        self.code = my_code
     
     @classmethod
     def __subclasshook__(cls, subclass):  # pragma: no cover abstract
@@ -65,8 +78,6 @@ class State(metaclass=abc.ABCMeta):
                 callable(subclass.on_vote_request) and
                 hasattr(subclass, 'on_vote_received') and 
                 callable(subclass.on_vote_received) and
-                hasattr(subclass, 'on_term_start') and 
-                callable(subclass.on_term_start) and
                 hasattr(subclass, 'on_append_entries') and 
                 callable(subclass.on_append_entries) and
                 hasattr(subclass, 'on_append_response') and 
@@ -83,10 +94,11 @@ class State(metaclass=abc.ABCMeta):
                 callable(subclass.on_heartbeat_response) or
                 NotImplemented)
             
+    def get_code(self):
+        return self.code
         
     def get_term(self):
-        log = self.server.get_log()
-        return log.get_term()
+        return self.log.get_term()
     
     async def set_substate(self, substate: Substate):
         self.substate = substate
@@ -98,24 +110,16 @@ class State(metaclass=abc.ABCMeta):
     async def on_message(self, message):
         logger = logging.getLogger(__name__)
         if self.terminated:
+            # Using async for running timers, comms, etc can
+            # lead to state objects executing coroutines that
+            # were scheduled when the state was active, but before
+            # they could run the state changed. The terminated
+            # flag is set during the state change operation to
+            # serve as a barrier to prevent the delayed coroutine
+            # from proceeding
             logger.info("%s got message %s but already terminated, " \
-                        "returning False", self._type, message.code)
+                        "returning False", str(self), message.code)
             return False
-        
-        # If the message.term < currentTerm -> tell the sender to update term
-        log = self.server.get_log()
-        set_term = False
-        if log.get_term() is None:
-            if message.term:
-                # empty log locally
-                set_term = True
-        if message.term is not None and  log.get_term() is not None:
-            if message.term > log.get_term():
-                set_term = True
-        if set_term:
-            logger.info("updating term from %s to %s", log.get_term(),
-                        message.term)
-            log.set_term(message.term)
 
         # find the handler for the message type and call it
         regy = get_message_registry()
@@ -128,46 +132,26 @@ class State(metaclass=abc.ABCMeta):
                          self, message)
             return False
         
-    def get_type(self):
-        return self._type
 
     async def on_status_query(self, message):
         """Called when there is a status query"""
-        state_type = self.get_type()
-        if state_type == "leader":
+        if self.code == StateCode.leader:
             leader_addr = self.server.endpoint
-        elif state_type == "candidate":
+        elif self.code == StateCode.candidate:
             leader_addr = None
         else:
             leader_addr = self.get_leader_addr()
-        log = self.server.get_log()
-        status_data = dict(state=state_type,
+        status_data = dict(state=self.get_code(),
                            leader=leader_addr,
-                           term=log.get_term())
+                           term=self.log.get_term())
         status_response = StatusQueryResponseMessage(
             self.server.endpoint,
             message.sender,
-            log.get_term(),
+            self.log.get_term(),
             status_data
         )
         await self.server.post_message(status_response)
         return self, None
-
-    async def on_heartbeat_common(self, message):
-        log = self.server.get_log()
-        last_rec = log.read()
-        if last_rec:
-            last_index = last_rec.index
-        else:
-            # no log records yet
-            last_index = -1
-
-        data = dict(last_index=last_index)
-        reply = HeartbeatResponseMessage(message.receiver,
-                                         message.sender,
-                                         term=log.get_term(),
-                                         data=data)
-        await self.server.post_message(reply)
 
     async def dispose_client_command(self, message, server):
         # only the leader can execute, other states should
@@ -190,6 +174,7 @@ class State(metaclass=abc.ABCMeta):
             self.logger.info("Client getting 'unavailable', no leader")
             await server.post_message(reply)
         
+
     @abc.abstractmethod
     async def on_vote_request(self, message):  # pragma: no cover abstract
         """Called when there is a vote request"""
@@ -198,11 +183,6 @@ class State(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     async def on_vote_received(self, message):  # pragma: no cover abstract
         """Called when this node receives a vote"""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    async def on_term_start(self, message):  # pragma: no cover abstract
-        """Called when this node receives a term start notice from leader"""
         raise NotImplementedError
 
     @abc.abstractmethod
