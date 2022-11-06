@@ -60,9 +60,7 @@ def build_registry():
     from ..messages.status import StatusQueryMessage, StatusQueryResponseMessage
     from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
     from ..messages.request_vote import RequestVoteMessage, RequestVoteResponseMessage
-    from ..messages.termstart import TermStartMessage
     from ..messages.command import ClientCommandMessage, ClientCommandResultMessage
-    from ..messages.log_pull import LogPullMessage, LogPullResponseMessage
     
     global regy
     regy.register_message_class(HeartbeatMessage, "on_heartbeat")
@@ -75,8 +73,6 @@ def build_registry():
     regy.register_message_class(AppendEntriesMessage, "on_append_entries")
     regy.register_message_class(AppendResponseMessage, "on_append_response")
 
-    regy.register_message_class(LogPullMessage, "on_log_pull")
-    regy.register_message_class(LogPullResponseMessage, "on_log_pull_response")
 
     regy.register_message_class(RequestVoteMessage, "on_vote_request")
     regy.register_message_class(RequestVoteResponseMessage, "on_vote_received")
@@ -84,7 +80,6 @@ def build_registry():
     #regy.register_message_class(FooMessage, "on_foo")
     #regy.register_message_class(FooResponseMessage, "on_foo_response")
 
-    regy.register_message_class(TermStartMessage, "on_term_start")
     regy.register_message_class(ClientCommandMessage, "on_client_command")
     regy.register_message_class(ClientCommandResultMessage, None)
     

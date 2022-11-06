@@ -5,7 +5,6 @@ import asyncio
 
 from ..messages.request_vote import RequestVoteMessage
 from ..utils import task_logger
-from .voter import Voter
 from .leader import Leader
 from .base_state import State, Substate, StateCode
 

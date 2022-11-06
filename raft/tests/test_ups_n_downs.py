@@ -154,13 +154,6 @@ class TestLogOps(unittest.TestCase):
         
         self.set_hb_intercept()
         
-        for spec in self.servers.values():
-            spec.interceptor.add_trigger(InterceptorMode.out_after, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].leader_pause)
-            spec.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].follower_pause)
         self.cluster.start_all_servers()
         self.pause_waiter("waiting for pause first election done (heartbeat)")
 

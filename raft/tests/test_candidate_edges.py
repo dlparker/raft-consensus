@@ -14,7 +14,7 @@ from raft.messages.append_entries import AppendResponseMessage
 from raft.messages.request_vote import RequestVoteMessage
 from raft.messages.request_vote import RequestVoteResponseMessage
 from raft.messages.status import StatusQueryResponseMessage
-from raft.states.base_state import Substate
+from raft.states.base_state import Substate, StateCode
 from raft.dev_tools.bt_client import MemoryBankTellerClient
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PFollower, PLeader
@@ -70,12 +70,12 @@ class ExplodingMonitor(PausingMonitor):
         self.follower = None
         
     async def new_state(self, state_map, old_state, new_state):
-        if new_state._type == "leader" and self.explode:
+        if new_state.code == StateCode.leader and self.explode:
             new_state = ExplodingLeader(new_state.server,
                                          new_state.heartbeat_timeout)
             self.leader = new_state
             return new_state
-        if new_state._type == "follower" and self.explode:
+        if new_state.code == StateCode.follower and self.explode:
             new_state = ExplodingFollower(new_state.server,
                                            new_state.timeout)
             self.follower = new_state
@@ -259,6 +259,10 @@ class TestOddMsgArrivals(unittest.TestCase):
                          server.get_unhandled_errors()[1])
         
         self.logger.info("starting other two servers and waiting for election")
+        monitor.clear_substate_pauses()
+        async def do_resume():
+            await monitor.pbt_server.resume_all()
+        self.loop.run_until_complete(do_resume())
         self.cluster.start_one_server("server_1")
         self.cluster.start_one_server("server_2")
         time.sleep(0.1)
@@ -461,7 +465,7 @@ class TestOddMsgArrivals(unittest.TestCase):
         monitor.explode = True
         candidate = monitor.state
         self.assertEqual(len(server.get_unhandled_errors()), 0)
-        monitor.set_pause_on_substate(Substate.sent_term_start)
+        monitor.set_pause_on_substate(Substate.voting)
         async def try_vote_response():
             vrm = RequestVoteResponseMessage(("localhost", 5001),
                                              ("localhost", 5000),
@@ -479,7 +483,7 @@ class TestOddMsgArrivals(unittest.TestCase):
         monitor.explode = False
         candidate.candidate_timer.terminated = False
         candidate.all_votes = {}
-        monitor.clear_pause_on_substate(Substate.sent_term_start)
+        monitor.clear_pause_on_substate(Substate.voting)
         self.loop.run_until_complete(spec.pbt_server.resume_all())
         self.loop.run_until_complete(try_vote_response())
         self.assertEqual(len(server.get_unhandled_errors()), 0)

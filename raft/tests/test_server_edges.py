@@ -7,9 +7,11 @@ import os
 from pathlib import Path
 
 
-from raft.states.base_state import Substate, StateCode
-from raft.dev_tools.ps_cluster import PausingServerCluster, PausePoint
+from raft.messages.heartbeat import HeartbeatMessage
+from raft.states.base_state import StateCode
+from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PLeader
+from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -95,6 +97,54 @@ class RejectingMonitor(PausingMonitor):
             return self.state
         return new_state
     
+class Pauser:
+    
+    def __init__(self, spec, tcase):
+        self.spec = spec
+        self.tcase = tcase
+        self.am_leader = False
+        self.paused = False
+        self.broadcasting = False
+        self.sent_count = 0
+        
+    def reset(self):
+        self.am_leader = False
+        self.paused = False
+        self.broadcasting = False
+        self.sent_count = 0
+        
+    async def leader_pause(self, mode, code, message):
+        self.am_leader = True
+        self.tcase.leader = self.spec
+        
+        if self.broadcasting or code in ("term_start", "heartbeat"):
+            # we are sending one to each follower, whether
+            # it is running or not
+            limit = len(self.tcase.servers) - 1
+        else:
+            limit = self.tcase.expected_followers
+        self.sent_count += 1
+        if self.sent_count < limit:
+            self.tcase.logger.debug("not pausing on %s, sent count" \
+                                    " %d not yet %d", code,
+                                    self.sent_count, limit)
+            return True
+        self.tcase.logger.info("got sent for %s followers, pausing",
+                               limit)
+        await self.spec.pbt_server.pause_all(TriggerType.interceptor,
+                                             dict(mode=mode,
+                                                  code=code))
+        return True
+    
+    async def follower_pause(self, mode, code, message):
+        self.am_leader = False
+        self.tcase.followers.append(self.spec)
+        self.paused = True
+        await self.spec.pbt_server.pause_all(TriggerType.interceptor,
+                                             dict(mode=mode,
+                                                  code=code))
+        return True
+    
 class TestEdges(unittest.TestCase):
 
     @classmethod
@@ -123,57 +173,91 @@ class TestEdges(unittest.TestCase):
         time.sleep(0.1)
         self.loop.close()
 
+    def set_hb_intercept(self, clear=True):
+        for spec in self.servers.values():
+            if clear:
+                spec.interceptor.clear_triggers()
+            spec.interceptor.add_trigger(InterceptorMode.out_after, 
+                                         HeartbeatMessage._code,
+                                         self.pausers[spec.name].leader_pause)
+            spec.interceptor.add_trigger(InterceptorMode.in_before, 
+                                         HeartbeatMessage._code,
+                                         self.pausers[spec.name].follower_pause)
+
+    def clear_intercepts(self):
+        for spec in self.servers.values():
+            spec.interceptor.clear_triggers()
+        
+    def pause_waiter(self, label, expected=3, timeout=2):
+        self.logger.info("waiting for %s", label)
+        self.leader = None
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            pause_count = 0
+            self.followers = []
+            for spec in self.servers.values():
+                if spec.pbt_server.paused:
+                    pause_count += 1
+                    if spec.monitor.state.get_code() == StateCode.leader:
+                        self.leader = spec
+                    elif spec.monitor.state.get_code() == StateCode.follower:
+                       self.followers.append(spec)
+            if pause_count >= expected:
+                break
+        self.assertIsNotNone(self.leader)
+        self.assertEqual(len(self.followers) + 1, expected)
+        return 
+
+    def resume_waiter(self):
+        start_time = time.time()
+        while time.time() - start_time < 5:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            pause_count = 0
+            for spec in self.servers.values():
+                if spec.running:
+                    if spec.pbt_server.paused:
+                        pause_count += 1
+            if pause_count == 0:
+                break
+        self.assertEqual(pause_count, 0)
+
+    def reset_pausers(self):
+        for name in self.servers.keys():
+            self.pausers[name].reset()
+
+    def reset_roles(self):
+        self.leader = None
+        self.followers = []
+
     def preamble(self, slow=False):
         if slow:
             tb = 1.0
         else:
             tb = timeout_basis
-        servers = self.cluster.prepare(timeout_basis=tb)
-        self.cluster.add_pause_point(PausePoint.election_done)
-        
-        for spec in servers.values():
+        self.servers = self.cluster.prepare(timeout_basis=tb)
+        self.pausers = {}
+        self.leader = None
+        self.followers = []
+        self.expected_followers = len(self.servers) - 1
+        for spec in self.servers.values():
             spec.monitor = RejectingMonitor(spec.monitor)
-            # follower after first heartbeat that requires no
-            # additional sync up actions
-            spec.monitor.set_pause_on_substate(Substate.synced)
-            # leader after term start message
-            spec.monitor.set_pause_on_substate(Substate.sent_heartbeat)
-        self.cluster.start_all_servers()
-        self.logger.info("waiting for pause on election results")
-        start_time = time.time()
-        while time.time() - start_time < 4:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.01)
-            pause_count = 0
-            for spec in servers.values():
-                if spec.pbt_server.paused:
-                    pause_count += 1
-            if pause_count == 3:
-                break
-        self.assertEqual(pause_count, 3,
-                         msg=f"only {pause_count} servers paused on election")
+            self.pausers[spec.name] = Pauser(spec, self)
         
-        for spec in servers.values():
-            spec.monitor.clear_pause_on_substate(Substate.synced)
-            # leader after term start message
-            spec.monitor.clear_pause_on_substate(Substate.sent_heartbeat)
-        self.cluster.resume_all_paused_servers()
-        target = None
-        ready  = []
-        start_time = time.time()
-        while time.time() - start_time < 1 and len(ready) < 3:
-            ready  = []
-            for spec in self.cluster.get_servers().values():
-                if spec.pbt_server.paused:
-                    continue
-                ready.append(spec)
-
-        self.assertEqual(len(ready), 3)
+        self.set_hb_intercept()
+        
+        self.cluster.start_all_servers()
+        self.pause_waiter("waiting for pause first election done (heartbeat)")
         for spec in self.cluster.get_servers().values():
             if spec.monitor.state.code == StateCode.leader:
                 target = spec
             
+        self.cluster.resume_all_paused_servers()
+        self.clear_intercepts()
         self.assertIsNotNone(target)
         client = spec.get_client()
         status = client.get_status()

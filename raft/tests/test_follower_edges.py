@@ -10,7 +10,6 @@ from pathlib import Path
 from raft.messages.append_entries import AppendEntriesMessage
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.command import ClientCommandMessage
-from raft.messages.log_pull import LogPullMessage, LogPullResponseMessage
 from raft.comms.memory_comms import MemoryComms
 from raft.log.log_api import LogRec
 from raft.states.base_state import Substate
