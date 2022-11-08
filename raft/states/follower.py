@@ -324,9 +324,9 @@ class Follower(State):
         last_index = self.log.get_last_index()
         last_term = self.log.get_last_term()
         approve = False
-        if message.term <= self.log.get_term():
-            self.logger.info("voting false, term %s should be more " \
-                             " than local term %s",
+        if message.term < self.log.get_term():
+            self.logger.info("voting false, term %s should at least " \
+                             " local term %s",
                              message.term, self.log.get_term())
         elif (last_index > message.prevLogIndex
               or last_term > message.prevLogTerm):

@@ -22,7 +22,7 @@ def set_levels(handler_names):
     log_loggers['raft.states.follower'] = debug_log
     #log_loggers['raft.states.follower:heartbeat'] = debug_log
     log_loggers['raft.states.leader'] = debug_log
-    log_loggers['raft.states.leader:heartbeat'] = debug_log
+    #log_loggers['raft.states.leader:heartbeat'] = debug_log
     #log_loggers['raft.states.memory_log'] = debug_log
     log_loggers['raft.tests'] = debug_log
     #log_loggers['raft.dev_tools.timer_wrapper'] = debug_log

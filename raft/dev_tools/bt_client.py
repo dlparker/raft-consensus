@@ -2,11 +2,10 @@ import sys
 import socket
 import time
 import asyncio
-import random
 from raft.messages.status import StatusQueryMessage
 from raft.messages.command import ClientCommandMessage
 from raft.messages.serializer import Serializer
-from raft.comms.memory_comms import get_queues, Wrapper
+from raft.comms.memory_comms import get_channels, add_client, Wrapper
 
 def get_internal_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -79,12 +78,8 @@ class MemoryBankTellerClient:
     def __init__(self, server_host, server_port):
         self.server_addr = server_host, server_port
         self.queue = asyncio.Queue()
-        poss = int(random.uniform(0, server_port - 100))
-        while poss in get_queues():
-            poss = int(random.uniform(0, server_port - 100))
-        self.addr = ('localhost', poss)
-        get_queues()[self.addr] = self.queue
-        get_queues()[self.addr] = self.queue
+        self.client = add_client(self.queue)
+        self.addr = self.client.addr
         self.channel = None
         self.timeout = 2
 
@@ -94,17 +89,17 @@ class MemoryBankTellerClient:
     async def get_channel(self):
         # need to not blow up if server is not running
         if self.channel is None:
-            self.channel = get_queues().get(self.server_addr, None)
+            self.channel = get_channels().get(self.server_addr, None)
         if self.channel is None:
             start_time = time.time()
             while time.time() - start_time < 2:
-                self.channel = get_queues().get(self.server_addr, None)
+                self.channel = get_channels().get(self.server_addr, None)
                 if self.channel:
                     break
                 await asyncio.sleep(0.01)
         if self.channel is None:
             raise Exception("timeout")
-        return self.channel
+        return self.channel.queue
 
     def do_credit(self, amount):
         try:

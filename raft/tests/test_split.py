@@ -18,7 +18,7 @@ LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-timeout_basis = 0.5
+timeout_basis = 0.1
         
 class Pauser:
     
@@ -69,7 +69,7 @@ class Pauser:
         return True
 
 
-class TestLogOps(unittest.TestCase):
+class TestSplit(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -81,7 +81,7 @@ class TestLogOps(unittest.TestCase):
         pass
     
     def setUp(self):
-        self.cluster = PausingServerCluster(server_count=3,
+        self.cluster = PausingServerCluster(server_count=5,
                                             logging_type=LOGGING_TYPE,
                                             base_port=5000,
                                             timeout_basis=timeout_basis)
@@ -97,7 +97,7 @@ class TestLogOps(unittest.TestCase):
         time.sleep(0.1)
         self.loop.close()
 
-    def pause_waiter(self, label, expected=3, timeout=2):
+    def pause_waiter(self, label, expected=5, timeout=2):
         self.logger.info("waiting for %s", label)
         self.leader = None
         start_time = time.time()
@@ -106,7 +106,9 @@ class TestLogOps(unittest.TestCase):
             # blocking this one is fine
             time.sleep(0.01)
             pause_count = 0
+            self.non_leaders = []
             self.followers = []
+            self.candidates = []
             for spec in self.servers.values():
                 if spec.pbt_server.paused:
                     pause_count += 1
@@ -114,10 +116,15 @@ class TestLogOps(unittest.TestCase):
                         self.leader = spec
                     elif spec.monitor.state.get_code() == StateCode.follower:
                        self.followers.append(spec)
+                       self.non_leaders.append(spec)
+                    elif spec.monitor.state.get_code() == StateCode.candidate:
+                       self.candidates.append(spec)
+                       self.non_leaders.append(spec)
             if pause_count >= expected:
                 break
         self.assertIsNotNone(self.leader)
-        self.assertEqual(len(self.followers) + 1, expected)
+        self.assertEqual(len(self.followers) + len(self.candidates) + 1,
+                         expected)
         return 
 
     def resume_waiter(self):
@@ -151,9 +158,7 @@ class TestLogOps(unittest.TestCase):
         self.expected_followers = len(self.servers) - 1
         for spec in self.servers.values():
             self.pausers[spec.name] = Pauser(spec, self)
-        
         self.set_hb_intercept()
-        
         self.cluster.start_all_servers()
         self.pause_waiter("waiting for pause first election done (heartbeat)")
 
@@ -178,12 +183,6 @@ class TestLogOps(unittest.TestCase):
 
         self.cluster.resume_all_paused_servers()
         
-    def a_test_check_setup(self):
-        # rename this to remove the a_ in order to
-        # check the basic control flow
-        self.preamble()
-        self.postamble()
-
     def pause_and_break(self, go_after=True):
         # call this to get a breakpoint that has
         # everyone stopped
@@ -199,8 +198,9 @@ class TestLogOps(unittest.TestCase):
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         
-    def test_restarts(self):
+    def test_leader_stays_split(self):
         self.preamble()
+        self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         self.resume_waiter()
         self.logger.debug("\n\n\tCredit 10 \n\n")
@@ -214,85 +214,176 @@ class TestLogOps(unittest.TestCase):
         time.sleep(0.01) # allow time for the commit messages to flow
         
 
-        # clear the role references
-        orig_leader = self.leader
-        self.leader = None
-        self.logger.debug("\n\n\tStoping Leader %s \n\n", orig_leader.name)
-        self.cluster.stop_server(orig_leader.name)
-        self.expected_followers = 1
-        self.reset_pausers()
-        # just make sure election happens so we know who's who
-        self.pause_waiter("waiting for pause leader lost new election",
-                          expected=2)
-        second_leader = self.leader
-        self.cluster.resume_all_paused_servers()
-        self.logger.debug("\n\n\tQuery to %s \n\n", second_leader.name)
-        client2 = self.leader.get_client()
-        res2 = client2.do_query()
-        log_record_count += 1
-        self.assertEqual(res2['balance'], 10)
+        leader = self.leader
+        lost_1 = self.non_leaders[0]
+        lost_2 = self.non_leaders[1]
+        kept_1 = self.non_leaders[2]
+        kept_2 = self.non_leaders[3]
 
+        self.logger.debug("\n\n\tIsolating two servers as though" \
+                          " network partitioned, %s and %s\n\n",
+                          lost_1.name, lost_2.name)
+
+        lost_1.pbt_server.comms.set_partition(1)
+        lost_2.pbt_server.comms.set_partition(1)
+        
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
-        time.sleep(0.01) # allow time for the commit messages to flow
-        
-        self.logger.debug("\n\n\tRestarting original leader %s \n\n",
-                          orig_leader.name)
-        tname = orig_leader.name
-        
-        restarted = self.cluster.prepare_one(tname)
-        self.pausers[tname] = Pauser(restarted, self)
-        self.cluster.start_one_server(tname)
-        self.logger.debug("\n\n\tActivating heartbeat intercepts \n\n")
-        # wait for restarted server to catch up
-        start_time = time.time()
-        trec = None
-        while time.time() - start_time < 4:
-            tserver = restarted.server_obj
-            if tserver:
-                tlog = tserver.get_log()
-                trec = tlog.read()
-                if trec:
-                    if trec.index == log_record_count -1:
-                        break
-            time.sleep(0.01)
-        self.assertIsNotNone(trec)
-        self.assertEqual(trec.index, log_record_count-1)
-        self.logger.debug("\n\n\tRestarted %s log catch up done \n\n",
-                          restarted.name)
-        # now make sure that a call to the restarted leader, now follower
-        # results in the correct results, thereby testing the forwarding
-        # logic that enforces leader only ops.
-        client3 = restarted.get_client()
-        res3 = client3.do_query()
-        log_record_count += 1
-        self.assertEqual(res3['balance'], 10)
-        
-        # kill and restart a follower and wait for it to have an up to date log
-        target = self.followers[0]
-        
-        self.leader = None
-        self.logger.debug("\n\n\tStopping follower %s \n\n", target.name)
-        self.cluster.stop_server(target.name)
-        self.logger.debug("\n\n\tRestarting follower %s \n\n", target.name)
-        new_target = self.cluster.prepare_one(target.name)
-        self.cluster.start_one_server(new_target.name)
-        start_time = time.time()
-        trec = None
-        while time.time() - start_time < 4:
-            tserver = new_target.server_obj
-            if tserver:
-                tlog = tserver.get_log()
-                trec = tlog.read()
-                if trec:
-                    if trec.index == log_record_count -1:
-                        break
-            time.sleep(0.01)
-        self.assertIsNotNone(trec)
-        self.assertEqual(trec.index, log_record_count-1)
-        self.logger.debug("\n\n\tRestarted follower %s log catch up done \n\n",
-                          new_target.name)
 
+        self.logger.debug("\n\n\tAdding 10 via do_credit\n\n")
+        client.do_credit(10)
+        log_record_count += 1
+        start_time = time.time()
+        while time.time() - start_time < 4:
+            done = []
+            for spec in [leader, kept_1, kept_2]:
+                tlog = spec.server_obj.get_log()
+                # log indices are 1 offset, not zero
+                if tlog.get_commit_index() == log_record_count:
+                    done.append(spec)
+            
+            if len(done) == 3:
+                break
+        self.assertEqual(len(done), 3, msg="Log commits missing for 4 seconds")
+        for spec in [lost_1, lost_2]:
+            tlog = spec.server_obj.get_log()
+            # log indices are 1 offset, not zero
+            self.assertTrue(tlog.get_commit_index() < log_record_count)
+        self.logger.debug("\n\n\tHealing fake network partition\n\n")
+        lost_1.pbt_server.comms.set_partition(0)
+        lost_2.pbt_server.comms.set_partition(0)
+        
+        start_time = time.time()
+        while time.time() - start_time < 4:
+            done = []
+            for spec in [lost_1, lost_2]:
+                tlog = spec.server_obj.get_log()
+                # log indices are 1 offset, not zero
+                if tlog.get_commit_index() == log_record_count:
+                    done.append(spec)
+            
+            if len(done) == 2:
+                break
+        self.assertEqual(len(done), 2,
+                         msg="Post heal log commits missing for 4 seconds")
+        
+        self.logger.debug("\n\n\tDone with test, starting shutdown\n")
+        # check the actual log in the follower
+        self.postamble()
+                      
+    def test_leader_lost_split(self):
+        self.preamble()
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        self.resume_waiter()
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        client.do_credit(10)
+        log_record_count = 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 10)
+        time.sleep(0.01) # allow time for the commit messages to flow
+
+        start_time = time.time()
+        while time.time() - start_time < 2:
+            done = []
+            for spec in self.cluster.get_servers().values():
+                tlog = spec.server_obj.get_log()
+                # log indices are 1 offset, not zero
+                if tlog.get_commit_index() == log_record_count:
+                    done.append(spec)
+            if len(done) == 5:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(done), 5,
+                         msg="Post heal log commits missing for 2 seconds")
+
+        self.reset_pausers()
+        self.set_hb_intercept()
+        self.pause_waiter("Waiting for all to pause on heartbeat")
+        leader = self.leader
+        lost_1 = self.non_leaders[0]
+        kept_1 = self.non_leaders[1]
+        kept_2 = self.non_leaders[2]
+        kept_3 = self.non_leaders[3]
+
+        self.logger.debug("\n\n\tIsolating two servers as though" \
+                          " network partitioned, leader %s and %s\n\n",
+                          leader.name, lost_1.name)
+
+        leader.pbt_server.comms.set_partition(1)
+        lost_1.pbt_server.comms.set_partition(1)
+
+        if False:
+            # if you are debugging, you might want to do this
+            # let the three kept servers run, but not the
+            # "partitioned" ones
+            for spec in self.servers.values():
+                if spec in [kept_1, kept_2, kept_3]:
+                    spec.interceptor.clear_triggers()
+                    self.cluster.resume_paused_server(spec.name, wait=False)
+        else:
+            self.reset_pausers()
+            self.clear_intercepts()
+            self.cluster.resume_all_paused_servers()
+        new_leader = None
+        start_time = time.time()
+        while time.time() - start_time < 2:
+            for spec in [kept_1, kept_2, kept_3]:
+                if str(spec.server_obj.state_map.state) == "leader":
+                    new_leader = spec
+                    break
+            time.sleep(0.1)
+        self.assertIsNotNone(new_leader)
+        
+        self.logger.debug("\n\n\tGot New leader %s," \
+                          " Adding 10 via do_credit\n\n",
+                          new_leader.name)
+        client2 = new_leader.get_client()
+        client2.do_credit(10)
+        log_record_count += 1
+        start_time = time.time()
+        while time.time() - start_time < 2:
+            done = []
+            for spec in [kept_1, kept_2, kept_3]:
+                tlog = spec.server_obj.get_log()
+                # log indices are 1 offset, not zero
+                if tlog.get_commit_index() == log_record_count:
+                    done.append(spec)
+            if len(done) == 3:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(done), 3, msg="Log commits missing for 4 seconds")
+        
+        for spec in [leader, lost_1]:
+            tlog = spec.server_obj.get_log()
+            # log indices are 1 offset, not zero
+            self.assertTrue(tlog.get_commit_index() < log_record_count)
+        self.logger.debug("\n\n\tHealing fake network partition\n\n")
+        leader.pbt_server.comms.set_partition(0)
+        lost_1.pbt_server.comms.set_partition(0)
+        for spec in self.servers.values():
+            if spec in [leader, lost_1]:
+                spec.interceptor.clear_triggers()
+                self.cluster.resume_paused_server(spec.name, wait=False)
+        
+        start_time = time.time()
+        while time.time() - start_time < 2:
+            done = []
+            for spec in [leader, lost_1]:
+                tlog = spec.server_obj.get_log()
+                # log indices are 1 offset, not zero
+                if tlog.get_commit_index() == log_record_count:
+                    done.append(spec)
+            
+            if len(done) == 2:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(done), 2,
+                         msg="Post heal log commits missing for 4 seconds")
+        
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower
         self.postamble()

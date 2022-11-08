@@ -12,7 +12,7 @@ import abc
 
 from raft.states.base_state import Substate
 from raft.servers.server import Server
-from raft.comms.memory_comms import reset_queues
+from raft.comms.memory_comms import reset_channels
 
 from raft.dev_tools.log_control import one_proc_log_setup
 from raft.dev_tools.bt_client import MemoryBankTellerClient
@@ -61,7 +61,7 @@ class PausingServerCluster:
         self.pause_stepper = None
         self.logger = None
         self.timeout_basis = timeout_basis
-        reset_queues()
+        reset_channels()
 
     def get_servers(self):
         return self.server_specs
@@ -114,27 +114,6 @@ class PausingServerCluster:
             self.prepare_one(name, timeout_basis=timeout_basis)
         return self.server_specs
 
-    def add_pause_point(self, pause_point: PausePoint,
-                        servers: Union[List[str], None] = None,
-                        stepper: Union[PauseStep, None] = None):
-        if self.pause_stepper:
-            raise Exception("must clear pause points before adding one")
-        if stepper is None:
-            stepper_cls = pause_map.get(pause_point)
-            if stepper_cls is None:
-                raise Exception(f"No step class for {pause_point}")
-            t_stepper = stepper_cls(self)
-        else:
-            t_stepper = stepper
-        if servers is None:
-            targets = [name for name in self.server_specs.keys()]
-        else:
-            targets = servers[::]
-        for name in targets:
-            spec = self.server_specs[name]
-            t_stepper.configure(spec)
-        self.pause_stepper = t_stepper
-
     def wait_for_pause(self, timeout=2, expected_count=None):
         if not self.pause_stepper:
             raise Exception('you must add a pause point before calling')
@@ -160,35 +139,22 @@ class PausingServerCluster:
                           expected_count, paused_count)
         return paused_count == expected_count
 
-    def resume_and_add_pause_point(self, pause_point: PausePoint,
-                                   servers: Union[List[str], None] = None,
-                                   stepper: Union[PauseStep, None] = None):
-        if not self.pause_stepper:
-            raise Exception('you must add a pause point before calling')
-        orig = self.pause_stepper
-        self.pause_stepper = None
-        self.add_pause_point(pause_point, servers, stepper)
-        for name, spec in self.server_specs.items():
-            orig.resume(spec)
-        
-    def resume_from_stepper_pause(self):
-        if not self.pause_stepper:
-            raise Exception('you must add a pause point before calling')
-        for name, spec in self.server_specs.items():
-            self.pause_stepper.resume(spec)
-        self.pause_stepper = None
-
-    def resume_all_paused_servers(self, wait=True):
-        async def do_resume():
-            for name, spec in self.server_specs.items():
-                if spec.running:
-                    await spec.pbt_server.resume_all(wait=wait)
+    def resume_paused_server(self, name, wait=True):
+        async def do_resume(spec):
+            if spec.running:
+                await spec.pbt_server.resume_all(wait=wait)
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        loop.run_until_complete(do_resume())
+        spec = self.server_specs[name]
+        loop.run_until_complete(do_resume(spec))
+        
+    def resume_all_paused_servers(self, wait=True):
+        for name, spec in self.server_specs.items():
+            if spec.running:
+                self.resume_paused_server(name)
         
     def start_all_servers(self):
         for name in self.server_specs.keys():

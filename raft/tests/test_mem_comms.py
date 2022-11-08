@@ -8,7 +8,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 from raft.comms.memory_comms import MemoryComms, MessageInterceptor
-from raft.comms.memory_comms import reset_queues
+from raft.comms.memory_comms import reset_channels
 from raft.messages.status import StatusQueryMessage, StatusQueryResponseMessage
 
 #LOGGING_TYPE = "silent" for no log at all
@@ -49,7 +49,7 @@ class TestBasic(unittest.TestCase):
         pass
     
     def setUp(self):
-        reset_queues()
+        reset_channels()
     
     def tearDown(self):
         pass
@@ -281,7 +281,7 @@ class TestDebugControls(unittest.TestCase):
         pass
     
     def setUp(self):
-        reset_queues()
+        reset_channels()
     
     def tearDown(self):
         pass

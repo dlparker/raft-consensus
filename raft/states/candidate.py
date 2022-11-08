@@ -9,6 +9,7 @@ from .leader import Leader
 from .base_state import State, Substate, StateCode
 
 
+
 class Candidate(State):
 
     my_code = StateCode.candidate
@@ -31,6 +32,7 @@ class Candidate(State):
         if self.terminated:
             raise Exception("cannot start a terminated state")
 
+        self.election_timeout = self.candidate_interval()
         self.candidate_timer = self.server.get_timer("candidate-interval",
                                                      self.log.get_term(),
                                                      self.election_timeout,
@@ -49,7 +51,8 @@ class Candidate(State):
             await asyncio.sleep(0)
             
     def candidate_interval(self):
-        return random.uniform(0.01, self.timeout)
+        min_val = self.timeout / 5
+        return random.uniform(min_val, self.timeout)
     
     async def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
@@ -63,7 +66,24 @@ class Candidate(State):
         return True
 
     async def on_timer(self):
-        self.logger.info("candidate resigning because timer ended")
+        # The raft.pdf seems to indicate that the candidate should
+        # go straight to another election on timeout, but that seems
+        # to lower the likelihood that someone will win, as state
+        # needs to be follower for a vote to pass. This is how
+        # you would code it that way, if you thought it should be
+        # done. I'm not convinced.
+        #if RESTART_ON_TIMEOUT:  # implied by raft.pdf, not clear
+        #    self.logger.info("candidate starting new election because timer ended")
+            # change the interval
+        #    await self.candidate_timer.stop()
+        #    self.election_timeout = self.candidate_interval()
+        #    self.candidate_timer = self.server.get_timer("candidate-interval",
+        #                                                 self.log.get_term(),
+        #                                                 self.election_timeout,
+        #                                                 self.on_timer)
+        #    self.candidate_timer.start()
+        #    await self.start_election()
+        #else:
         await self.resign()
         return True
 

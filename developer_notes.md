@@ -23,17 +23,18 @@ you are happy.
 Some things that are excluded:
      
  - Errors likely only happen during shutdown, such as asyncio cancels
- - Errors that result from messages arriving to the wrong state, such
-   as a vote reply arriving at a follower. This are not errors per se,
-   as the code that receives them just ignores them. Setting up tests
-   to cover this would be alot of work and would add almost nothing
-   that simple inspection doesn't already provide. 
  - Errors of the sort that cause system to fail completely, such
    as a failure while trying to setup a UDP connection.
  - Errors in code that exists solely to support development and test,
    such as the memory and udp comms implementations. 
  - declarations of abstract methods on abstract classes and the
    ```__sbuclasshook__``` method
+ - some branches in the leader.py code that are designed to
+   help insure heartbeats are not starved out if the leader
+   is heavily loaded with other activity. These are marked
+   "pragma: no cover overload". It should be possible to
+   test these and eventually it will be done.
+
    
 
 

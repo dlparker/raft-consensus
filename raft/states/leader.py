@@ -100,7 +100,8 @@ class Leader(State):
     async def on_append_response(self, message):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress
-        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
             await self.send_heartbeat()
         last_index = self.log.get_last_index()
         if last_index == 0:
@@ -146,8 +147,12 @@ class Leader(State):
                               "doing sending next",
                               message.sender, last_saved_index,
                               self.log.get_last_index())
+            up_to = None
+            if self.log.get_last_index() > cursor.last_saved_index + 1:
+                up_to = min(self.log.get_last_index(), 10)
             await self.send_append_entries(message.sender,
-                                           cursor.last_saved_index + 1)
+                                           cursor.last_saved_index + 1,
+                                           up_to)
             return True
         
         if self.log.get_last_index() < last_saved_index:
@@ -241,7 +246,8 @@ class Leader(State):
     async def send_append_entries(self, addr, start_index, end_index=None):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress
-        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
             await self.send_heartbeat()
         entries = []
         rec = self.log.read(start_index)
@@ -285,11 +291,6 @@ class Leader(State):
         await self.send_append_entries(message.sender, start_index)
         
     async def send_heartbeat(self, first=False):
-        elapsed =  time.time() - self.last_hb_time
-        if elapsed > self.heartbeat_timeout + (self.heartbeat_timeout * 0.1):
-            self.logger.info("slow heartbeat, expected %f.6f, got %f.6f",
-                             self.heartbeat_timeout, elapsed)
-
         data = {
             "leaderId": self.server.name,
             "leaderPort": self.server.endpoint,
@@ -314,7 +315,8 @@ class Leader(State):
     async def on_client_command(self, message):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress
-        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
             await self.send_heartbeat()
         target = message.sender
         if message.original_sender:
@@ -382,13 +384,17 @@ class Leader(State):
     async def on_vote_received(self, message):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress
-        if time.time() - self.last_hb_time >= self.heartbeat_timeout:
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
             await self.send_heartbeat()
         self.logger.info("leader ignoring vote reply: message.term = %d local_term = %d",
                          message.term, self.log.get_term())
         return True
 
     async def on_vote_request(self, message): 
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
+            await self.send_heartbeat()
         self.logger.info("vote request from %s, sending am leader",
                          message.sender)
         reply = RequestVoteResponseMessage(self.server.endpoint,
@@ -404,16 +410,21 @@ class Leader(State):
         return True
     
     async def on_append_entries(self, message):
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
+            await self.send_heartbeat()
         self.logger.warning("leader unexpectedly got append entries from %s",
                             message.sender)
         return True
     
-    async def on_term_start(self, message):
-        self.logger.warning("leader got term start message from %s, makes no sense!",
-                         message.sender) 
-        return True
-
     async def on_heartbeat(self, message):
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
+            await self.send_heartbeat()
+        if message.term > self.log.get_term():
+            self.logger.info("new leader has taken over, resigning")
+            await self.resign()
+            return True
         self.logger.warning("Why am I getting hearbeat when I am leader?"\
                             "\n\t%s", message)
         return True

@@ -2,6 +2,7 @@ import time
 import asyncio
 import logging
 import traceback
+import random
 import abc
 
 from typing import Union
@@ -29,17 +30,35 @@ class MessageInterceptor(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     async def after_out_msg(self, message) -> bool:
         raise NotImplementedError
+
+channels = {}
+clients = {}
+
+def reset_channels():
+    global channels
+    channels = {}
+
+def get_channels():
+    global channels
+    return channels
+
+def add_client(queue):
+    global channels
+    global clients
+    limit = 5000 - 100  #usual server base port minus some
+    poss = ('localhost', int(random.uniform(0, limit)))
+    while (poss in channels or poss in clients): # pragma: no cover
+        poss = ('localhost', int(random.uniform(0, limit)))
+    client = ClientComms(poss, queue)
+    clients[poss] = client
+    return client
+            
+class ClientComms:
+
+    def __init__(self, addr, queue):
+        self.addr = addr
+        self.queue = queue
         
-queues = {}
-
-def reset_queues():
-    global queues
-    queues = {}
-
-def get_queues():
-    global queues
-    return queues
-    
 @dataclass
 class Wrapper:
     data: bytes = field(repr=False)
@@ -58,20 +77,24 @@ class MemoryComms(CommsAPI):
         self.keep_running = False
         self.logger = logging.getLogger(__name__)
         self.interceptor = None
+        self.partition = 0 # used to support faked network partitioning
 
     def set_interceptor(self, interceptor: MessageInterceptor):
         self.interceptor = interceptor
 
     def get_interceptor(self) -> Union[MessageInterceptor, None]:
         return self.interceptor
-        
+
+    def set_partition(self, value):
+        self.partition = value
+
     async def start(self, server, endpoint):
         self.endpoint = endpoint
         self.server = server
-        global queues
-        queues[endpoint] = self.queue
+        global channels
+        channels[endpoint] = self
         self.logger.debug("starting %s full set is %s",
-                          endpoint, list(queues.keys()))
+                          endpoint, list(channels.keys()))
         self.task = task_logger.create_task(self.listen(),
                                             logger=self.logger,
                                             message="comms listener error")
@@ -84,17 +107,18 @@ class MemoryComms(CommsAPI):
             await asyncio.sleep(0)
 
     def are_out_queues_empty(self):
-        global queues
+        global channels
         any_full = False
-        for name, queue in queues.items():
+        for name, channel in channels.items():
             if name == self.endpoint:
                 continue
-            if not queue.empty():
+            if not channel.queue.empty():
                 any_full = True
         return not any_full
             
     async def post_message(self, message):
-        global queues
+        global channels
+        global clients
         # make sure addresses are tuples
         message._sender = (message.sender[0], message.sender[1])
         message._receiver = (message.receiver[0], message.receiver[1])
@@ -102,11 +126,6 @@ class MemoryComms(CommsAPI):
             target = message.receiver
             # this can happen at startup, waiting for
             # other server threads to start
-            if target not in queues:
-                self.logger.info("%s not connected to %s," \
-                                 " not sending %s", self.endpoint,
-                                 target, message.code)
-                return
             if self.interceptor:
                 # let test code decide to pause things before
                 # delivering
@@ -117,7 +136,28 @@ class MemoryComms(CommsAPI):
                     self.logger.debug("not delivering posted message "\
                                       "because interceptor said so")
                     return
-            queue = queues[target]
+            if target not in channels and target not in clients:
+                if target[1] < 5000:
+                    self.logger.info("\n\n\t%s not in %s\n\n",
+                                     target, list(clients.keys()))
+
+                self.logger.info("%s not connected to %s," \
+                                 " not sending %s", self.endpoint,
+                                 target, message.code)
+                return
+            channel = channels.get(target, None)
+            if channel is not None:
+                if channel.partition != self.partition:
+                    self.logger.debug("%s is in partition %d, we are %d" \
+                                      " not sending %s so as to look like"
+                                      " network partition",
+                                      target, channel.partition,
+                                      self.partition, message.code)
+                    return
+                queue = channel.queue
+            else:
+                client = clients[target]
+                queue = client.queue
             data = Serializer.serialize(message)
             w = Wrapper(data, self.endpoint)
             self.logger.debug("%s posted %s to %s",
@@ -132,7 +172,7 @@ class MemoryComms(CommsAPI):
             self.logger.error(traceback.format_exc())
 
     async def listen(self):
-        global queues
+        global channels
         while self.keep_running:
             try:
                 try:
