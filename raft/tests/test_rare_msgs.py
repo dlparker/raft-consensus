@@ -20,9 +20,9 @@ if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
 timeout_basis = 0.5
-        
 
-class TestLogOps(unittest.TestCase):
+
+class TestRareMessages(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -34,7 +34,8 @@ class TestLogOps(unittest.TestCase):
         pass
     
     def setUp(self):
-        self.cluster = PausingServerCluster(server_count=3,
+        self.total_nodes = 3
+        self.cluster = PausingServerCluster(server_count=self.total_nodes,
                                             logging_type=LOGGING_TYPE,
                                             base_port=5000,
                                             timeout_basis=timeout_basis)
@@ -50,7 +51,9 @@ class TestLogOps(unittest.TestCase):
         time.sleep(0.1)
         self.loop.close()
 
-    def pause_waiter(self, label, expected=3, timeout=2):
+    def pause_waiter(self, label, expected=None, timeout=2):
+        if expected is None:
+            expected = self.total_nodes
         self.logger.info("waiting for %s", label)
         self.leader = None
         start_time = time.time()
@@ -96,19 +99,28 @@ class TestLogOps(unittest.TestCase):
         self.leader = None
         self.followers = []
         
-    def preamble(self):
+    def preamble(self, num_to_start=None):
         self.servers = self.cluster.prepare()
+        if num_to_start is None:
+            num_to_start = len(self.servers)
         self.pausers = {}
         self.leader = None
         self.followers = []
-        self.expected_followers = len(self.servers) - 1
+        self.expected_followers = num_to_start - 1
         for spec in self.servers.values():
             self.pausers[spec.name] = Pauser(spec, self)
         
         self.set_hb_intercept()
-        
-        self.cluster.start_all_servers()
-        self.pause_waiter("waiting for pause first election done (heartbeat)")
+
+        started_count = 0
+        for spec in self.cluster.get_servers().values():
+            self.cluster.start_one_server(spec.name)
+            started_count += 1
+            if started_count == num_to_start:
+                break
+
+        self.pause_waiter("waiting for pause first election done (heartbeat)",
+                          expected = started_count)
 
     def set_hb_intercept(self, clear=True):
         for spec in self.servers.values():
@@ -131,10 +143,35 @@ class TestLogOps(unittest.TestCase):
 
         self.cluster.resume_all_paused_servers()
         
-    def a_test_check_setup(self):
+    def test_check_setup(self):
         # rename this to remove the a_ in order to
         # check the basic control flow
-        self.preamble()
+        self.preamble(num_to_start=2)
+        leader = None
+        first = None
+        second = None
+        pos = 0
+        for spec in self.cluster.get_servers().values():
+            if pos < 2:
+                self.assertTrue(spec.running)
+                if str(spec.server_obj.state_map.state) == "leader":
+                    leader = spec
+                else:
+                    first = spec
+            else:
+                self.assertFalse(spec.running)
+                second = spec
+            pos += 1
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        client.do_credit(10)
+        log_record_count = 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 10)
         self.postamble()
 
     def pause_and_break(self, go_after=True):
@@ -152,10 +189,25 @@ class TestLogOps(unittest.TestCase):
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         
-    def test_restarts(self):
-        self.preamble()
+    def test_late_start(self):
+        self.preamble(num_to_start=2)
+        leader = None
+        first = None
+        second = None
+        pos = 0
+        for spec in self.cluster.get_servers().values():
+            if pos < 2:
+                self.assertTrue(spec.running)
+                if str(spec.server_obj.state_map.state) == "leader":
+                    leader = spec
+                else:
+                    first = spec
+            else:
+                self.assertFalse(spec.running)
+                second = spec
+            pos += 1
+        self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
-        self.resume_waiter()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
@@ -164,89 +216,28 @@ class TestLogOps(unittest.TestCase):
         res = client.do_query()
         log_record_count += 1
         self.assertEqual(res['balance'], 10)
-        time.sleep(0.01) # allow time for the commit messages to flow
-        
-
-        # clear the role references
-        orig_leader = self.leader
-        self.leader = None
-        self.logger.debug("\n\n\tStoping Leader %s \n\n", orig_leader.name)
-        self.cluster.stop_server(orig_leader.name)
-        self.expected_followers = 1
-        self.reset_pausers()
-        # just make sure election happens so we know who's who
-        self.pause_waiter("waiting for pause leader lost new election",
-                          expected=2)
-        second_leader = self.leader
-        self.cluster.resume_all_paused_servers()
-        self.logger.debug("\n\n\tQuery to %s \n\n", second_leader.name)
-        client2 = self.leader.get_client()
-        res2 = client2.do_query()
-        log_record_count += 1
-        self.assertEqual(res2['balance'], 10)
-
-        self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
-        time.sleep(0.01) # allow time for the commit messages to flow
-        
-        self.logger.debug("\n\n\tRestarting original leader %s \n\n",
-                          orig_leader.name)
-        tname = orig_leader.name
-        
-        restarted = self.cluster.prepare_one(tname)
-        self.pausers[tname] = Pauser(restarted, self)
-        self.cluster.start_one_server(tname)
-        self.logger.debug("\n\n\tActivating heartbeat intercepts \n\n")
-        # wait for restarted server to catch up
+        # wait for follower to have commit
         start_time = time.time()
-        trec = None
+        tlog = first.server_obj.get_log()
         while time.time() - start_time < 4:
-            tserver = restarted.server_obj
-            if tserver:
-                tlog = tserver.get_log()
-                trec = tlog.read()
-                if trec:
-                    if trec.index == log_record_count:
-                        break
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = first.server_obj.get_log()
             time.sleep(0.01)
-        self.assertIsNotNone(trec)
-        # log indicies are one based, not zero
-        self.assertEqual(trec.index, log_record_count)
-        self.logger.debug("\n\n\tRestarted %s log catch up done \n\n",
-                          restarted.name)
-        # now make sure that a call to the restarted leader, now follower
-        # results in the correct results, thereby testing the forwarding
-        # logic that enforces leader only ops.
-        client3 = restarted.get_client()
-        res3 = client3.do_query()
-        log_record_count += 1
-        self.assertEqual(res3['balance'], 10)
-        
-        # kill and restart a follower and wait for it to have an up to date log
-        target = self.followers[0]
-        
-        self.leader = None
-        self.logger.debug("\n\n\tStopping follower %s \n\n", target.name)
-        self.cluster.stop_server(target.name)
-        self.logger.debug("\n\n\tRestarting follower %s \n\n", target.name)
-        new_target = self.cluster.prepare_one(target.name)
-        self.cluster.start_one_server(new_target.name)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+
+        self.logger.debug("\n\n\tStarting third server %s \n\n",
+                          second.name)
+        self.cluster.start_one_server(second.name)
         start_time = time.time()
-        trec = None
+        tlog = second.server_obj.get_log()
         while time.time() - start_time < 4:
-            tserver = new_target.server_obj
-            if tserver:
-                tlog = tserver.get_log()
-                trec = tlog.read()
-                if trec:
-                    if trec.index == log_record_count:
-                        break
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = first.server_obj.get_log()
             time.sleep(0.01)
-        self.assertIsNotNone(trec)
-        # log indicies are one based, not zero
-        self.assertEqual(trec.index, log_record_count)
-        self.logger.debug("\n\n\tRestarted follower %s log catch up done \n\n",
-                          new_target.name)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+
 
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower

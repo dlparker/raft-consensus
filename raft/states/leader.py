@@ -147,12 +147,8 @@ class Leader(State):
                               "doing sending next",
                               message.sender, last_saved_index,
                               self.log.get_last_index())
-            up_to = None
-            if self.log.get_last_index() > cursor.last_saved_index + 1:
-                up_to = min(self.log.get_last_index(), 10)
             await self.send_append_entries(message.sender,
-                                           cursor.last_saved_index + 1,
-                                           up_to)
+                                           cursor.last_saved_index + 1)
             return True
         
         if self.log.get_last_index() < last_saved_index:
@@ -174,9 +170,11 @@ class Leader(State):
         if local_commit is None:
             local_commit = -1
         if local_commit >= last_saved_index:
-            # extra message, we good
-            self.logger.debug("Follower %s voted to commit %s, "\
-                              "ignoring since commit completed",
+            # This was not a commit only message, that is caught
+            # above, so we just got the last response to a catch
+            # up sequence
+            self.logger.debug("Follower %s up to index %s, "\
+                              " from catch up messages ",
                               message.sender, last_saved_index)
             return True
         # counting this node, so replies plus 1
@@ -243,7 +241,7 @@ class Leader(State):
                           self.log.get_term(), prev_index, message.data)
         await self.server.broadcast(message)
         
-    async def send_append_entries(self, addr, start_index, end_index=None):
+    async def send_append_entries(self, addr, start_index, send_multi=True):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress
         if (time.time() - self.last_hb_time
@@ -259,10 +257,18 @@ class Leader(State):
             prev_index = prev_rec.index
             prev_term = prev_rec.term
         entries.append(asdict(rec))
-        if end_index:
-            for i in range(start_index + 1, end_index + 1):
-                rec = self.log_read(i)
-                entries.append(asdict(rec))
+        if send_multi and start_index < self.log.get_last_index():
+            up_to = min(self.log.get_last_index(), 10)
+            for i in range(start_index + 1, up_to + 1):
+                try:
+                    rec = self.log.read(i)
+                    entries.append(asdict(rec))
+                except:
+                    self.logger.error(traceback.format_exc())
+                    self.logger.error("indexing error %d to %d failed on %d" \
+                                      " log limit is %d",
+                                      start_index + 1, up_to + 1,
+                                      i, self.log.get_last_index())
         message = AppendEntriesMessage(
             self.server.endpoint,
             None,
@@ -286,7 +292,6 @@ class Leader(State):
         await self.server.post_message(message)
         
     async def do_backdown(self, message):
-
         start_index = message.data['last_index'] + 1
         await self.send_append_entries(message.sender, start_index)
         

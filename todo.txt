@@ -1,13 +1,12 @@
 
+############# DONE
 Review and document new message times and ensure that they
 actually improve things compared to the more limited set defined
 in the raft paper. Do a side by side sequence diagram to identify
 where my messages take the place of appendentries messages with
 specific values and follower states.
+############# DONE
 
-Add log trimming sequence.
-
-Add paging to log pull protocol
 
 examine all abstract base classes to make sure they have the
 correct __subclasshook__ method logic
@@ -37,43 +36,50 @@ like ServerCore?) Find all bad spots in the states and change the
 exception clauses to call this method, execute stop on self and return.
 ---
 
+###### DONE
 Update the log api to have a call that commits each record it adds, cause
 that is always done for log_pull. STUDY THE PROTOCOL, what happens when
 leader has uncommitted record and follower does not, but follower was
 not present when leader sent append?
+###### DONE
 
 Move the memory log, memory comms and udp comms to dev_tools.
 
+###### DONE
 Remove rollback logic if possible once rejoin logic developed.
+###### DONE
 
 Change serializer to an API and rename original
 
+###### DONE
 Examing voting logic in follower, shouldn't it explicitly look for
 wrong term? Or is StateDiff property good enough? Comment in code.
+###### DONE
 
-
+See if the Pauser class used in some tests can be universal and in dev_tools
 
 =================
 Simplify plan:
 
 1. Log changes
    1. Start Log with 1, as in docs, start term with 0, always incr on candidate
-      PDF: page for state for all servers
+      PDF: page for state for all servers ###### DONE
+
    2. Add log record typing, "no-op" for new term, "client" for client command
       and include client serial number PDF: page 13, section 8
    3. Change log append api to support append as new index and
-      insert at index, because leader can tell you to overwrite
+      insert at index, because leader can tell you to overwrite ###### DONE
 
 2. Protocol
-   1. Remove term start message
-   2. Remove "log pull, replace it with regular append entries"
+   1. Remove term start message ###### DONE
+   2. Remove "log pull, replace it with regular append entries" ###### DONE
    3. Convert messages to dataclasses
-   4. Check for leader noting that it is out of date and resigning
+   4. Check for leader noting that it is out of date and resigning ###### DONE
 
 3. State logic changes:
-   1. Remove rollback, as it is a dumb way to do log overwrite
+   1. Remove rollback, as it is a dumb way to do log overwrite ###### DONE
    2. Find in PDF the logic on heartbeat when term does not match,
-      fix it in follower and refernce PDF
+      fix it in follower and refernce PDF ###### DONE
    3. Add a set of queues to do client comms process, where
       incoming client command queues, something reads it and starts
       command processing sequence, then when the resulting log
@@ -92,7 +98,7 @@ Simplify plan:
       pull from the queues. Client ops can put, then await pull. Server
       ops can put and return.
     6. Is there an issue with tracking follower cursor when follower
-       restarts? Do we have to detect it and reset?
+       restarts? Do we have to detect it and reset? 
      
    
 ==== Upgrades =====
