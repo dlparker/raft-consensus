@@ -9,17 +9,120 @@ from pathlib import Path
 
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.heartbeat import HeartbeatResponseMessage
+from raft.messages.append_entries import AppendResponseMessage
 from raft.messages.command import ClientCommandMessage
 from raft.states.base_state import StateCode
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
+from raft.dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
 from raft.dev_tools.pauser import Pauser
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-timeout_basis = 0.5
+timeout_basis = 0.1
+
+class ModFollower(PFollower):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.have_append = False
+        self.skip_to_append = False
+        self.send_higher_term_on_hb = False
+        self.send_higher_term_on_ae = False
+
+    def set_skip_to_append(self, flag):
+        self.skip_to_append = flag
+    
+    def set_send_higher_term_on_hb(self, flag):
+        self.send_higher_term_on_hb = flag
+
+    def set_send_higher_term_on_ae(self, flag):
+        self.send_higher_term_on_ae = flag
+        
+    def start(self):
+        super().start()
+
+    async def on_heartbeat(self, message):
+        if (self.have_append or
+            (not self.skip_to_append and not self.send_higher_term_on_hb)):
+            return await super().on_heartbeat(message)
+        self.logger.debug("\n\n\tintercepting heartbeat to force append" \
+                          " to be first call\n\n")
+        await self.leaderless_timer.reset()
+        if self.send_higher_term_on_hb:
+            # only do it once
+            term = message.term + 1
+            self.send_higher_term_on_hb = False
+            # let next heartbeat through
+            self.skip_to_append = False
+        else:
+            term = self.log.get_last_term()
+        data = dict(success=False,
+                    prevLogIndex=message.prevLogIndex,
+                    prevLogTerm=message.prevLogTerm,
+                    last_index=self.log.get_last_index(),
+                    last_term=self.log.get_last_term())
+        reply = HeartbeatResponseMessage(message.receiver,
+                                         message.sender,
+                                         term=term,
+                                         data=data)
+        msg = "Sending reject on heartbeat to force append first" \
+                  " leader index=%d, term=%d, local index=%d, term = %d"
+        self.logger.debug(msg,
+                          message.prevLogIndex,
+                          message.prevLogTerm,
+                          self.log.get_last_index(),
+                          term)
+        await self.server.post_message(reply)
+        return True
+
+    async def on_append_entries(self, message):
+        self.have_append = True
+        if  self.send_higher_term_on_ae:
+            # only do it once
+            self.send_higher_term_on_ae = False
+            term = message.term + 1
+            self.log.set_term(term)
+            return await super().on_append_entries(message)
+        return await super().on_append_entries(message)
+        
+class ModMonitor(PausingMonitor):
+
+    
+    def __init__(self, orig_monitor):
+        super().__init__(orig_monitor.pbt_server,
+                         orig_monitor.name,
+                         orig_monitor.logger)
+        self.state_map = orig_monitor.state_map
+        self.state = orig_monitor.state
+        self.substate = orig_monitor.substate
+        self.pbt_server.state_map.remove_state_change_monitor(orig_monitor)
+        self.pbt_server.state_map.add_state_change_monitor(self)
+        self.skip_to_append = False
+        self.send_higher_term_on_hb = False
+        self.send_higher_term_on_ae = False
+
+    def set_skip_to_append(self, flag):
+        self.skip_to_append = flag
+    
+    def set_send_higher_term_on_hb(self, flag):
+        self.send_higher_term_on_hb = flag
+        
+    def set_send_higher_term_on_ae(self, flag):
+        self.send_higher_term_on_ae = flag
+        
+    async def new_state(self, state_map, old_state, new_state):
+        new_state = await super().new_state(state_map, old_state, new_state)
+        if new_state.code == StateCode.follower:
+            self.state = ModFollower(new_state.server,
+                                         new_state.timeout)
+            self.state.set_skip_to_append(self.skip_to_append)
+            self.state.set_send_higher_term_on_hb(self.send_higher_term_on_hb)
+            self.state.set_send_higher_term_on_ae(self.send_higher_term_on_ae)
+            return self.state
+        return new_state
 
 
 class TestRareMessages(unittest.TestCase):
@@ -143,7 +246,7 @@ class TestRareMessages(unittest.TestCase):
 
         self.cluster.resume_all_paused_servers()
         
-    def test_check_setup(self):
+    def a_test_check_setup(self):
         # rename this to remove the a_ in order to
         # check the basic control flow
         self.preamble(num_to_start=2)
@@ -189,7 +292,79 @@ class TestRareMessages(unittest.TestCase):
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         
-    def test_late_start(self):
+    def test_append_first(self):
+        # gets branch in follower that happens when the first
+        # RPC from the leader is an AppendEntries with entries
+        # rather than a heartbeat
+        self.preamble(num_to_start=2)
+        leader = None
+        first = None
+        second = None
+        pos = 0
+        for spec in self.cluster.get_servers().values():
+            if pos < 2:
+                self.assertTrue(spec.running)
+                if str(spec.server_obj.state_map.state) == "leader":
+                    leader = spec
+                else:
+                    first = spec
+            else:
+                self.assertFalse(spec.running)
+                second = spec
+            pos += 1
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        status = client.get_status()
+        self.assertIsNotNone(status)
+        client.do_credit(10)
+        log_record_count = 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 10)
+        # wait for follower to have commit
+        start_time = time.time()
+        tlog = first.server_obj.get_log()
+        while time.time() - start_time < 4:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = first.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+
+        self.logger.debug("\n\n\tStarting third server %s \n\n",
+                          second.name)
+
+        second.monitor = ModMonitor(second.monitor)
+        second.monitor.set_skip_to_append(True)
+        self.cluster.start_one_server(second.name)
+        start_time = time.time()
+        tlog = second.server_obj.get_log()
+        # sometimes elections are slow
+        while time.time() - start_time < 8:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = second.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+
+        self.logger.debug("\n\n\tDone with test, starting shutdown\n")
+        # check the actual log in the follower
+        self.postamble()
+                      
+    def test_leader_low_term_hb(self):
+        # There is a possible sequence after network partition
+        # heals where current leader sends a Heartbeat message
+        # to a newly rejoined follower that was briefly leader,
+        # then got isolated, so it has a higher term value. Just
+        # think of all the possibilities of a buggy network and you'll
+        # see that you cannot be sure it would never happen, so
+        # the raft algorythm says leader needs to look for that.
+        # Look at the "all servers" part of the "rules for servers" on
+        # page 4 of the raft.pdf file.
+
         self.preamble(num_to_start=2)
         leader = None
         first = None
@@ -226,11 +401,73 @@ class TestRareMessages(unittest.TestCase):
             time.sleep(0.01)
         self.assertEqual(tlog.get_commit_index(), log_record_count)
 
+        # save the leader state object, it should be a different
+        # one after this startup sequence, though it may end up the
+        # leader again
+        orig_leader_state = leader.server_obj.state_map.state
         self.logger.debug("\n\n\tStarting third server %s \n\n",
                           second.name)
+
+        second.monitor = ModMonitor(second.monitor)
+        second.monitor.set_send_higher_term_on_hb(True)
         self.cluster.start_one_server(second.name)
+        self.logger.debug("\n\n\tAwaiting log update at %s\n",
+                          second.name)
+
         start_time = time.time()
         tlog = second.server_obj.get_log()
+        while time.time() - start_time < 4:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = second.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+        self.assertNotEqual(orig_leader_state,
+                             leader.server_obj.state_map.state)
+        self.logger.debug("\n\n\tDone with test, starting shutdown\n")
+        # check the actual log in the follower
+        self.postamble()
+                      
+    def test_leader_low_term_ae(self):
+        # There is a possible sequence after network partition
+        # heals where current leader sends an AppendEntries message
+        # to a newly rejoined follower that was briefly leader,
+        # then got isolated, so it has a higher term value. Just
+        # think of all the possibilities of a buggy network and you'll
+        # see that you cannot be sure it would never happen, so
+        # the raft algorythm says leader needs to look for that.
+        # Look at the "all servers" part of the "rules for servers" on
+        # page 4 of the raft.pdf file.
+
+        self.preamble(num_to_start=2)
+        leader = None
+        first = None
+        second = None
+        pos = 0
+        for spec in self.cluster.get_servers().values():
+            if pos < 2:
+                self.assertTrue(spec.running)
+                if str(spec.server_obj.state_map.state) == "leader":
+                    leader = spec
+                else:
+                    first = spec
+            else:
+                self.assertFalse(spec.running)
+                second = spec
+            pos += 1
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        client.do_credit(10)
+        log_record_count = 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 10)
+        # wait for follower to have commit
+        start_time = time.time()
+        tlog = first.server_obj.get_log()
         while time.time() - start_time < 4:
             if tlog.get_commit_index() == log_record_count:
                 break
@@ -238,7 +475,29 @@ class TestRareMessages(unittest.TestCase):
             time.sleep(0.01)
         self.assertEqual(tlog.get_commit_index(), log_record_count)
 
+        # save the leader state object, it should be a different
+        # one after this startup sequence, though it may end up the
+        # leader again
+        orig_leader_state = leader.server_obj.state_map.state
+        self.logger.debug("\n\n\tStarting third server %s \n\n",
+                          second.name)
 
+        second.monitor = ModMonitor(second.monitor)
+        second.monitor.set_send_higher_term_on_ae(True)
+        self.cluster.start_one_server(second.name)
+        self.logger.debug("\n\n\tAwaiting log update at %s\n",
+                          second.name)
+
+        start_time = time.time()
+        tlog = second.server_obj.get_log()
+        while time.time() - start_time < 4:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = second.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+        self.assertNotEqual(orig_leader_state,
+                            leader.server_obj.state_map.state)
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower
         self.postamble()

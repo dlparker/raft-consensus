@@ -88,6 +88,14 @@ class Leader(State):
         cursor = self.get_cursor(message.sender)
         sender_index = message.data['last_index']
         cursor.last_heartbeat_index = sender_index
+        if not message.data['success']:
+            if self.log.get_term() < message.term:
+                self.logger.debug("Follower %s rejected append because" \
+                                  " term there is %s but here only %s",
+                                  message.sender, message.term,
+                                  self.log.get_term())
+                await self.resign()
+                return True
         if sender_index < self.log.get_last_index():
             self.logger.debug("Sender %s needs catch up, "\
                               "Sender index %d, last_sent %d, "\
@@ -167,8 +175,6 @@ class Leader(State):
         # if we can by checking the votes already counted
 
         local_commit = self.log.get_commit_index()
-        if local_commit is None:
-            local_commit = -1
         if local_commit >= last_saved_index:
             # This was not a commit only message, that is caught
             # above, so we just got the last response to a catch
@@ -260,15 +266,8 @@ class Leader(State):
         if send_multi and start_index < self.log.get_last_index():
             up_to = min(self.log.get_last_index(), 10)
             for i in range(start_index + 1, up_to + 1):
-                try:
-                    rec = self.log.read(i)
-                    entries.append(asdict(rec))
-                except:
-                    self.logger.error(traceback.format_exc())
-                    self.logger.error("indexing error %d to %d failed on %d" \
-                                      " log limit is %d",
-                                      start_index + 1, up_to + 1,
-                                      i, self.log.get_last_index())
+                rec = self.log.read(i)
+                entries.append(asdict(rec))
         message = AppendEntriesMessage(
             self.server.endpoint,
             None,

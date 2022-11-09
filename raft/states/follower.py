@@ -161,7 +161,7 @@ class Follower(State):
         if message.term < self.log.get_term():
             # This means leader should resign, we have
             # been talking to a later leader
-            self.logger.info("leader %s term is less than local %s, " \
+            self.logger.info("leader %s term %s is less than local %s, " \
                                         "telling leader about it",
                              message.sender, message.term, self.log.get_term())
             msg = f"leader term is {message.term} but ours is " \
