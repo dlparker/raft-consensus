@@ -7,9 +7,9 @@ import traceback
 from enum import Enum
 from dataclasses import dataclass
 
-from raft.comms.memory_comms import MemoryComms, MessageInterceptor
-from raft.comms.memory_comms import reset_channels
 from raft.messages.status import StatusQueryMessage, StatusQueryResponseMessage
+from raft.dev_tools.memory_comms import MemoryComms, MessageInterceptor
+from raft.dev_tools.memory_comms import reset_channels
 
 #LOGGING_TYPE = "silent" for no log at all
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")

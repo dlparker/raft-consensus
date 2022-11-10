@@ -8,9 +8,9 @@ import os
 import pytest
 
 #from raft.dev_tools.timer import get_timer_set, ControlledTimer
-from raft.dev_tools.timer_wrapper import get_timer_set, ControlledTimer
 from raft.log.log_api import LogRec
-from raft.log.memory_log import MemoryLog
+from raft.dev_tools.timer_wrapper import get_timer_set, ControlledTimer
+from raft.dev_tools.memory_log import MemoryLog
 from raft.utils.timer import Timer
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry

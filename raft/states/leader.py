@@ -2,16 +2,17 @@ from collections import defaultdict
 import asyncio
 import logging
 from dataclasses import dataclass, field, asdict
+from typing import Union
 import time
 import traceback
 
-from ..log.log_api import LogRec
-from ..messages.append_entries import AppendEntriesMessage
-from ..messages.request_vote import RequestVoteResponseMessage
-from ..messages.command import ClientCommandResultMessage
-from ..messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
-from ..utils import task_logger
-from .base_state import State, Substate, StateCode
+from raft.log.log_api import LogRec, RecordCode
+from raft.messages.append_entries import AppendEntriesMessage
+from raft.messages.request_vote import RequestVoteResponseMessage
+from raft.messages.command import ClientCommandResultMessage
+from raft.messages.heartbeat import HeartbeatMessage, HeartbeatResponseMessage
+from raft.utils import task_logger
+from raft.states.base_state import State, Substate, StateCode
 
 @dataclass
 class FollowerCursor:
@@ -20,7 +21,7 @@ class FollowerCursor:
     last_saved_index: int = field(default=0)
     last_commit: int = field(default=0)
     last_heartbeat_index: int = field(default=0)
-
+    
 class Leader(State):
 
     my_code = StateCode.leader
@@ -38,6 +39,8 @@ class Leader(State):
         self.last_hb_time = time.time()
         self.election_time = time.time()
         self.task = None
+        self.command_in_progress = False
+        self.callback_by_index = {}
 
     def __str__(self):
         return "leader"
@@ -74,6 +77,12 @@ class Leader(State):
             return
         self.logger.debug("in on_start")
         self.heartbeat_timer.start()
+        if False: # not ready to update tests for this right this minute
+            start_rec = LogRec(RecordCode.no_op,
+                               term=self.term,
+                               user_data=dict(addr=self.server.endpoint,
+                                              time=time.time()))
+            start_rec = self.log.append([start_rec,])
         await self.send_heartbeat(first=True)
         self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
@@ -207,22 +216,37 @@ class Leader(State):
         # Now see if there is a client to send the reply to
         # for the completed record. Since we committed it
         # we can now respond to client
-        if commit_rec.context is None:
-            return True
-        reply_address = commit_rec.context.get('client_addr', None)
-        if not reply_address:
+        client_addr = None
+        for listener in commit_rec.listeners:
+            if listener[0] == "client":
+                client_addr = listener[1]
+                break
+            if listener[0] == "callback":
+                callback = self.callback_by_index.get(commit_rec.index, None)
+                self.logger.info("Callback to %s", callback)
+                if callback:
+                    try:
+                        self.logger.info("Callback to %s", callback)
+                        await callback(commit_rec.user_data)
+                        del self.callback_by_index[commit_rec.index]
+                    except:
+                        self.logger.error("Callback on command commit got \n" \
+                                          " %s", traceback.format_exc())
+                return
+        if client_addr is None:
             return True
         # This log record was for data submitted by client,
         # not an internal record such as term change.
         # Send as reply to client
         self.logger.debug("preparing reply for %s",
-                          reply_address)
+                          client_addr)
         reply = ClientCommandResultMessage(self.server.endpoint,
-                                           reply_address,
+                                           client_addr,
                                            self.log.get_term(),
                                            commit_rec.user_data)
         self.logger.debug("sending reply message %s", reply)
         await self.server.post_message(reply)
+        self.command_in_progress = False
         return True
 
     async def broadcast_commit(self, commit_rec):
@@ -308,8 +332,24 @@ class Leader(State):
 
         message = HeartbeatMessage(self.server.endpoint, None,
                                    self.log.get_term(), data)
-        self.heartbeat_logger.debug("sending heartbeat to all commit = %s",
-                                    message.data['leaderCommit'])
+        if first:
+            self.logger.debug("sending heartbeat to all term = %s" \
+                              " prev_index = %s" \
+                              " prev_term = %s" \
+                              " commit = %s",
+                              message.term,
+                              message.data['prevLogIndex'],
+                              message.data['prevLogTerm'],
+                              message.data['leaderCommit'])
+        else:
+            self.heartbeat_logger.debug("sending heartbeat to all term = %s" \
+                                        " prev_term = %s" \
+                                        " prev_index = %s" \
+                                        " commit = %s",
+                                        message.term,
+                                        message.data['prevLogIndex'],
+                                        message.data['prevLogTerm'],
+                                        message.data['leaderCommit'])
         await self.server.broadcast(message)
         self.heartbeat_logger.debug("sent heartbeat to all commit = %s",
                                     message.data['leaderCommit'])
@@ -324,7 +364,14 @@ class Leader(State):
             await self.send_heartbeat()
         target = message.sender
         if message.original_sender:
+            # client sent request to some other server, which forwarded it
+            # here.
             target = message.original_sender
+
+        while self.command_in_progress:
+            await asyncio.sleep(0.001)
+            
+        self.command_in_progress = True # will stay true until result sent
         # call the user app 
         result = self.server.get_app().execute_command(message.data)
         if not result.log_response:
@@ -345,8 +392,10 @@ class Leader(State):
         # are up to date except for the new record(s)
         last_index = self.log.get_last_index()
         last_term = self.log.get_last_term()
-        new_rec = LogRec(term=self.log.get_term(), user_data=result.response,
-                         context=dict(client_addr=target))
+        listeners = [('client', target),]
+        new_rec = LogRec(term=self.log.get_term(),
+                         user_data=result.response,
+                         listeners=listeners)
         self.log.append([new_rec,])
         new_rec = self.log.read()
         update_message = AppendEntriesMessage(
@@ -368,6 +417,54 @@ class Leader(State):
         await self.set_substate(Substate.sent_new_entries)
         return True
 
+    async def on_internal_command(self, command, callback):
+        # we need to make sure we don't starve heartbeat
+        # if there is a big recovery in progress
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
+            await self.send_heartbeat()
+
+        while self.command_in_progress:
+            await asyncio.sleep(0.001)
+            
+        self.command_in_progress = True # will stay true until result sent
+        # call the user app 
+        result = self.server.get_app().execute_command(command)
+        if not result.log_response:
+            await callback(result)
+            return
+
+        # Before appending, get the index and term of the previous record,
+        # this will tell the follower to check their log to make sure they
+        # are up to date except for the new record(s)
+        last_index = self.log.get_last_index()
+        last_term = self.log.get_last_term()
+        listeners = [('callback', 'by_index'),]
+        new_rec = LogRec(term=self.log.get_term(),
+                         user_data=result.response,
+                         listeners=listeners)
+        self.log.append([new_rec,])
+        self.callback_by_index[self.log.get_last_index()] = callback
+        new_rec = self.log.read()
+        update_message = AppendEntriesMessage(
+            self.server.endpoint,
+            None,
+            self.log.get_term(),
+            {
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
+                "prevLogIndex": last_index,
+                "prevLogTerm": last_term,
+                "entries": [asdict(new_rec),],
+                "leaderCommit": self.log.get_commit_index(),
+            }
+        )
+        self.logger.debug("(term %d) sending log update to all followers: %s",
+                          self.log.get_term(), update_message.data)
+        await self.server.broadcast(update_message)
+        await self.set_substate(Substate.sent_new_entries)
+        return True
+    
     async def resign(self):
         if self.terminated:
             # order in async makes race for server states

@@ -12,12 +12,12 @@ from raft.messages.request_vote import RequestVoteResponseMessage
 from raft.messages.append_entries import AppendEntriesMessage
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.append_entries import AppendResponseMessage
-from raft.comms.memory_comms import MemoryComms
 from raft.log.log_api import LogRec
 from raft.states.base_state import Substate
 from raft.states.leader import FollowerCursor
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PCandidate, PLeader
+from raft.dev_tools.memory_comms import MemoryComms
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":

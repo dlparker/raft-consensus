@@ -12,13 +12,13 @@ import abc
 
 from raft.states.base_state import Substate
 from raft.servers.server import Server
-from raft.comms.memory_comms import reset_channels
 
 from raft.dev_tools.log_control import one_proc_log_setup
 from raft.dev_tools.bt_client import MemoryBankTellerClient
 from raft.dev_tools.pausing_app import PausingBankTellerServer, PausingMonitor
 from raft.dev_tools.pausing_app import PausingInterceptor, InterceptorMode
 from raft.dev_tools.bt_server import ServerThread
+from raft.dev_tools.memory_comms import reset_channels
 
 @dataclass
 class ServerSpec:

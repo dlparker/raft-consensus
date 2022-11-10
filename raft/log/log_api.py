@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass, field, asdict
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Any
 from enum import Enum
 
 class RecordCode(str, Enum):
@@ -10,10 +10,9 @@ class RecordCode(str, Enum):
     """ Results of client command operation """
     client = "CLIENT" 
 
-    """ Data used by leader to keep track of state at follower """
-    follower_cursor = "follower_cursor"
+    """ Results of local client command operation """
+    local_client = "LOCAL_CLIENT" 
     
-
 @dataclass
 class LogRec:
     code: RecordCode = field(default=RecordCode.client)
@@ -21,8 +20,18 @@ class LogRec:
     term: int = field(default = 0)
     committed: bool = field(default = False)
     user_data: list =  field(default=None, repr=False)
-    context: dict = field(default = None, repr=False)
+    listeners: List[any] = field(default_factory=list)
 
+    @classmethod
+    def from_dict(cls, data):
+        rec = cls(RecordCode(data['code']),
+                  index=data['index'],
+                  term=data['term'],
+                  committed=data['committed'],
+                  user_data=data['user_data'],
+                  listeners=data['listeners'])
+        return rec
+    
 # abstract class for all states
 class Log(metaclass=abc.ABCMeta):
 

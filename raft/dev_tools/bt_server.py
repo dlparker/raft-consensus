@@ -11,14 +11,14 @@ from logging.config import dictConfig
 
 import raft
 from raft.servers.server import Server
-from raft.log.memory_log import MemoryLog
 from raft.comms.udp import UDPComms
-from raft.comms.memory_comms import MemoryComms, MessageInterceptor
 from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.states.follower import Follower
 from bank_teller.bank_app import BankingApp
 from raft.dev_tools.timer_wrapper import ControlledTimer, get_timer_set
+from raft.dev_tools.memory_log import MemoryLog
+from raft.dev_tools.memory_comms import MemoryComms, MessageInterceptor
 
 manager = multiprocessing.Manager()
 csns = manager.Namespace()

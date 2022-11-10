@@ -8,9 +8,9 @@ import abc
 from typing import Union
 from dataclasses import dataclass, field, asdict
 
-from ..utils import task_logger 
-from ..messages.serializer import Serializer
-from .comms_api import CommsAPI
+from raft.utils import task_logger 
+from raft.messages.serializer import Serializer
+from raft.comms.comms_api import CommsAPI
 
 # this is for test support only
 class MessageInterceptor(metaclass=abc.ABCMeta):

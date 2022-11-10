@@ -12,7 +12,7 @@ from raft.states.candidate import Candidate
 from raft.states.leader import Leader
 from raft.states.state_map import StandardStateMap, StateMap
 from raft.app_api.app import StateChangeMonitor
-from raft.comms.memory_comms import MessageInterceptor
+from raft.dev_tools.memory_comms import MessageInterceptor
 
 from raft.dev_tools.bt_server import MemoryBankTellerServer
 from raft.dev_tools.timer_wrapper import get_timer_set

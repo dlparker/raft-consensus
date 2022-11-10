@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Union, List, Optional
 from copy import deepcopy
 import logging
-from .log_api import LogRec, Log
+from raft.log.log_api import LogRec, Log
 
 class Records:
 
@@ -63,7 +63,7 @@ class MemoryLog(Log):
                               term=entry.term,
                               committed=entry.committed,
                               user_data=entry.user_data,
-                              context=entry.context)
+                              listeners=entry.listeners[::])
             self.records.add_entry(save_rec)
         self.logger.debug("new log record %s", save_rec.index)
 
@@ -77,7 +77,7 @@ class MemoryLog(Log):
                           term=entry.term,
                           committed=entry.committed,
                           user_data=entry.user_data,
-                          context=entry.context)
+                          listeners=entry.listeners[::])
         # Normal case is that the leader will end one new record when
         # trying to get consensus, and the new record index will be
         # exactly what the next sequential record number would be.

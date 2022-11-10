@@ -43,7 +43,9 @@ leader has uncommitted record and follower does not, but follower was
 not present when leader sent append?
 ###### DONE
 
-Move the memory log, memory comms and udp comms to dev_tools.
+##### DONE
+Move the memory log, memory comms to dev_tools.
+##### DONE
 
 ###### DONE
 Remove rollback logic if possible once rejoin logic developed.
@@ -56,7 +58,9 @@ Examing voting logic in follower, shouldn't it explicitly look for
 wrong term? Or is StateDiff property good enough? Comment in code.
 ###### DONE
 
+##### DONE
 See if the Pauser class used in some tests can be universal and in dev_tools
+##### DONE
 
 =================
 Simplify plan:
@@ -75,29 +79,21 @@ Simplify plan:
    2. Remove "log pull, replace it with regular append entries" ###### DONE
    3. Convert messages to dataclasses
    4. Check for leader noting that it is out of date and resigning ###### DONE
+   5. Rework candidate election timeout, currently goes back to follower,
+      should instead restart election, but I think at least one test
+      breaks on this change. Need to fix the test so that logic can
+      match raft.pdf
 
 3. State logic changes:
    1. Remove rollback, as it is a dumb way to do log overwrite ###### DONE
    2. Find in PDF the logic on heartbeat when term does not match,
       fix it in follower and refernce PDF ###### DONE
-   3. Add a set of queues to do client comms process, where
-      incoming client command queues, something reads it and starts
-      command processing sequence, then when the resulting log
-      record is committed that goes into out queue. A flag indicates
-      that we are in progress between the queue operations, so no
-      new read can start. This serializes operations. 
+   3. Add a flag and wait to ensure no new client command is processed
+      while one is in flight. #### DONE
    4. Fix the way the client log records are created, get rid of
       the context thing. Just put the client record inside an envelope
-      with return address info.
-   5. Make provision for client command to come from within server
-      instead of from actual client, thus allowing consensus in servers.
-      Prolly make some form of internal addressing scheme instead of real
-      comm address. Can use some special type instead of tuple. Good
-      place to test non-tuple address usage. Consider how this might
-      also support a queue based mechanism where GRPC is used to put and
-      pull from the queues. Client ops can put, then await pull. Server
-      ops can put and return.
-    6. Is there an issue with tracking follower cursor when follower
+      with return address info. ### DONE, but differently
+   6. Is there an issue with tracking follower cursor when follower
        restarts? Do we have to detect it and reset? 
      
    

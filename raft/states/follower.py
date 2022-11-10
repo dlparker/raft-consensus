@@ -100,8 +100,8 @@ class Follower(State):
             self.last_vote_time = None
             await self.set_substate(Substate.joined)
         if message.term > self.log.get_term():
-            self.logger.info("heartbeat -> leader %s term different, " \
-                                        "updating local %s",
+            self.logger.info("heartbeat -> leader %s term different " \
+                                        "from local %s, updating",
                               message.term, self.log.get_term())
             self.log.set_term(message.term)
         # We are in sync if the our last log record and the
@@ -139,6 +139,7 @@ class Follower(State):
             await self.set_substate(Substate.synced)
         else:
             await self.set_substate(Substate.out_of_sync)
+        await self.leaderless_timer.reset()
         return True
 
     async def on_append_entries(self, message):
@@ -270,10 +271,7 @@ class Follower(State):
         last_commit = 0
         last_entry_index = 0
         for ent in message.data["entries"]:
-            rec = LogRec(term=ent['term'],
-                         committed=ent['committed'],
-                         index=ent['index'],
-                         user_data=ent['user_data'])
+            rec = LogRec.from_dict(ent)
             # it could be a new record, or it could
             # be a replacement of an old record.
             new_rec = self.log.replace_or_append(rec)

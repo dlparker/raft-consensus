@@ -8,7 +8,7 @@ import os
 import pytest
 
 from raft.log.log_api import LogRec
-from raft.log.memory_log import MemoryLog
+from raft.dev_tools.memory_log import MemoryLog
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
