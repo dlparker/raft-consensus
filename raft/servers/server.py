@@ -112,7 +112,7 @@ class Server:
     def record_illegal_message_state(self, sender, desc,
                                       error_data):
         details = f"Got illegal message state from {sender}, \n{desc} \n"
-        details += error_data
+        details += str(error_data)
         e = dict(code="illegal_message_state",
                  details=details)
         self.unhandled_errors.append(e)

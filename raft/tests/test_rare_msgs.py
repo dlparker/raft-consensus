@@ -31,6 +31,8 @@ class ModFollower(PFollower):
         self.skip_to_append = False
         self.send_higher_term_on_hb = False
         self.send_higher_term_on_ae = False
+        self.lie_about_index = False
+        self.never_beat = False
 
     def set_skip_to_append(self, flag):
         self.skip_to_append = flag
@@ -40,30 +42,50 @@ class ModFollower(PFollower):
 
     def set_send_higher_term_on_ae(self, flag):
         self.send_higher_term_on_ae = flag
-        
+
+    def set_lie_about_index(self, flag):
+        self.lie_about_index = flag
+
     def start(self):
         super().start()
 
+    def set_never_beat(self, flag):
+        self.never_beat = flag
+        
     async def on_heartbeat(self, message):
-        if (self.have_append or
-            (not self.skip_to_append and not self.send_higher_term_on_hb)):
+        intercept = False
+        term = self.log.get_last_term()
+        last_index = self.log.get_last_index()
+        last_term = self.log.get_last_term()
+        if self.never_beat:
+            self.logger.debug("\n\n\tNot applying heartbeat at all")
+            await self.leaderless_timer.reset()
+            return True
+        if self.skip_to_append and not self.have_append:
+            intercept = True
+            success = False
+        if self.send_higher_term_on_hb:
+            success = False
+            intercept = True
+            # do it once only
+            self.send_higher_term_on_hb = False
+            term = message.term + 1
+        if self.lie_about_index:
+            success = False
+            # do it once only
+            self.lie_about_index = False
+            last_index += 1
+            last_term += 1
+        if not intercept:
             return await super().on_heartbeat(message)
         self.logger.debug("\n\n\tintercepting heartbeat to force append" \
                           " to be first call\n\n")
         await self.leaderless_timer.reset()
-        if self.send_higher_term_on_hb:
-            # only do it once
-            term = message.term + 1
-            self.send_higher_term_on_hb = False
-            # let next heartbeat through
-            self.skip_to_append = False
-        else:
-            term = self.log.get_last_term()
-        data = dict(success=False,
+        data = dict(success=success,
                     prevLogIndex=message.prevLogIndex,
                     prevLogTerm=message.prevLogTerm,
-                    last_index=self.log.get_last_index(),
-                    last_term=self.log.get_last_term())
+                    last_index=last_index,
+                    last_term=last_term)
         reply = HeartbeatResponseMessage(message.receiver,
                                          message.sender,
                                          term=term,
@@ -73,7 +95,7 @@ class ModFollower(PFollower):
         self.logger.debug(msg,
                           message.prevLogIndex,
                           message.prevLogTerm,
-                          self.log.get_last_index(),
+                          last_term,
                           term)
         await self.server.post_message(reply)
         return True
@@ -103,6 +125,8 @@ class ModMonitor(PausingMonitor):
         self.skip_to_append = False
         self.send_higher_term_on_hb = False
         self.send_higher_term_on_ae = False
+        self.lie_about_index = False
+        self.never_beat = False
 
     def set_skip_to_append(self, flag):
         self.skip_to_append = flag
@@ -113,6 +137,12 @@ class ModMonitor(PausingMonitor):
     def set_send_higher_term_on_ae(self, flag):
         self.send_higher_term_on_ae = flag
         
+    def set_lie_about_index(self, flag):
+        self.lie_about_index = flag
+
+    def set_never_beat(self, flag):
+        self.never_beat = flag
+    
     async def new_state(self, state_map, old_state, new_state):
         new_state = await super().new_state(state_map, old_state, new_state)
         if new_state.code == StateCode.follower:
@@ -121,6 +151,8 @@ class ModMonitor(PausingMonitor):
             self.state.set_skip_to_append(self.skip_to_append)
             self.state.set_send_higher_term_on_hb(self.send_higher_term_on_hb)
             self.state.set_send_higher_term_on_ae(self.send_higher_term_on_ae)
+            self.state.set_lie_about_index(self.lie_about_index)
+            self.state.set_never_beat(self.never_beat)
             return self.state
         return new_state
 
@@ -498,6 +530,99 @@ class TestRareMessages(unittest.TestCase):
         self.assertEqual(tlog.get_commit_index(), log_record_count)
         self.assertNotEqual(orig_leader_state,
                             leader.server_obj.state_map.state)
+        self.logger.debug("\n\n\tDone with test, starting shutdown\n")
+        # check the actual log in the follower
+        self.postamble()
+                      
+    def test_backdown(self):
+        # If a follower starts up and has some, but not all of the
+        # log entries that the leader has, then the leader should
+        # find out via a reply from the heartbeat or append entries
+        # message when the follower says that it does not have the
+        # previous message specified. We are looking specifically
+        # for the AppendEntries flavor of this, which only happens
+        # in the rare case that the leader sends that before it sends
+        # a heartbeat right after the follower starts. We will
+        # force that by setting up the relevant log condition in
+        # a follower, stop it, add log to the leader, then restart
+        # the follower but intercept and block the heartbeat and then
+        # add another log record in the normal fashion. This will
+        # cause the AppendEntries message for the new record to
+        # get the "I'm not ready" response that we are looking for.
+
+        self.preamble(num_to_start=3)
+        leader = None
+        first = None
+        second = None
+        for spec in self.cluster.get_servers().values():
+            self.assertTrue(spec.running)
+            if str(spec.server_obj.state_map.state) == "leader":
+                leader = spec
+            elif not first:
+                first = spec
+            else:
+                second = spec
+        
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        client.do_credit(10)
+        log_record_count = 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 10)
+        # wait for follower to have commit
+        start_time = time.time()
+        tlog = first.server_obj.get_log()
+        while time.time() - start_time < 4:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = first.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+
+        self.logger.debug("\n\n\tStopping third server %s \n\n",
+                          second.name)
+
+        self.cluster.stop_server(second.name)
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        client.do_credit(10)
+        log_record_count += 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 20)
+
+        self.logger.debug("\n\n\tRestarting third server %s \n\n",
+                          second.name)
+
+        second = self.cluster.prepare_one(second.name)
+        second.monitor = ModMonitor(second.monitor)
+        second.monitor.set_never_beat(True)
+        self.cluster.start_one_server(second.name)
+        
+        self.logger.debug("\n\n\tAwaiting log update at %s\n",
+                          second.name)
+
+        self.logger.debug("\n\n\tCredit 10 to %s \n\n", self.leader.name)
+        client.do_credit(10)
+        log_record_count += 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 30)
+        start_time = time.time()
+        tlog = second.server_obj.get_log()
+        while time.time() - start_time < 4:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = second.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+        second.monitor.set_never_beat(False)
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower
         self.postamble()
