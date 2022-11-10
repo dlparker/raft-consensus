@@ -627,3 +627,96 @@ class TestRareMessages(unittest.TestCase):
         # check the actual log in the follower
         self.postamble()
                       
+    def a_test_new_term_backdown(self):
+        # Consider a sequence during which servers crash or become
+        # isolated, or "are lost".
+        # The leader with term 1 appends a log record to index 2, but before
+        # it can send the AppendEntries RPC it dies or is lost.
+        # A new leader is elected at term 2, and processes one or more
+        # new log records. This leaves the log record at index 2 at the new
+        # leader with term 2, whereas the original leader has term 1.
+        # The old leader re-joins the cluster. The new leader gets
+        # a new log entry before the heartbeat occurs to the old leader,
+        # and the old leader detects that the term of the log cursor
+        # does not match. The reply to the new leader causes it to
+        # backdown to send record 2 to the old leader. It accepts it
+        # and replaces its own record 2. The normal catchup sequence
+        # then brings old leader into line.
+
+        self.preamble(num_to_start=3)
+        leader = None
+        first = None
+        second = None
+        for spec in self.cluster.get_servers().values():
+            self.assertTrue(spec.running)
+            if str(spec.server_obj.state_map.state) == "leader":
+                leader = spec
+            elif not first:
+                first = spec
+            else:
+                second = spec
+        
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        client.do_credit(10)
+        log_record_count = 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 10)
+        # wait for follower to have commit
+        start_time = time.time()
+        tlog = first.server_obj.get_log()
+        while time.time() - start_time < 4:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = first.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+
+        self.logger.debug("\n\n\tStopping third server %s \n\n",
+                          second.name)
+
+        self.cluster.stop_server(second.name)
+        self.logger.debug("\n\n\tCredit 10 \n\n")
+        client = self.leader.get_client()
+        client.do_credit(10)
+        log_record_count += 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 20)
+
+        self.logger.debug("\n\n\tRestarting third server %s \n\n",
+                          second.name)
+
+        second = self.cluster.prepare_one(second.name)
+        second.monitor = ModMonitor(second.monitor)
+        second.monitor.set_never_beat(True)
+        self.cluster.start_one_server(second.name)
+        
+        self.logger.debug("\n\n\tAwaiting log update at %s\n",
+                          second.name)
+
+        self.logger.debug("\n\n\tCredit 10 to %s \n\n", self.leader.name)
+        client.do_credit(10)
+        log_record_count += 1
+        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
+        res = client.do_query()
+        log_record_count += 1
+        self.assertEqual(res['balance'], 30)
+        start_time = time.time()
+        tlog = second.server_obj.get_log()
+        while time.time() - start_time < 4:
+            if tlog.get_commit_index() == log_record_count:
+                break
+            tlog = second.server_obj.get_log()
+            time.sleep(0.01)
+        self.assertEqual(tlog.get_commit_index(), log_record_count)
+        second.monitor.set_never_beat(False)
+        self.logger.debug("\n\n\tDone with test, starting shutdown\n")
+        # check the actual log in the follower
+        self.postamble()
+                      
