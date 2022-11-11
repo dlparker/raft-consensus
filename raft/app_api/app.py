@@ -8,7 +8,7 @@ class CommandResult:
     command: str 
     response: str = field(repr=False, default=None)
     log_response: bool = field(repr=False, default=True)
-    
+    error: str = field(default=None)
 
 # abstract class for logged interaction app code
 class App(metaclass=abc.ABCMeta):

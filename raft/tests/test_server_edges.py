@@ -1,18 +1,14 @@
 import unittest
 import asyncio
 import time
-import logging
 import traceback
 import os
-from pathlib import Path
 
+from raft.tests.common_tcase import TestCaseCommon
 
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.states.base_state import StateCode
-from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PLeader
-from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
-from raft.dev_tools.pauser import Pauser
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -99,135 +95,36 @@ class RejectingMonitor(PausingMonitor):
         return new_state
     
     
-class TestEdges(unittest.TestCase):
+class TestEdges(TestCaseCommon):
 
     @classmethod
     def setUpClass(cls):
-        cls.logger = None
-        pass
-    
-    @classmethod
-    def tearDownClass(cls):
-        pass
-    
-    def setUp(self):
-        if self.logger is None:
-            self.logger = logging.getLogger(__name__)
-        self.cluster = PausingServerCluster(server_count=3,
-                               logging_type=LOGGING_TYPE,
-                               base_port=5000)
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-                
-    def tearDown(self):
-        self.cluster.stop_all_servers()
-        time.sleep(0.1)
-        self.loop.close()
-
-    def set_hb_intercept(self, clear=True):
-        for spec in self.servers.values():
-            if clear:
-                spec.interceptor.clear_triggers()
-            spec.interceptor.add_trigger(InterceptorMode.out_after, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].leader_pause)
-            spec.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].follower_pause)
-
-    def clear_intercepts(self):
-        for spec in self.servers.values():
-            spec.interceptor.clear_triggers()
-        
-    def pause_waiter(self, label, expected=3, timeout=2):
-        self.logger.info("waiting for %s", label)
-        self.leader = None
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.01)
-            pause_count = 0
-            self.followers = []
-            for spec in self.servers.values():
-                if spec.pbt_server.paused:
-                    pause_count += 1
-                    if spec.monitor.state.get_code() == StateCode.leader:
-                        self.leader = spec
-                    elif spec.monitor.state.get_code() == StateCode.follower:
-                       self.followers.append(spec)
-            if pause_count >= expected:
-                break
-        self.assertIsNotNone(self.leader)
-        self.assertEqual(len(self.followers) + 1, expected)
-        return 
-
-    def resume_waiter(self):
-        start_time = time.time()
-        while time.time() - start_time < 5:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.01)
-            pause_count = 0
-            for spec in self.servers.values():
-                if spec.running:
-                    if spec.pbt_server.paused:
-                        pause_count += 1
-            if pause_count == 0:
-                break
-        self.assertEqual(pause_count, 0)
-
-    def reset_pausers(self):
-        for name in self.servers.keys():
-            self.pausers[name].reset()
-
-    def reset_roles(self):
-        self.leader = None
-        self.followers = []
-
-    def preamble(self, slow=False):
-        if slow:
-            tb = 1.0
+        super(TestEdges, cls).setUpClass()
+        cls.total_nodes = 3
+        cls.timeout_basis = 0.2
+        if __name__.startswith("raft.tests"):
+            cls.logger_name = __name__
         else:
-            tb = timeout_basis
-        self.servers = self.cluster.prepare(timeout_basis=tb)
-        self.pausers = {}
-        self.leader = None
-        self.followers = []
-        self.expected_followers = len(self.servers) - 1
+            cls.logger_name = "raft.tests." + __name__
+
+    def pre_start_callback(self):
         for spec in self.servers.values():
             spec.monitor = RejectingMonitor(spec.monitor)
-            self.pausers[spec.name] = Pauser(spec, self)
-        
-        self.set_hb_intercept()
-        
-        self.cluster.start_all_servers()
-        self.pause_waiter("waiting for pause first election done (heartbeat)")
-        for spec in self.cluster.get_servers().values():
-            if spec.monitor.state.code == StateCode.leader:
-                target = spec
-            
-        self.cluster.resume_all_paused_servers()
+    
+    def test_simple_calls(self):
+        self.preamble()
         self.clear_intercepts()
-        self.assertIsNotNone(target)
-        client = spec.get_client()
+        self.cluster.resume_all_paused_servers()
+        client = self.leader.get_client()
         status = client.get_status()
         self.assertIsNotNone(status)
-        self.assertIsNotNone(status.data['leader'])
-        return target, client
-        
-    def test_simple_calls(self):
-        target, client = self.preamble()
-        server = target.server_obj
+        server = self.leader.server_obj
         # just check this here, make sure call is rejected
         with self.assertRaises(Exception) as context:
             stats = server.start()
         self.assertTrue("twice" in str(context.exception))
-        self.assertEqual(target.monitor.state, 
-                         target.server_obj.get_state())
+        self.assertEqual(self.leader.monitor.state, 
+                         self.leader.server_obj.get_state())
         
     def test_reject_messages_while_changing_state(self):
         # The servers.server.py Server class has
@@ -245,16 +142,21 @@ class TestEdges(unittest.TestCase):
         # to fail so that it will give up.
         # We target the leader server because it will
         # normally process client messages.
-        target, client = self.preamble()
-        target.monitor.state.set_rejecting(False)
-        server = target.server_obj
+        self.preamble(pre_start_callback=self.pre_start_callback)
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        client = self.leader.get_client()
+        status = client.get_status()
+        self.assertIsNotNone(status)
+        self.leader.monitor.state.set_rejecting(False)
+        server = self.leader.server_obj
         estack = server.get_unhandled_errors()
         self.assertEqual(len(estack), 0)
         stats = client.do_log_stats()
         self.assertIsNotNone(stats)
         client.set_timeout(0.5)
-        target.pbt_server.state_map.changing = True
-        target.monitor.state.set_rejecting(True)
+        self.leader.pbt_server.state_map.changing = True
+        self.leader.monitor.state.set_rejecting(True)
         # Server should try twice, then give up. Message
         # lost in limbo, so no reply sent
         with self.assertRaises(Exception) as context:
@@ -289,14 +191,17 @@ class TestEdges(unittest.TestCase):
         # see lots of details about how that is done.
         # We expect a timeout because the message is never handled
         # so no reply. We also expect the server to record the error
-        target, client = self.preamble(slow=True)
-        stats = client.do_log_stats()
-        self.assertIsNotNone(stats)
+        self.preamble(slow=True, pre_start_callback=self.pre_start_callback)
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+        client = self.leader.get_client()
+        status = client.get_status()
+        self.assertIsNotNone(status)
         client.set_timeout(0.5)
-        server = target.server_obj
+        server = self.leader.server_obj
         estack = server.get_unhandled_errors()
         self.assertEqual(len(estack), 0)
-        target.monitor.state.setup_respawn_reject(2)
+        self.leader.monitor.state.setup_respawn_reject(2)
         with self.assertRaises(Exception) as context:
             stats = client.do_log_stats()
         self.assertTrue("timeout" in str(context.exception))

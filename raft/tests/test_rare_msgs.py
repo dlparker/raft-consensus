@@ -4,24 +4,13 @@ import time
 import logging
 import traceback
 import os
-from pathlib import Path
 
+from raft.tests.common_tcase import TestCaseCommon
 
-from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.heartbeat import HeartbeatResponseMessage
-from raft.messages.append_entries import AppendResponseMessage
-from raft.messages.command import ClientCommandMessage
 from raft.states.base_state import StateCode
-from raft.dev_tools.ps_cluster import PausingServerCluster
-from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
 from raft.dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
-from raft.dev_tools.pauser import Pauser
 
-LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
-if LOGGING_TYPE != "silent":
-    LOGGING_TYPE = "devel_one_proc"
-
-timeout_basis = 0.1
 
 class ModFollower(PFollower):
 
@@ -64,7 +53,7 @@ class ModFollower(PFollower):
         if self.skip_to_append and not self.have_append:
             intercept = True
             success = False
-        if self.send_higher_term_on_hb:
+        if self.send_higher_term_on_hb and not self.have_append:
             success = False
             intercept = True
             # do it once only
@@ -157,229 +146,39 @@ class ModMonitor(PausingMonitor):
         return new_state
 
 
-class TestRareMessages(unittest.TestCase):
+class TestRareMessages(TestCaseCommon):
 
     @classmethod
     def setUpClass(cls):
-        cls.logger = None
-        pass
-    
-    @classmethod
-    def tearDownClass(cls):
-        pass
-    
-    def setUp(self):
-        self.total_nodes = 3
-        self.cluster = PausingServerCluster(server_count=self.total_nodes,
-                                            logging_type=LOGGING_TYPE,
-                                            base_port=5000,
-                                            timeout_basis=timeout_basis)
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-        self.logger = logging.getLogger("raft.tests." + __name__)
-                
-    def tearDown(self):
-        self.cluster.stop_all_servers()
-        time.sleep(0.1)
-        self.loop.close()
-
-    def pause_waiter(self, label, expected=None, timeout=2):
-        if expected is None:
-            expected = self.total_nodes
-        self.logger.info("waiting for %s", label)
-        self.leader = None
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.01)
-            pause_count = 0
-            self.followers = []
-            for spec in self.servers.values():
-                if spec.pbt_server.paused:
-                    pause_count += 1
-                    if spec.monitor.state.get_code() == StateCode.leader:
-                        self.leader = spec
-                    elif spec.monitor.state.get_code() == StateCode.follower:
-                       self.followers.append(spec)
-            if pause_count >= expected:
-                break
-        self.assertIsNotNone(self.leader)
-        self.assertEqual(len(self.followers) + 1, expected)
-        return 
-
-    def resume_waiter(self):
-        start_time = time.time()
-        while time.time() - start_time < 5:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.01)
-            pause_count = 0
-            for spec in self.servers.values():
-                if spec.running:
-                    if spec.pbt_server.paused:
-                        pause_count += 1
-            if pause_count == 0:
-                break
-        self.assertEqual(pause_count, 0)
-
-    def reset_pausers(self):
-        for name in self.servers.keys():
-            self.pausers[name].reset()
-
-    def reset_roles(self):
-        self.leader = None
-        self.followers = []
-        
-    def preamble(self, num_to_start=None):
-        self.servers = self.cluster.prepare()
-        if num_to_start is None:
-            num_to_start = len(self.servers)
-        self.pausers = {}
-        self.leader = None
-        self.followers = []
-        self.expected_followers = num_to_start - 1
-        for spec in self.servers.values():
-            self.pausers[spec.name] = Pauser(spec, self)
-        
-        self.set_hb_intercept()
-
-        started_count = 0
-        for spec in self.cluster.get_servers().values():
-            self.cluster.start_one_server(spec.name)
-            started_count += 1
-            if started_count == num_to_start:
-                break
-
-        self.pause_waiter("waiting for pause first election done (heartbeat)",
-                          expected = started_count)
-
-    def set_hb_intercept(self, clear=True):
-        for spec in self.servers.values():
-            if clear:
-                spec.interceptor.clear_triggers()
-            spec.interceptor.add_trigger(InterceptorMode.out_after, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].leader_pause)
-            spec.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].follower_pause)
-    def clear_intercepts(self):
-        for spec in self.servers.values():
-            spec.interceptor.clear_triggers()
-        
-    def postamble(self):
-    
-        for spec in self.servers.values():
-            spec.interceptor.clear_triggers()
-
-        self.cluster.resume_all_paused_servers()
-        
-    def a_test_check_setup(self):
-        # rename this to remove the a_ in order to
-        # check the basic control flow
-        self.preamble(num_to_start=2)
-        leader = None
-        first = None
-        second = None
-        pos = 0
-        for spec in self.cluster.get_servers().values():
-            if pos < 2:
-                self.assertTrue(spec.running)
-                if str(spec.server_obj.state_map.state) == "leader":
-                    leader = spec
-                else:
-                    first = spec
-            else:
-                self.assertFalse(spec.running)
-                second = spec
-            pos += 1
-        self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
-        self.logger.debug("\n\n\tCredit 10 \n\n")
-        client = self.leader.get_client()
-        client.do_credit(10)
-        log_record_count = 1
-        self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
-        res = client.do_query()
-        log_record_count += 1
-        self.assertEqual(res['balance'], 10)
-        self.postamble()
-
-    def pause_and_break(self, go_after=True):
-        # call this to get a breakpoint that has
-        # everyone stopped
-        time.sleep(1)
-        self.reset_pausers()
-        self.set_hb_intercept()
-        breakpoint()
-        if go_after:
-            self.clear_intercepts()
-            self.cluster.resume_all_paused_servers()
-
-    def go_after_break(self):
-        self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
-        
-    def test_local_command(self):
-        self.preamble(num_to_start=3)
-        leader = None
-        first = None
-        second = None
-        for spec in self.cluster.get_servers().values():
-            self.assertTrue(spec.running)
-            if str(spec.server_obj.state_map.state) == "leader":
-                leader = spec
-            elif not first:
-                first = spec
-            else:
-                second = spec
-        self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
-        self.logger.debug("\n\n\tCredit 10 through direct leader call\n\n")
-        self.result = None
-        self.log_record_count = 0
-        async def callback(result):
-            self.result = result
-        async def direct_command(command):
-            state = leader.server_obj.state_map.state
-            await state.on_internal_command(command, callback)
-            self.log_record_count += 1
-        self.loop.run_until_complete(direct_command("credit 10"))
-        start_time = time.time()
-        while time.time() - start_time < 2:
-            if self.result is not None:
-                break
-            time.sleep(0.01)
-        self.assertIsNotNone(self.result)
-        self.assertEqual(self.result['balance'], 10)
-        first_log = first.server_obj.get_log()
-        self.assertEqual(first_log.get_last_index(), self.log_record_count)
-        self.postamble()
-
+        super(TestRareMessages, cls).setUpClass()
+        cls.total_nodes = 3
+        cls.timeout_basis = 0.2
+        if __name__.startswith("raft.tests"):
+            cls.logger_name = __name__
+        else:
+            cls.logger_name = "raft.tests." + __name__
+            
+    # All the tests in the case use a cluster of three servers
+    # as configured by the TestCaseCommon setUp method.
     def test_append_first(self):
-        # gets branch in follower that happens when the first
-        # RPC from the leader is an AppendEntries with entries
-        # rather than a heartbeat
+        # Preamble starts 2 of 3 servers
+        # (num_to_start arg of self.total_nodes) and
+        # waits for them to complete the leader election.
+        # When it returns, the servers are paused at the point
+        # where the leader has sent the initial AppendEntries
+        # message containing the no-op log record that marks
+        # the beginning of the term. The followers have not
+        # yet processed it, are paused before delivery of the
+        # message to the follower code.
         self.preamble(num_to_start=2)
-        leader = None
-        first = None
-        second = None
-        pos = 0
         for spec in self.cluster.get_servers().values():
-            if pos < 2:
-                self.assertTrue(spec.running)
-                if str(spec.server_obj.state_map.state) == "leader":
-                    leader = spec
-                else:
+            if spec != self.leader:
+                if spec.running:
                     first = spec
-            else:
-                self.assertFalse(spec.running)
-                second = spec
-            pos += 1
+                else:
+                    second = spec
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         self.logger.debug("\n\n\tCredit 10 \n\n")
@@ -387,15 +186,14 @@ class TestRareMessages(unittest.TestCase):
         status = client.get_status()
         self.assertIsNotNone(status)
         client.do_credit(10)
-        log_record_count = 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 10)
         # wait for follower to have commit
-        start_time = time.time()
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         tlog = first.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = first.server_obj.get_log()
@@ -408,10 +206,11 @@ class TestRareMessages(unittest.TestCase):
         second.monitor = ModMonitor(second.monitor)
         second.monitor.set_skip_to_append(True)
         self.cluster.start_one_server(second.name)
-        start_time = time.time()
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         tlog = second.server_obj.get_log()
         # sometimes elections are slow
-        while time.time() - start_time < 8:
+        start_time = time.time()
+        while time.time() - start_time < 30 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = second.server_obj.get_log()
@@ -433,36 +232,36 @@ class TestRareMessages(unittest.TestCase):
         # Look at the "all servers" part of the "rules for servers" on
         # page 4 of the raft.pdf file.
 
+        # Preamble starts 2 of 3 servers
+        # (num_to_start arg of self.total_nodes) and
+        # waits for them to complete the leader election.
+        # When it returns, the servers are paused at the point
+        # where the leader has sent the initial AppendEntries
+        # message containing the no-op log record that marks
+        # the beginning of the term. The followers have not
+        # yet processed it, are paused before delivery of the
+        # message to the follower code.
+
         self.preamble(num_to_start=2)
-        leader = None
-        first = None
-        second = None
-        pos = 0
         for spec in self.cluster.get_servers().values():
-            if pos < 2:
-                self.assertTrue(spec.running)
-                if str(spec.server_obj.state_map.state) == "leader":
-                    leader = spec
-                else:
+            if spec != self.leader:
+                if spec.running:
                     first = spec
-            else:
-                self.assertFalse(spec.running)
-                second = spec
-            pos += 1
+                else:
+                    second = spec
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count = 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 10)
         # wait for follower to have commit
-        start_time = time.time()
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         tlog = first.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = first.server_obj.get_log()
@@ -472,26 +271,42 @@ class TestRareMessages(unittest.TestCase):
         # save the leader state object, it should be a different
         # one after this startup sequence, though it may end up the
         # leader again
-        orig_leader_state = leader.server_obj.state_map.state
+        orig_leader_state = self.leader.server_obj.state_map.state
         self.logger.debug("\n\n\tStarting third server %s \n\n",
                           second.name)
 
+        old_leader_obj = self.leader.server_obj.state_map.state
         second.monitor = ModMonitor(second.monitor)
         second.monitor.set_send_higher_term_on_hb(True)
         self.cluster.start_one_server(second.name)
+        self.logger.debug("\n\n\tAwaiting new leader \n")
+        new_leader = None
+        start_time = time.time()
+        # elections can take many tries
+        while time.time() - start_time < 30 * self.timeout_basis:
+            for spec in self.cluster.get_servers().values():
+                state_obj = spec.server_obj.state_map.state
+                if str(state_obj) == "leader":
+                    if state_obj != old_leader_obj:
+                        new_leader = spec
+                        break
+            if new_leader:
+                break
+            time.sleep(0.01)
+        self.assertIsNotNone(new_leader)
         self.logger.debug("\n\n\tAwaiting log update at %s\n",
                           second.name)
-
         start_time = time.time()
         tlog = second.server_obj.get_log()
         while time.time() - start_time < 4:
+            log_record_count = new_leader.server_obj.get_log().get_last_index()
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = second.server_obj.get_log()
             time.sleep(0.01)
         self.assertEqual(tlog.get_commit_index(), log_record_count)
         self.assertNotEqual(orig_leader_state,
-                             leader.server_obj.state_map.state)
+                            self.leader.server_obj.state_map.state)
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower
         self.postamble()
@@ -507,36 +322,36 @@ class TestRareMessages(unittest.TestCase):
         # Look at the "all servers" part of the "rules for servers" on
         # page 4 of the raft.pdf file.
 
+        # Preamble starts 2 of 3 servers
+        # (num_to_start arg of self.total_nodes) and
+        # waits for them to complete the leader election.
+        # When it returns, the servers are paused at the point
+        # where the leader has sent the initial AppendEntries
+        # message containing the no-op log record that marks
+        # the beginning of the term. The followers have not
+        # yet processed it, are paused before delivery of the
+        # message to the follower code.
+
         self.preamble(num_to_start=2)
-        leader = None
-        first = None
-        second = None
-        pos = 0
         for spec in self.cluster.get_servers().values():
-            if pos < 2:
-                self.assertTrue(spec.running)
-                if str(spec.server_obj.state_map.state) == "leader":
-                    leader = spec
-                else:
+            if spec != self.leader:
+                if spec.running:
                     first = spec
-            else:
-                self.assertFalse(spec.running)
-                second = spec
-            pos += 1
+                else:
+                    second = spec
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count = 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 10)
         # wait for follower to have commit
-        start_time = time.time()
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         tlog = first.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = first.server_obj.get_log()
@@ -546,26 +361,42 @@ class TestRareMessages(unittest.TestCase):
         # save the leader state object, it should be a different
         # one after this startup sequence, though it may end up the
         # leader again
-        orig_leader_state = leader.server_obj.state_map.state
+        old_leader_obj = self.leader.server_obj.state_map.state
         self.logger.debug("\n\n\tStarting third server %s \n\n",
                           second.name)
 
         second.monitor = ModMonitor(second.monitor)
+        # make it claim to have a higher term
         second.monitor.set_send_higher_term_on_ae(True)
         self.cluster.start_one_server(second.name)
+        self.logger.debug("\n\n\tElection due to low term at leader\n")
+        new_leader = None
+        start_time = time.time()
+        # election can be slow, depending on random candidate
+        # timeouts
+        while time.time() - start_time < 30 * self.timeout_basis:
+            for spec in self.cluster.get_servers().values():
+                state_obj = spec.server_obj.state_map.state
+                if str(state_obj) == "leader":
+                    if state_obj != old_leader_obj:
+                        new_leader = spec
+                        break
+            if new_leader:
+                break
+            time.sleep(0.1)
+        self.assertIsNotNone(new_leader)
         self.logger.debug("\n\n\tAwaiting log update at %s\n",
                           second.name)
-
-        start_time = time.time()
+        # New leader will put a no-op record in the log on startup
         tlog = second.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
+            log_record_count = new_leader.server_obj.get_log().get_last_index()
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = second.server_obj.get_log()
             time.sleep(0.01)
         self.assertEqual(tlog.get_commit_index(), log_record_count)
-        self.assertNotEqual(orig_leader_state,
-                            leader.server_obj.state_map.state)
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower
         self.postamble()
@@ -577,7 +408,7 @@ class TestRareMessages(unittest.TestCase):
         # message when the follower says that it does not have the
         # previous message specified. We are looking specifically
         # for the AppendEntries flavor of this, which only happens
-        # in the rare case that the leader sends that before it sends
+        # in the case that the leader sends that before it sends
         # a heartbeat right after the follower starts. We will
         # force that by setting up the relevant log condition in
         # a follower, stop it, add log to the leader, then restart
@@ -586,33 +417,32 @@ class TestRareMessages(unittest.TestCase):
         # cause the AppendEntries message for the new record to
         # get the "I'm not ready" response that we are looking for.
 
-        self.preamble(num_to_start=3)
-        leader = None
-        first = None
-        second = None
-        for spec in self.cluster.get_servers().values():
-            self.assertTrue(spec.running)
-            if str(spec.server_obj.state_map.state) == "leader":
-                leader = spec
-            elif not first:
-                first = spec
-            else:
-                second = spec
+        # Preamble starts 3 servers (self.total_nodes) and
+        # waits for them to complete the leader election.
+        # When it returns, the servers are paused at the point
+        # where the leader has sent the initial AppendEntries
+        # message containing the no-op log record that marks
+        # the beginning of the term. The followers have not
+        # yet processed it, are paused before delivery of the
+        # message to the follower code.
+
+        self.preamble()
+        first = self.non_leaders[0]
+        second = self.non_leaders[1]
         
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count = 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 10)
         # wait for follower to have commit
-        start_time = time.time()
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         tlog = first.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = first.server_obj.get_log()
@@ -626,10 +456,8 @@ class TestRareMessages(unittest.TestCase):
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count += 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 20)
 
         self.logger.debug("\n\n\tRestarting third server %s \n\n",
@@ -645,14 +473,14 @@ class TestRareMessages(unittest.TestCase):
 
         self.logger.debug("\n\n\tCredit 10 to %s \n\n", self.leader.name)
         client.do_credit(10)
-        log_record_count += 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
+        
         self.assertEqual(res['balance'], 30)
-        start_time = time.time()
         tlog = second.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = second.server_obj.get_log()
@@ -679,33 +507,32 @@ class TestRareMessages(unittest.TestCase):
         # and replaces its own record 2. The normal catchup sequence
         # then brings old leader into line.
 
-        self.preamble(num_to_start=3)
-        leader = None
-        first = None
-        second = None
-        for spec in self.cluster.get_servers().values():
-            self.assertTrue(spec.running)
-            if str(spec.server_obj.state_map.state) == "leader":
-                leader = spec
-            elif not first:
-                first = spec
-            else:
-                second = spec
+        # Preamble starts 3 servers (self.total_nodes) and
+        # waits for them to complete the leader election.
+        # When it returns, the servers are paused at the point
+        # where the leader has sent the initial AppendEntries
+        # message containing the no-op log record that marks
+        # the beginning of the term. The followers have not
+        # yet processed it, are paused before delivery of the
+        # message to the follower code.
+        self.preamble()
+        
+        first = self.non_leaders[0]
+        second = self.non_leaders[1]
         
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count = 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         self.assertEqual(res['balance'], 10)
         # wait for follower to have commit
-        start_time = time.time()
         tlog = first.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = first.server_obj.get_log()
@@ -719,10 +546,8 @@ class TestRareMessages(unittest.TestCase):
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count += 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 20)
 
         self.logger.debug("\n\n\tRestarting third server %s \n\n",
@@ -738,14 +563,13 @@ class TestRareMessages(unittest.TestCase):
 
         self.logger.debug("\n\n\tCredit 10 to %s \n\n", self.leader.name)
         client.do_credit(10)
-        log_record_count += 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 30)
-        start_time = time.time()
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         tlog = second.server_obj.get_log()
-        while time.time() - start_time < 4:
+        start_time = time.time()
+        while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
             tlog = second.server_obj.get_log()

@@ -6,152 +6,32 @@ import traceback
 import os
 from pathlib import Path
 
+from raft.tests.common_tcase import TestCaseCommon
 
-from raft.messages.heartbeat import HeartbeatMessage
-from raft.messages.heartbeat import HeartbeatResponseMessage
-from raft.messages.command import ClientCommandMessage
-from raft.states.base_state import StateCode
-from raft.dev_tools.ps_cluster import PausingServerCluster
-from raft.dev_tools.pausing_app import InterceptorMode, TriggerType
-from raft.dev_tools.pauser import Pauser
-
-LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
-if LOGGING_TYPE != "silent":
-    LOGGING_TYPE = "devel_one_proc"
-
-timeout_basis = 0.1
-        
-
-class TestSplit(unittest.TestCase):
+class TestSplit(TestCaseCommon):
 
     @classmethod
     def setUpClass(cls):
-        cls.logger = None
-        pass
-    
-    @classmethod
-    def tearDownClass(cls):
-        pass
-    
-    def setUp(self):
-        self.cluster = PausingServerCluster(server_count=5,
-                                            logging_type=LOGGING_TYPE,
-                                            base_port=5000,
-                                            timeout_basis=timeout_basis)
-        try:
-            self.loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-        self.logger = logging.getLogger("raft.tests." + __name__)
-                
-    def tearDown(self):
-        self.cluster.stop_all_servers()
-        time.sleep(0.1)
-        self.loop.close()
-
-    def pause_waiter(self, label, expected=5, timeout=2):
-        self.logger.info("waiting for %s", label)
-        self.leader = None
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.01)
-            pause_count = 0
-            self.non_leaders = []
-            self.followers = []
-            self.candidates = []
-            for spec in self.servers.values():
-                if spec.pbt_server.paused:
-                    pause_count += 1
-                    if spec.monitor.state.get_code() == StateCode.leader:
-                        self.leader = spec
-                    elif spec.monitor.state.get_code() == StateCode.follower:
-                       self.followers.append(spec)
-                       self.non_leaders.append(spec)
-                    elif spec.monitor.state.get_code() == StateCode.candidate:
-                       self.candidates.append(spec)
-                       self.non_leaders.append(spec)
-            if pause_count >= expected:
-                break
-        self.assertIsNotNone(self.leader)
-        self.assertEqual(len(self.followers) + len(self.candidates) + 1,
-                         expected)
-        return 
-
-    def resume_waiter(self):
-        start_time = time.time()
-        while time.time() - start_time < 5:
-            # servers are in their own threads, so
-            # blocking this one is fine
-            time.sleep(0.01)
-            pause_count = 0
-            for spec in self.servers.values():
-                if spec.running:
-                    if spec.pbt_server.paused:
-                        pause_count += 1
-            if pause_count == 0:
-                break
-        self.assertEqual(pause_count, 0)
-
-    def reset_pausers(self):
-        for name in self.servers.keys():
-            self.pausers[name].reset()
-
-    def reset_roles(self):
-        self.leader = None
-        self.followers = []
-        
-    def preamble(self):
-        self.servers = self.cluster.prepare()
-        self.pausers = {}
-        self.leader = None
-        self.followers = []
-        self.expected_followers = len(self.servers) - 1
-        for spec in self.servers.values():
-            self.pausers[spec.name] = Pauser(spec, self)
-        self.set_hb_intercept()
-        self.cluster.start_all_servers()
-        self.pause_waiter("waiting for pause first election done (heartbeat)")
-
-    def set_hb_intercept(self, clear=True):
-        for spec in self.servers.values():
-            if clear:
-                spec.interceptor.clear_triggers()
-            spec.interceptor.add_trigger(InterceptorMode.out_after, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].leader_pause)
-            spec.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].follower_pause)
-    def clear_intercepts(self):
-        for spec in self.servers.values():
-            spec.interceptor.clear_triggers()
-        
-    def postamble(self):
-    
-        for spec in self.servers.values():
-            spec.interceptor.clear_triggers()
-
-        self.cluster.resume_all_paused_servers()
-        
-    def pause_and_break(self, go_after=True):
-        # call this to get a breakpoint that has
-        # everyone stopped
-        time.sleep(1)
-        self.reset_pausers()
-        self.set_hb_intercept()
-        breakpoint()
-        if go_after:
-            self.clear_intercepts()
-            self.cluster.resume_all_paused_servers()
-
-    def go_after_break(self):
-        self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
+        super(TestSplit, cls).setUpClass()
+        # All the tests in the case use a cluster of 5 servers
+        # due to this override
+        cls.total_nodes = 5
+        # Need to go a little slower with 5 servers than 3
+        cls.timeout_basis = 0.2
+        if __name__.startswith("raft.tests"):
+            cls.logger_name = __name__
+        else:
+            cls.logger_name = "raft.tests." + __name__
         
     def test_leader_stays_split(self):
+        # Preamble starts 5 servers (self.total_nodes) and
+        # waits for them to complete the leader election.
+        # When it returns, the servers are paused at the point
+        # where the leader has sent the initial AppendEntries
+        # message containing the no-op log record that marks
+        # the beginning of the term. The followers have not
+        # yet processed it, are paused before delivery of the
+        # message to the follower code.
         self.preamble()
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
@@ -159,10 +39,8 @@ class TestSplit(unittest.TestCase):
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count = 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 10)
         time.sleep(0.01) # allow time for the commit messages to flow
         
@@ -185,7 +63,7 @@ class TestSplit(unittest.TestCase):
 
         self.logger.debug("\n\n\tAdding 10 via do_credit\n\n")
         client.do_credit(10)
-        log_record_count += 1
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         start_time = time.time()
         while time.time() - start_time < 4:
             done = []
@@ -232,13 +110,12 @@ class TestSplit(unittest.TestCase):
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
-        log_record_count = 1
         self.logger.debug("\n\n\tQuery to %s \n\n", self.leader.name)
         res = client.do_query()
-        log_record_count += 1
         self.assertEqual(res['balance'], 10)
         time.sleep(0.01) # allow time for the commit messages to flow
 
+        log_record_count = self.leader.server_obj.get_log().get_last_index()
         start_time = time.time()
         while time.time() - start_time < 2:
             done = []
@@ -283,22 +160,37 @@ class TestSplit(unittest.TestCase):
             self.cluster.resume_all_paused_servers()
         new_leader = None
         start_time = time.time()
-        while time.time() - start_time < 2:
+        while time.time() - start_time < 10 * self.timeout_basis:
             for spec in [kept_1, kept_2, kept_3]:
                 if str(spec.server_obj.state_map.state) == "leader":
                     new_leader = spec
                     break
+            if new_leader:
+                break
             time.sleep(0.1)
         self.assertIsNotNone(new_leader)
         
+        term = new_leader.server_obj.get_log().get_term()
+        done = []
+        start_time = time.time()
+        while time.time() - start_time < 5 * self.timeout_basis:
+            done = []
+            for spec in [kept_1, kept_2, kept_3]:
+                tlog = spec.server_obj.get_log()
+                if tlog.get_term() == term:
+                    done.append(spec)
+            if len(done) == 3:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(done), 3)
         self.logger.debug("\n\n\tGot New leader %s," \
                           " Adding 10 via do_credit\n\n",
                           new_leader.name)
         client2 = new_leader.get_client()
         client2.do_credit(10)
-        log_record_count += 1
         start_time = time.time()
-        while time.time() - start_time < 2:
+        while time.time() - start_time < 10 * self.timeout_basis:
+            log_record_count = new_leader.server_obj.get_log().get_last_index()
             done = []
             for spec in [kept_1, kept_2, kept_3]:
                 tlog = spec.server_obj.get_log()
@@ -308,8 +200,8 @@ class TestSplit(unittest.TestCase):
             if len(done) == 3:
                 break
             time.sleep(0.1)
-        self.assertEqual(len(done), 3, msg="Log commits missing for 4 seconds")
-        
+        msg=f"Log commits missing for {10 * self.timeout_basis} seconds"
+        self.assertEqual(len(done), 3, msg)
         for spec in [leader, lost_1]:
             tlog = spec.server_obj.get_log()
             # log indices are 1 offset, not zero
@@ -323,7 +215,7 @@ class TestSplit(unittest.TestCase):
                 self.cluster.resume_paused_server(spec.name, wait=False)
         
         start_time = time.time()
-        while time.time() - start_time < 2:
+        while time.time() - start_time <  10 * self.timeout_basis:
             done = []
             for spec in [leader, lost_1]:
                 tlog = spec.server_obj.get_log()
@@ -334,8 +226,10 @@ class TestSplit(unittest.TestCase):
             if len(done) == 2:
                 break
             time.sleep(0.1)
+        msg="Post heal log commits missing for " \
+            f"{10 * self.timeout_basis} seconds"
         self.assertEqual(len(done), 2,
-                         msg="Post heal log commits missing for 4 seconds")
+                         msg=msg)
         
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower

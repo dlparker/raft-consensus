@@ -1,9 +1,13 @@
 from typing import Union
 import logging
 from raft.app_api.app import App, CommandResult
+from raft.log.log_api import RecordCode
 
 class BankingApp(App):
 
+    # NOTE!!! This is used for test code as well, so if you
+    # change this you need to run the full test suite to
+    # make sure you haven't broken anything
     def __init__(self, server=None):
         self.server = server
         self.logger = logging.getLogger(__name__)
@@ -17,6 +21,11 @@ class BankingApp(App):
         extra_dict = None
         log = self.server.get_log()
         last_rec = log.read()
+        while last_rec and last_rec.code != RecordCode.client:
+            if last_rec.index == 1:
+                last_rec = None
+                break
+            last_rec = log.read(last_rec.index - 1)
         if last_rec:
             balance = last_rec.user_data['balance'] or 0
         else:

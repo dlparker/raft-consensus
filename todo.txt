@@ -1,4 +1,3 @@
-
 ############# DONE
 Review and document new message times and ensure that they
 actually improve things compared to the more limited set defined
@@ -8,15 +7,97 @@ specific values and follower states.
 ############# DONE
 
 
+
+###### DONE
+Update the log api to have a call that commits each record it adds, cause
+that is always done for log_pull. STUDY THE PROTOCOL, what happens when
+leader has uncommitted record and follower does not, but follower was
+not present when leader sent append?
+###### DONE
+
+##### DONE
+Move the memory log, memory comms to dev_tools.
+##### DONE
+
+###### DONE
+Remove rollback logic if possible once rejoin logic developed.
+###### DONE
+
+
+###### DONE
+Examing voting logic in follower, shouldn't it explicitly look for
+wrong term? Or is StateDiff property good enough? Comment in code.
+###### DONE
+
+##### DONE
+See if the Pauser class used in some tests can be universal and in dev_tools
+##### DONE
+
+=================
+Simplify plan:
+
+1. Log changes
+###### DONE
+   1. Start Log with 1, as in docs, start term with 0, always incr on candidate
+      PDF: page for state for all servers
+   2. Add log record typing, "no-op" for new term, "client" for client command
+      and include client serial number PDF: page 13, section 8
+   3. Change log append api to support append as new index and
+      insert at index, because leader can tell you to overwrite
+###### DONE
+
+2. Protocol
+ ###### DONE
+   1. Remove term start message
+   2. Remove "log pull, replace it with regular append entries" ###### DONE
+   4. Check for leader noting that it is out of date and resigning
+###### DONE
+   3. Convert messages to dataclasses allow error in client command result
+   5. Rework candidate election timeout, currently goes back to follower,
+      should instead restart election, but I think at least one test
+      breaks on this change. Need to fix the test so that logic can
+      match raft.pdf
+
+3. State logic changes:
+###### DONE
+   1. Remove rollback, as it is a dumb way to do log overwrite ###### DONE
+   2. Find in PDF the logic on heartbeat when term does not match,
+      fix it in follower and refernce PDF ###### DONE
+   3. Add a flag and wait to ensure no new client command is processed
+      while one is in flight. #### DONE
+   4. Fix the way the client log records are created, get rid of
+      the context thing. Just put the client record inside an envelope
+      with return address info. ### DONE, but differently
+###### DONE
+
+   6. Is there an issue with tracking follower cursor when follower
+       restarts? Do we have to detect it and reset? 
+   7. Maybe need to run client command as a task with timeout? Currently
+      it can hang server (ask me how I know)
+   
+==== Serializer Upgrades =====
+1. Change serializer to an API and rename original. Have serialize
+   to bytes and serialize to string.
+2. Make a json serializer as a real example.
+3. Add serializer registry so that messages and log records can find
+   the right serializer for app data by lookup.
+
+==== Log Upgrades =====
+
+1. Add serializer logic for log ops, with a dummy serializer for memory
+2. Add persistent log (maybe sqlite?)
+3. Make it async???? Do we really need this, or does the logic say
+   it is okay to block on log writes? Certainly raft stuff can, but
+   what about app? Does this choice limit choice of async/thread/mp for
+   overall server architecture?
+
+
 examine all abstract base classes to make sure they have the
 correct __subclasshook__ method logic
 
 add a setup step for comms api to install serializer class instead
 of hard coding to original
 
-clean up log api around storing pending response to client, the whole
-context thing is a fudge, we should be more agressive about log
-data format, probably adding context there.
 
 ---
 Build something to collect and clear unhandled errors in server.py,
@@ -35,70 +116,3 @@ in the base server? (Maybe need to rename "Server" class to something
 like ServerCore?) Find all bad spots in the states and change the
 exception clauses to call this method, execute stop on self and return.
 ---
-
-###### DONE
-Update the log api to have a call that commits each record it adds, cause
-that is always done for log_pull. STUDY THE PROTOCOL, what happens when
-leader has uncommitted record and follower does not, but follower was
-not present when leader sent append?
-###### DONE
-
-##### DONE
-Move the memory log, memory comms to dev_tools.
-##### DONE
-
-###### DONE
-Remove rollback logic if possible once rejoin logic developed.
-###### DONE
-
-Change serializer to an API and rename original
-
-###### DONE
-Examing voting logic in follower, shouldn't it explicitly look for
-wrong term? Or is StateDiff property good enough? Comment in code.
-###### DONE
-
-##### DONE
-See if the Pauser class used in some tests can be universal and in dev_tools
-##### DONE
-
-=================
-Simplify plan:
-
-1. Log changes
-   1. Start Log with 1, as in docs, start term with 0, always incr on candidate
-      PDF: page for state for all servers ###### DONE
-
-   2. Add log record typing, "no-op" for new term, "client" for client command
-      and include client serial number PDF: page 13, section 8
-   3. Change log append api to support append as new index and
-      insert at index, because leader can tell you to overwrite ###### DONE
-
-2. Protocol
-   1. Remove term start message ###### DONE
-   2. Remove "log pull, replace it with regular append entries" ###### DONE
-   3. Convert messages to dataclasses
-   4. Check for leader noting that it is out of date and resigning ###### DONE
-   5. Rework candidate election timeout, currently goes back to follower,
-      should instead restart election, but I think at least one test
-      breaks on this change. Need to fix the test so that logic can
-      match raft.pdf
-
-3. State logic changes:
-   1. Remove rollback, as it is a dumb way to do log overwrite ###### DONE
-   2. Find in PDF the logic on heartbeat when term does not match,
-      fix it in follower and refernce PDF ###### DONE
-   3. Add a flag and wait to ensure no new client command is processed
-      while one is in flight. #### DONE
-   4. Fix the way the client log records are created, get rid of
-      the context thing. Just put the client record inside an envelope
-      with return address info. ### DONE, but differently
-   6. Is there an issue with tracking follower cursor when follower
-       restarts? Do we have to detect it and reset? 
-     
-   
-==== Upgrades =====
-1. Log
-   3. Add serializer logic for log ops, with a dummy serializer for memory
-   4. Make it async
-

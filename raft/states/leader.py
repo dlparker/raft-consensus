@@ -6,6 +6,7 @@ from typing import Union
 import time
 import traceback
 
+from raft.app_api.app import CommandResult
 from raft.log.log_api import LogRec, RecordCode
 from raft.messages.append_entries import AppendEntriesMessage
 from raft.messages.request_vote import RequestVoteResponseMessage
@@ -77,20 +78,43 @@ class Leader(State):
             return
         self.logger.debug("in on_start")
         self.heartbeat_timer.start()
-        if False: # not ready to update tests for this right this minute
-            start_rec = LogRec(RecordCode.no_op,
-                               term=self.term,
-                               user_data=dict(addr=self.server.endpoint,
-                                              time=time.time()))
-            start_rec = self.log.append([start_rec,])
-        await self.send_heartbeat(first=True)
+        await self.insert_term_start()
         self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
         self.task = None
         
     def get_leader_addr(self):
         return self.server.endpoint
-    
+
+    async def insert_term_start(self):
+        rec = LogRec(RecordCode.no_op,
+                     term=self.log.get_term(),
+                     committed=True,
+                     user_data=dict(addr=self.server.endpoint,
+                                    time=time.time()))
+        last_index = self.log.get_last_index()
+        last_term = self.log.get_last_term()
+        self.log.append([rec,])
+        start_rec = self.log.read()
+        # we don't need consensus to commit
+        self.log.commit(start_rec.index)
+        update_message = AppendEntriesMessage(
+            self.server.endpoint,
+            None,
+            self.log.get_term(),
+            {
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
+                "prevLogIndex": last_index,
+                "prevLogTerm": last_term,
+                "entries": [asdict(start_rec),],
+                "leaderCommit": self.log.get_commit_index(),
+            }
+        )
+        self.logger.debug("(term %d) sending log update to all followers: %s",
+                          self.log.get_term(), update_message.data)
+        await self.server.broadcast(update_message)
+        
     async def on_heartbeat_response(self, message):
         self.heartbeat_logger.debug("got heartbeat response from %s",
                                     message.sender)
@@ -343,8 +367,8 @@ class Leader(State):
                               message.data['leaderCommit'])
         else:
             self.heartbeat_logger.debug("sending heartbeat to all term = %s" \
-                                        " prev_term = %s" \
                                         " prev_index = %s" \
+                                        " prev_term = %s" \
                                         " commit = %s",
                                         message.term,
                                         message.data['prevLogIndex'],
@@ -372,8 +396,15 @@ class Leader(State):
             await asyncio.sleep(0.001)
             
         self.command_in_progress = True # will stay true until result sent
-        # call the user app 
-        result = self.server.get_app().execute_command(message.data)
+        # call the user app
+        try:
+            result = self.server.get_app().execute_command(message.data)
+        except:
+            self.logger.error("Client command error on message\n%s %s\n%s",
+                              message, message.data,
+                              traceback.format_exc())
+            result = CommandResult(message.data, None, False,
+                                   traceback.format_exc())
         if not result.log_response:
             # user app does not want to log response
             self.logger.debug("preparing no-log reply for %s",
@@ -386,7 +417,6 @@ class Leader(State):
             await self.server.post_message(reply)
             return True
         self.logger.debug("saving address for reply %s", target)
-
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)

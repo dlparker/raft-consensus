@@ -27,7 +27,7 @@ class Follower(State):
         self.substate = Substate.starting
         self.leaderless_timer = None
         self.last_vote = None
-        self.last_vote_time = None
+        self.last_vote_term = None
         
     def __str__(self):
         return "follower"
@@ -97,7 +97,7 @@ class Follower(State):
             self.leader_addr = laddr
             self.heartbeat_count = 0
             self.last_vote = None
-            self.last_vote_time = None
+            self.last_vote_term = None
             await self.set_substate(Substate.joined)
         if message.term > self.log.get_term():
             self.logger.info("heartbeat -> leader %s term different " \
@@ -292,9 +292,9 @@ class Follower(State):
                                       term=self.log.get_term(),
                                       data=data)
         await self.server.post_message(reply)
-        self.logger.debug("Sent log update ack, local last rec = %d" \
-                         "\nresponse %s",
-                         last_entry_index, data)
+        self.logger.debug("Sent log update ack, local last rec = %d," \
+                          " commit = %d \nresponse %s",
+                          last_entry_index, last_commit, data)
         return True
     
     async def on_vote_request(self, message):
@@ -333,12 +333,15 @@ class Follower(State):
         elif self.last_vote is None:
             self.logger.info("Not voted yet, voting true")
             approve = True
+        elif self.last_vote_term < message.term:
+            self.logger.info("Old vote for old term, voting true")
+            approve = True
         elif self.last_vote == message.sender:
             self.logger.info("last vote matches sender %s", message.sender)
             approve = True
         if approve:
             self.last_vote = message.sender
-            self.last_vote_time = time.time()
+            self.last_vote_term = message.term
             self.logger.info("voting true")
             await self.send_vote_response_message(message, votedYes=True)
             self.logger.info("resetting leaderless_timer on vote done")
@@ -346,9 +349,9 @@ class Follower(State):
         else:
             self.logger.info("voting false on message %s %s",
                              message, message.data)
-            self.logger.info("my last vote = %s", self.last_vote)
+            self.logger.info("my last vote = %s, index %d, last term %d",
+                             self.last_vote, last_index, last_term)
             await self.send_vote_response_message(message, votedYes=False)
-            self.last_vote_time = time.time()
         return True
         
     async def on_client_command(self, message):
