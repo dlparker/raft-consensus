@@ -1,38 +1,3 @@
-############# DONE
-Review and document new message times and ensure that they
-actually improve things compared to the more limited set defined
-in the raft paper. Do a side by side sequence diagram to identify
-where my messages take the place of appendentries messages with
-specific values and follower states.
-############# DONE
-
-
-
-###### DONE
-Update the log api to have a call that commits each record it adds, cause
-that is always done for log_pull. STUDY THE PROTOCOL, what happens when
-leader has uncommitted record and follower does not, but follower was
-not present when leader sent append?
-###### DONE
-
-##### DONE
-Move the memory log, memory comms to dev_tools.
-##### DONE
-
-###### DONE
-Remove rollback logic if possible once rejoin logic developed.
-###### DONE
-
-
-###### DONE
-Examing voting logic in follower, shouldn't it explicitly look for
-wrong term? Or is StateDiff property good enough? Comment in code.
-###### DONE
-
-##### DONE
-See if the Pauser class used in some tests can be universal and in dev_tools
-##### DONE
-
 =================
 Simplify plan:
 
@@ -49,14 +14,14 @@ Simplify plan:
 2. Protocol
  ###### DONE
    1. Remove term start message
-   2. Remove "log pull, replace it with regular append entries" ###### DONE
+   2. Remove "log pull, replace it with regular append entries"
    4. Check for leader noting that it is out of date and resigning
-###### DONE
-   3. Convert messages to dataclasses allow error in client command result
    5. Rework candidate election timeout, currently goes back to follower,
       should instead restart election, but I think at least one test
       breaks on this change. Need to fix the test so that logic can
       match raft.pdf
+###### DONE
+   3. Convert messages to dataclasses allow error in client command result
 
 3. State logic changes:
 ###### DONE
@@ -116,3 +81,41 @@ in the base server? (Maybe need to rename "Server" class to something
 like ServerCore?) Find all bad spots in the states and change the
 exception clauses to call this method, execute stop on self and return.
 ---
+
+
+
+############# DONE
+Review and document new message times and ensure that they
+actually improve things compared to the more limited set defined
+in the raft paper. Do a side by side sequence diagram to identify
+where my messages take the place of appendentries messages with
+specific values and follower states.
+############# DONE
+
+
+
+###### DONE
+Update the log api to have a call that commits each record it adds, cause
+that is always done for log_pull. STUDY THE PROTOCOL, what happens when
+leader has uncommitted record and follower does not, but follower was
+not present when leader sent append?
+###### DONE
+
+##### DONE
+Move the memory log, memory comms to dev_tools.
+##### DONE
+
+###### DONE
+Remove rollback logic if possible once rejoin logic developed.
+###### DONE
+
+
+###### DONE
+Examing voting logic in follower, shouldn't it explicitly look for
+wrong term? Or is StateDiff property good enough? Comment in code.
+###### DONE
+
+##### DONE
+See if the Pauser class used in some tests can be universal and in dev_tools
+##### DONE
+

@@ -72,20 +72,21 @@ class Candidate(State):
         # needs to be follower for a vote to pass. This is how
         # you would code it that way, if you thought it should be
         # done. I'm not convinced.
-        #if RESTART_ON_TIMEOUT:  # implied by raft.pdf, not clear
-        #    self.logger.info("candidate starting new election because timer ended")
+        if True:
+            # implied by raft.pdf, not clear
+            self.logger.info("candidate starting new election because timer ended")
             # change the interval
-        #    await self.candidate_timer.stop()
-        #    self.election_timeout = self.candidate_interval()
-        #    self.candidate_timer = self.server.get_timer("candidate-interval",
-        #                                                 self.log.get_term(),
-        #                                                 self.election_timeout,
-        #                                                 self.on_timer)
-        #    self.candidate_timer.start()
-        #    await self.start_election()
-        #else:
-        await self.resign()
-        return True
+            await self.candidate_timer.stop()
+            self.election_timeout = self.candidate_interval()
+            self.candidate_timer = self.server.get_timer("candidate-interval",
+                                                         self.log.get_term(),
+                                                         self.election_timeout,
+                                                         self.on_timer)
+            self.candidate_timer.start()
+            await self.start_election()
+        else:
+            await self.resign()
+        return 
 
     async def on_vote_received(self, message):
         # reset timer

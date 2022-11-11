@@ -18,13 +18,14 @@ from raft.states.base_state import Substate, StateCode
 from raft.dev_tools.bt_client import MemoryBankTellerClient
 from raft.dev_tools.ps_cluster import PausingServerCluster
 from raft.dev_tools.pausing_app import PausingMonitor, PFollower, PLeader
+from raft.dev_tools.pausing_app import PCandidate
 from raft.dev_tools.timer_wrapper import get_all_timer_sets
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-timeout_basis = 0.2
+timeout_basis = 0.1
 
 class ExplodingLeader(PLeader):
 
@@ -54,6 +55,16 @@ class ExplodingFollower(PFollower):
         self.leaderless_timer.allow_failed_terminate = True
         raise Exception('boom')
 
+class ReportingCandidate(PCandidate):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.restarted = False
+
+    async def on_timer(self):
+        await super().on_timer()
+        self.restarted = True
+
 class ExplodingMonitor(PausingMonitor):
 
     def __init__(self, orig_monitor):
@@ -68,6 +79,7 @@ class ExplodingMonitor(PausingMonitor):
         self.explode = False
         self.leader = None
         self.follower = None
+        self.candidate = None
         
     async def new_state(self, state_map, old_state, new_state):
         if new_state.code == StateCode.leader and self.explode:
@@ -80,10 +92,15 @@ class ExplodingMonitor(PausingMonitor):
                                            new_state.timeout)
             self.follower = new_state
             return new_state
+        if new_state.code == StateCode.candidate:
+            new_state = ReportingCandidate(new_state.server,
+                                           new_state.timeout)
+            self.candidate = new_state
+            return new_state
         new_state = await super().new_state(state_map, old_state, new_state)
         return new_state
     
-class TestOddMsgArrivals(unittest.TestCase):
+class TestOddMsgs(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -110,7 +127,7 @@ class TestOddMsgArrivals(unittest.TestCase):
         time.sleep(0.1)
         self.loop.close()
 
-    def preamble(self, slow=False):
+    def preamble(self, slow=False, use_exploder=False):
         if slow:
             tb = 1.0
         else:
@@ -120,19 +137,23 @@ class TestOddMsgArrivals(unittest.TestCase):
         # to pause in candidate state
         spec = servers["server_0"]
         monitor = spec.monitor
+        if use_exploder:
+            spec.monitor = monitor = ExplodingMonitor(monitor)
+            spec.pbt_server.replace_monitor(monitor)
         monitor.set_pause_on_substate(Substate.voting)
         self.cluster.start_one_server("server_0")
         self.logger.info("waiting for switch to candidate")
         start_time = time.time()
-        while time.time() - start_time < 3:
+        while time.time() - start_time < 10 * timeout_basis:
             # servers are in their own threads, so
             # blocking this one is fine
-            time.sleep(0.05)
+            time.sleep(0.01)
             if monitor.state is not None:
                 if str(monitor.state) == "candidate":
                     if monitor.substate == Substate.voting:
                         if monitor.pbt_server.paused:
                             break
+        
         self.assertEqual(monitor.substate, Substate.voting)
         self.assertTrue(monitor.pbt_server.paused)
         return spec
@@ -176,7 +197,6 @@ class TestOddMsgArrivals(unittest.TestCase):
         self.logger.info("State did not change, test passed, cleaning up")
         monitor.clear_pause_on_substate(Substate.voting)
         self.loop.run_until_complete(spec.pbt_server.resume_all())
-        
         
     def test_b_msg_ignores(self):
         spec = self.preamble()
@@ -288,15 +308,15 @@ class TestOddMsgArrivals(unittest.TestCase):
         monitor.clear_pause_on_substate(Substate.voting)
         monitor.set_pause_on_substate(Substate.leader_lost)
         self.loop.run_until_complete(spec.pbt_server.resume_all())
+        self.loop.run_until_complete(method())
         async def wait_for_pause():
             start_time = time.time()
-            while time.time() - start_time < 0.5:
+            while time.time() - start_time < timeout_basis * 2:
                 await asyncio.sleep(0.001)
                 if spec.pbt_server.paused:
                     return
             raise Exception("timeout waiting for pause")
         self.loop.run_until_complete(wait_for_pause())
-        self.loop.run_until_complete(method())
         monitor.clear_pause_on_substate(Substate.leader_lost)
 
     def test_b_heartbeat_resign(self):
@@ -347,15 +367,16 @@ class TestOddMsgArrivals(unittest.TestCase):
         self.loop.run_until_complete(spec.pbt_server.resume_all())
 
     def test_c_on_timer(self):
-        spec = self.preamble()
+        spec = self.preamble(use_exploder=True)
         monitor = spec.monitor
         candidate = monitor.state
         async def try_on_timer():
+            monitor.clear_substate_pauses()
+            await spec.pbt_server.resume_all()
             await candidate.on_timer()
             await asyncio.sleep(0)
-        self.release_to_resign(spec, try_on_timer)
-        self.assertFalse(monitor.state == candidate)
-        self.loop.run_until_complete(spec.pbt_server.resume_all())
+        self.loop.run_until_complete(try_on_timer())
+        self.assertTrue(candidate.restarted)
         
     def test_b_on_append(self):
         spec = self.preamble()

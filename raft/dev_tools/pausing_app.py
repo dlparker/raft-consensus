@@ -362,6 +362,11 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.paused = False
         self.do_resume = False
 
+    def replace_monitor(self, monitor):
+        self.state_map.remove_state_change_monitor(self.monitor)
+        self.monitor = monitor
+        self.state_map.add_state_change_monitor(self.monitor)
+        
     async def pause_all(self, trigger_type, trigger_data):
         timer_set = get_timer_set()
         await timer_set.pause_all()
