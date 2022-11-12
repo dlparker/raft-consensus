@@ -223,7 +223,7 @@ class TestOddPaths(unittest.TestCase):
                                          {
                                              "success": True,
                                              "last_entry_index": 0,
-                                          })
+                                          }, 0, 0, 0)
             await leader.on_append_response(resp)
             await asyncio.sleep(0.01)
         self.loop.run_until_complete(do_strange_arm1())
@@ -244,7 +244,7 @@ class TestOddPaths(unittest.TestCase):
                                              "success": True,
                                              "last_entry_index": 3,
                                              "leaderCommit": 0,
-                                         })
+                                         }, 0, 0, 0)
             await leader.on_append_response(resp)
             await asyncio.sleep(0.01)
         self.loop.run_until_complete(do_strange_arm2())
@@ -292,7 +292,7 @@ class TestOddPaths(unittest.TestCase):
             msg = AppendEntriesMessage((0,1),
                                          (0,0),
                                          term,
-                                         {})
+                                         {}, 0, 0, 0)
             await leader.on_append_entries(msg)
             await asyncio.sleep(0.01)
         self.loop.run_until_complete(do_append_entries())
@@ -311,9 +311,9 @@ class TestOddPaths(unittest.TestCase):
 
         async def do_beat():
             msg = HeartbeatMessage((0,1),
-                                             (0,0),
-                                             term,
-                                             {})
+                                   (0,0),
+                                   term,
+                                   {}, 0, 0, 0)
             await leader.on_heartbeat(msg)
             await asyncio.sleep(0.01)
         self.loop.run_until_complete(do_beat())
@@ -336,7 +336,7 @@ class TestOddPaths(unittest.TestCase):
             message = RequestVoteMessage(('localhost',5001),
                                          ('localhost',5000),
                                          term,
-                                         {})
+                                         {}, 0, 0, 0)
             await leader.on_vote_request(message)
             await asyncio.sleep(0.01)
             start_time = time.time()

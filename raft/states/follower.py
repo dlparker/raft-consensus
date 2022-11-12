@@ -217,15 +217,15 @@ class Follower(State):
 
     async def do_bad_append(self, message):
         data = dict(success=False,
-                    prevLogIndex=message.prevLogIndex,
-                    prevLogTerm=message.prevLogTerm,
                     last_index=self.log.get_last_index(),
-                    last_term=self.log.get_last_term(),
-                    leaderCommit=message.leaderCommit)
+                    last_term=self.log.get_last_term())
         reply = AppendResponseMessage(message.receiver,
                                       message.sender,
                                       term=self.log.get_term(),
-                                      data=data)
+                                      data=data,
+                                      prevLogTerm=message.prevLogTerm,
+                                      prevLogIndex=message.prevLogIndex,
+                                      leaderCommit=message.leaderCommit)
         
         await self.server.post_message(reply)
         await self.set_substate(Substate.out_of_sync)
@@ -246,15 +246,16 @@ class Follower(State):
         data = dict(success=True,
                     last_index=self.log.get_last_index(),
                     last_term=self.log.get_last_term(),
-                    prevLogIndex=message.prevLogIndex,
-                    prevLogTerm=message.prevLogTerm,
-                    leaderCommit=message.leaderCommit,
                     commit_only=True)
         
         reply = AppendResponseMessage(message.receiver,
                                       message.sender,
                                       term=self.log.get_term(),
-                                      data=data)
+                                      data=data,
+                                      prevLogIndex=message.prevLogIndex,
+                                      prevLogTerm=message.prevLogTerm,
+                                      leaderCommit=message.leaderCommit)
+
         await self.server.post_message(reply)
         self.logger.debug("Sent log commit ack\nresponse %s", data)
         return True
@@ -283,14 +284,15 @@ class Follower(State):
         data = dict(success=True,
                     last_entry_index=last_entry_index,
                     last_index=self.log.get_last_index(),
-                    last_term=self.log.get_last_term(),
-                    prevLogIndex=message.prevLogIndex,
-                    prevLogTerm=message.prevLogTerm,
-                    leaderCommit=message.leaderCommit)
+                    last_term=self.log.get_last_term())
         reply = AppendResponseMessage(message.receiver,
                                       message.sender,
                                       term=self.log.get_term(),
-                                      data=data)
+                                      data=data,
+                                      prevLogIndex=message.prevLogIndex,
+                                      prevLogTerm=message.prevLogTerm,
+                                      leaderCommit=message.leaderCommit)
+                                      
         await self.server.post_message(reply)
         self.logger.debug("Sent log update ack, local last rec = %d," \
                           " commit = %d \nresponse %s",

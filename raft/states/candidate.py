@@ -155,10 +155,10 @@ class Candidate(State):
             {
                 "leaderId": self.server.name,
                 "leaderPort": None,
-                "prevLogIndex": last_index,
-                "prevLogTerm": last_term,
-                "leaderCommit": self.log.get_commit_index(),
-            }
+            },
+            last_term,
+            last_index,
+            self.log.get_commit_index()
         )
         await self.server.broadcast(election)
         await self.set_substate(Substate.voting)

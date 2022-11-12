@@ -207,9 +207,9 @@ class TestOddMsgs(unittest.TestCase):
         status = client.get_status()
         self.assertIsNotNone(status)
         tsm = RequestVoteMessage(("localhost", 5001),
-                               ("localhost", 5000),
-                               0,
-                               {})
+                                 ("localhost", 5000),
+                                 0,
+                                 {}, 0, 0, 0)
         self.logger.info("Sending request vote message" \
                          " expecting no error ignore")
         client.direct_message(tsm)
@@ -217,7 +217,7 @@ class TestOddMsgs(unittest.TestCase):
         tsm = AppendResponseMessage(("localhost", 5001),
                                     ("localhost", 5000),
                                     0,
-                                    {})
+                                    {}, 0, 0, 0)
         self.logger.info("Sending AppendEntries response message" \
                          " expecting no error ignore")
         client.direct_message(tsm)
@@ -249,7 +249,7 @@ class TestOddMsgs(unittest.TestCase):
         hbm = HeartbeatMessage(("localhost", 5001),
                                ("localhost", 5000),
                                0,
-                               {})
+                               {},0,0,0)
         self.logger.info("Sending heartbeat message expecting reject")
         client.direct_message(hbm)
         self.assertEqual(len(server.get_unhandled_errors()), 0)
@@ -320,7 +320,7 @@ class TestOddMsgs(unittest.TestCase):
         monitor.clear_pause_on_substate(Substate.leader_lost)
 
     def test_b_heartbeat_resign(self):
-        spec = self.preamble(slow=True)
+        spec = self.preamble()
         monitor = spec.monitor
         candidate = monitor.state
         async def try_heartbeat():
@@ -330,13 +330,11 @@ class TestOddMsgs(unittest.TestCase):
                                    {
                                        "leaderId": "server_1",
                                        "leaderPort": ("localhost", 5001),
-                                       "prevLogIndex": None,
-                                       "prevLogTerm": None,
                                        "entries": [],
-                                       "leaderCommit": None,
-                                   })
+                                   }, 0, 0, 0)
+
             await candidate.on_heartbeat(hbm)
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.01)
         monitor.clear_pause_on_substate(Substate.voting)
         monitor.set_pause_on_substate(Substate.leader_lost)
         self.loop.run_until_complete(spec.pbt_server.resume_all())
@@ -355,11 +353,8 @@ class TestOddMsgs(unittest.TestCase):
                                        {
                                            "leaderId": "server_1",
                                            "leaderPort": ("localhost", 5001),
-                                           "prevLogIndex": None,
-                                           "prevLogTerm": None,
                                            "entries": [],
-                                           "leaderCommit": None,
-                                       })
+                                       }, 0, 0, 0)
             await candidate.on_append_entries(aem)
             await asyncio.sleep(0)
         self.release_to_resign(spec, try_append)
@@ -389,11 +384,8 @@ class TestOddMsgs(unittest.TestCase):
                                        {
                                            "leaderId": "server_1",
                                            "leaderPort": ("localhost", 5001),
-                                           "prevLogIndex": None,
-                                           "prevLogTerm": None,
                                            "entries": [],
-                                           "leaderCommit": None,
-                                       })
+                                       }, 0, 0, 0)
             await candidate.on_append_entries(aem)
             await asyncio.sleep(0)
         self.release_to_resign(spec, try_append)

@@ -105,11 +105,9 @@ class Leader(State):
             {
                 "leaderId": self.server.name,
                 "leaderPort": self.server.endpoint,
-                "prevLogIndex": last_index,
-                "prevLogTerm": last_term,
                 "entries": [asdict(start_rec),],
-                "leaderCommit": self.log.get_commit_index(),
-            }
+            },
+            last_term, last_index, self.log.get_commit_index(),
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
                           self.log.get_term(), update_message.data)
@@ -283,12 +281,10 @@ class Leader(State):
             {
                 "leaderId": self.server.name,
                 "leaderPort": self.server.endpoint,
-                "prevLogIndex": prev_index,
-                "prevLogTerm": prev_term,
                 "entries": [],
-                "leaderCommit": prev_index,
                 "commitOnly": True
-            }
+            },
+            prev_term, prev_index, prev_index
         )
         self.logger.debug("(term %d) sending AppendEntries commit %d to all" \
                           " followers: %s",
@@ -323,11 +319,9 @@ class Leader(State):
             {
                 "leaderId": self.server.name,
                 "leaderPort": self.server.endpoint,
-                "prevLogIndex": prev_index,
-                "prevLogTerm": prev_term,
                 "entries": entries,
-                "leaderCommit": self.log.get_commit_index(),
-            }
+            },
+            prev_term, prev_index, self.log.get_commit_index()
         )
         cursor = self.get_cursor(addr)
         cursor.last_sent_index = entries[-1]['index']
@@ -346,37 +340,38 @@ class Leader(State):
         data = {
             "leaderId": self.server.name,
             "leaderPort": self.server.endpoint,
-            "prevLogIndex": self.log.get_last_index(),
-            "prevLogTerm": self.log.get_last_term(),
             "entries": [],
-            "leaderCommit": self.log.get_commit_index(),
             }
         if first:
             data["first_in_term"] = True
 
         message = HeartbeatMessage(self.server.endpoint, None,
-                                   self.log.get_term(), data)
+                                   self.log.get_term(), data,
+                                   self.log.get_last_term(),
+                                   self.log.get_last_index(),
+                                   self.log.get_commit_index())
+                                   
         if first:
             self.logger.debug("sending heartbeat to all term = %s" \
                               " prev_index = %s" \
                               " prev_term = %s" \
                               " commit = %s",
                               message.term,
-                              message.data['prevLogIndex'],
-                              message.data['prevLogTerm'],
-                              message.data['leaderCommit'])
+                              message.prevLogIndex,
+                              message.prevLogTerm,
+                              message.leaderCommit)
         else:
             self.heartbeat_logger.debug("sending heartbeat to all term = %s" \
                                         " prev_index = %s" \
                                         " prev_term = %s" \
                                         " commit = %s",
                                         message.term,
-                                        message.data['prevLogIndex'],
-                                        message.data['prevLogTerm'],
-                                        message.data['leaderCommit'])
+                                        message.prevLogIndex,
+                                        message.prevLogTerm,
+                                        message.leaderCommit)
         await self.server.broadcast(message)
         self.heartbeat_logger.debug("sent heartbeat to all commit = %s",
-                                    message.data['leaderCommit'])
+                                    message.leaderCommit)
         await self.set_substate(Substate.sent_heartbeat)
         self.last_hb_time = time.time()
 
@@ -403,7 +398,7 @@ class Leader(State):
             self.logger.error("Client command error on message\n%s %s\n%s",
                               message, message.data,
                               traceback.format_exc())
-            result = CommandResult(message.data, None, False,
+            result = CommandResult(message.data, None, False, None,
                                    traceback.format_exc())
         if not result.log_response:
             # user app does not want to log response
@@ -435,11 +430,9 @@ class Leader(State):
             {
                 "leaderId": self.server.name,
                 "leaderPort": self.server.endpoint,
-                "prevLogIndex": last_index,
-                "prevLogTerm": last_term,
                 "entries": [asdict(new_rec),],
-                "leaderCommit": self.log.get_commit_index(),
-            }
+            },
+            last_term, last_index, self.log.get_commit_index()
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
                           self.log.get_term(), update_message.data)
@@ -483,11 +476,9 @@ class Leader(State):
             {
                 "leaderId": self.server.name,
                 "leaderPort": self.server.endpoint,
-                "prevLogIndex": last_index,
-                "prevLogTerm": last_term,
                 "entries": [asdict(new_rec),],
-                "leaderCommit": self.log.get_commit_index(),
-            }
+            },
+            last_term, last_index, self.log.get_commit_index()
         )
         self.logger.debug("(term %d) sending log update to all followers: %s",
                           self.log.get_term(), update_message.data)

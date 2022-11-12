@@ -33,6 +33,10 @@ class BaseMessage:
     def get_code(cls):
         return cls._code
 
+    @classmethod
+    def get_extra_fields(cls):
+        return []
+
     def set_msg_number(self, number):
         self._msg_number = number
         
@@ -70,28 +74,7 @@ class BaseMessage:
         return self._term
 
     @property
-    def original_sender(self):
-        return self._original_sender
-
-    @property
     def msg_number(self):
         return self._msg_number
-
-    @property
-    def prevLogIndex(self):
-        """ This will only work on certain message types, namely
-        heartbeats and AppendEntries """
-        return self._data["prevLogIndex"]
-
-    @property
-    def prevLogTerm(self):
-        """ This will only work on certain message types, namely
-        heartbeats and AppendEntries """
-        return self._data["prevLogTerm"]
-    
-    @property
-    def leaderCommit(self):
-        """ This will only work on AppendEntries messages """
-        return self._data["leaderCommit"]
     
 

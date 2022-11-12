@@ -5,11 +5,17 @@ class RequestVoteMessage(BaseMessage):
 
     _code = "request_vote"
 
-    def __init__(self, sender, receiver, term, data):
+    def __init__(self, sender, receiver, term, data,
+                 prevLogTerm, prevLogIndex, leaderCommit):
+        self.prevLogTerm = prevLogTerm
+        self.prevLogIndex = prevLogIndex
+        self.leaderCommit = leaderCommit
         BaseMessage.__init__(self, sender, receiver, term, data)
 
-    def __str__(self):
-        return f"{self._code} from {self._sender} to {self._receiver} term {self._term} data {self._data}"
+    @classmethod
+    def get_extra_fields(cls):
+        return ["prevLogTerm", "prevLogIndex", "leaderCommit"]
+
 
 class RequestVoteResponseMessage(BaseMessage):
 
@@ -18,5 +24,3 @@ class RequestVoteResponseMessage(BaseMessage):
     def __init__(self, sender, receiver, term, data):
         BaseMessage.__init__(self, sender, receiver, term, data)
 
-    def __str__(self):
-        return f"{self._code} from {self._sender} to {self._receiver} term {self._term} data {self._data}"

@@ -37,28 +37,14 @@ class TestUtils(unittest.TestCase):
 
         from raft.messages.base_message import BaseMessage
         from raft.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
-        b_msg = BaseMessage('1', '2', 0, "{'x':1}", '3')
-        str_version = str(b_msg)
-        dict_version = b_msg.props_as_dict()
-        for key,value in dict_version.items():
-            if key in ['data', 'original_sender']:
-                continue
-            self.assertTrue(str(value) in str_version)
-        # these two have the data in the string rep
-        rv_msg = RequestVoteMessage('1', '2', 0, "{'x':1}")
+        # Just make sure they don't blow up on init
+        rv_msg = RequestVoteMessage('1', '2', 0, "{'x':1}", 0,0,0 )
         rvr_msg = RequestVoteResponseMessage('1', '2', 0, "{'x':1}")
-        for t_msg in [rv_msg, rvr_msg]:
-            str_version = str(t_msg)
-            dict_version = t_msg.props_as_dict()
-            for key,value in dict_version.items():
-                if key in ['original_sender']:
-                    continue
-                self.assertTrue(str(value) in str_version)
         
         regy = get_message_registry()
         hb_c = regy.get_message_class("heartbeat")
         self.assertIsNotNone(hb_c)
-        msg = hb_c('1', '2', 0, "{'x':1}")
+        msg = hb_c('1', '2', 0, "{'x':1}", 0, 0, 0)
         # dummy objects to get follower to init enough
         # to use it as a handler source 
         class ftimer:
@@ -114,7 +100,7 @@ class TestUtils(unittest.TestCase):
         # debug logging
         # get to BaseMessage through RequestVoteMessage
         from raft.messages.request_vote import RequestVoteMessage
-        msg = RequestVoteMessage("sender", "target", 10, "data")
+        msg = RequestVoteMessage("sender", "target", 10, "data", 0,0,0)
         self.assertTrue("sender" in str(msg))
         self.assertTrue("target" in str(msg))
         self.assertTrue("10" in str(msg))
