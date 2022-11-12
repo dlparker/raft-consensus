@@ -140,7 +140,14 @@ class TestUtils(unittest.TestCase):
         data = MsgpackSerializer.serialize_logrec(lrec1)
         lrec2 = MsgpackSerializer.deserialize_logrec(data)
         self.assertEqual(lrec1.__dict__, lrec2.__dict__)
-                       
+
+        # this is trivial but it needs testing all the same
+        in1 = dict(a=1,b=2)
+        data = JsonSerializer.serialize_dict(in1)
+        out1 = JsonSerializer.deserialize_dict(data)
+        self.assertEqual(in1, out1)
+        data = MsgpackSerializer.serialize_dict(in1)
+        out1 = MsgpackSerializer.deserialize_dict(data)
         
         
 class TestTimer(unittest.TestCase):
