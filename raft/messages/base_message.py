@@ -43,16 +43,6 @@ class BaseMessage:
     def is_type(self, type_val):
         return self._code == type_val
 
-    def props_as_dict(self):
-        res = dict(code=self._code,
-                   sender=self._sender,
-                   receiver=self._receiver,
-                   term=self._term,
-                   data=self._data)
-        if self._original_sender:
-            res['original_sender'] = self._original_sender
-        return res
-
     @property
     def code(self):
         return self._code
@@ -72,9 +62,5 @@ class BaseMessage:
     @property
     def term(self):
         return self._term
-
-    @property
-    def msg_number(self):
-        return self._msg_number
     
 

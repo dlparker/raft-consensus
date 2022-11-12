@@ -17,6 +17,7 @@ from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.states.follower import Follower
 from raft.serializers.msgpack import MsgpackSerializer
+from raft.serializers.json import JsonSerializer
 from bank_teller.bank_app import BankingApp
 from raft.dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from raft.dev_tools.memory_log import MemoryLog
@@ -247,9 +248,10 @@ class ServerThread(threading.Thread):
     def go(self):
         self.ready = True
         
-    def configure(self):
+    def configure(self, serializer_class=MsgpackSerializer):
         if self.server:
             return
+        
         self.logger.info('creating server')
         cc = ClusterConfig(name=self.bt_server.name,
                            endpoint=self.bt_server.endpoint,
@@ -260,7 +262,7 @@ class ServerThread(threading.Thread):
                                       log=self.bt_server.data_log,
                                       comms=self.bt_server.comms,
                                       state_map=self.bt_server.state_map,
-                                      serializer=MsgpackSerializer())
+                                      serializer=serializer_class())
         self.server = Server(live_config=self.live_config)
         self.server.set_timer_class(ControlledTimer)
         self.server.get_endpoint()

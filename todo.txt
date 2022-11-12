@@ -22,7 +22,6 @@ Simplify plan:
       match raft.pdf
    3. DID DIFFERENTLY Convert messages to dataclasses allow
       error in client command result
-   
 ###### DONE
 
 3. State logic changes:
@@ -43,11 +42,14 @@ Simplify plan:
       it can hang server (ask me how I know)
    
 ==== Serializer Upgrades =====
+#### DONE
 1. Change serializer to an API and rename original. Have serialize
    to bytes and serialize to string.
 2. Make a json serializer as a real example.
-3. Add serializer registry so that messages and log records can find
-   the right serializer for app data by lookup.
+3. DONE, but differently, by adding a config class to server startup
+  that specifies the serializer class
+       Add serializer registry so that messages and log records can find
+        the right serializer for app data by lookup.
 
 ==== Log Upgrades =====
 
