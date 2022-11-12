@@ -8,12 +8,16 @@ import os
 import pytest
 
 #from raft.dev_tools.timer import get_timer_set, ControlledTimer
-from raft.log.log_api import LogRec
+from raft.log.log_api import LogRec, RecordCode
 from raft.dev_tools.timer_wrapper import get_timer_set, ControlledTimer
 from raft.dev_tools.memory_log import MemoryLog
 from raft.utils.timer import Timer
 from raft.states.follower import Follower
 from raft.messages.regy import get_message_registry
+from raft.serializers.json import JsonSerializer
+from raft.serializers.msgpack import MsgpackSerializer
+from raft.messages.heartbeat import HeartbeatMessage
+from raft.messages.heartbeat import HeartbeatResponseMessage
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -80,9 +84,7 @@ class TestUtils(unittest.TestCase):
         sqr_h = regy.get_handler(msg, fo)
         self.assertIsNone(sqr_h)
         all_classes = regy.get_message_classes()
-        from raft.messages.heartbeat import HeartbeatMessage
         self.assertTrue(HeartbeatMessage in all_classes)
-        from raft.messages.heartbeat import HeartbeatResponseMessage
         # this should be legal, a re-register
         regy.register_message_class(HeartbeatMessage, "on_heartbeat_response")
         # this should not, conflicting values
@@ -112,6 +114,35 @@ class TestUtils(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             new_msg = Serializer.deserialize_message(bad_data)
 
+    def test_serializers(self):
+        hb1 = HeartbeatMessage('1', '2', 0, "{'x':1}", 0, 0, 0)
+        data = MsgpackSerializer.serialize_message(hb1)
+        hb2 = MsgpackSerializer.deserialize_message(data)
+        self.assertEqual(hb2.__dict__, hb1.__dict__)
+        data = JsonSerializer.serialize_message(hb1)
+        hb2 = JsonSerializer.deserialize_message(data)
+        self.assertEqual(hb2.__dict__, hb1.__dict__)
+        # Note that serialize deserialize might conver tuple
+        # to list, so we make sure listeners value goes in
+        # as list just so round trip results will compare.
+        # Real code that uses these results would have to sanitize
+        # if tuples are needed, as does happen in udp and memory
+        # comms modules.
+        lrec1 = LogRec(code=RecordCode.no_op,
+                       index=None,
+                       term=1,
+                       committed=True,
+                       user_data={"a": 1, "b": 2},
+                       listeners = [['client', ['localhost', 1]],])
+        data = JsonSerializer.serialize_logrec(lrec1)
+        lrec2 = JsonSerializer.deserialize_logrec(data)
+        self.assertEqual(lrec1.__dict__, lrec2.__dict__)
+        data = MsgpackSerializer.serialize_logrec(lrec1)
+        lrec2 = MsgpackSerializer.deserialize_logrec(data)
+        self.assertEqual(lrec1.__dict__, lrec2.__dict__)
+                       
+        
+        
 class TestTimer(unittest.TestCase):
 
     def setUp(self):

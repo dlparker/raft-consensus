@@ -1,12 +1,12 @@
 from typing import Union
 from dataclasses import asdict
-import msgpack
-from raft.messages.base_message import BaseMessage
+import json
 from raft.log.log_api import LogRec
+from raft.messages.base_message import BaseMessage
 from raft.messages.regy import get_message_registry
 from raft.serializers.api import SerializerAPI
 
-class MsgpackSerializer:
+class JsonSerializer:
 
     @staticmethod
     def serialize_message(message: BaseMessage) -> Union[bytes, str]:
@@ -19,11 +19,11 @@ class MsgpackSerializer:
         }
         for key in message.get_extra_fields():
             data[key] = getattr(message, key)
-        return msgpack.packb(data, use_bin_type=True)
+        return json.dumps(data).encode('utf-8')
 
     @staticmethod
     def deserialize_message(data: Union[bytes, str]) -> BaseMessage:
-        message = msgpack.unpackb(data, use_list=True, encoding='utf-8')
+        message = json.loads(data.decode('utf-8'))
         mcode = message['code']
         regy = get_message_registry()
         cls =  regy.get_message_class(mcode)
@@ -37,19 +37,21 @@ class MsgpackSerializer:
             
         res = cls(*args)
         return res
+    
 
     def serialize_logrec(rec: LogRec) -> Union[bytes, str]:
         data = asdict(rec)
-        return msgpack.packb(data, use_bin_type=True)
+        return json.dumps(data).encode('utf-8')
         
     def deserialize_logrec(data: Union[bytes, str]) -> LogRec:
-        rec_data = msgpack.unpackb(data, use_list=True, encoding='utf-8')
+        rec_data = json.loads(data.decode('utf-8'))
         return LogRec.from_dict(rec_data)
     
     def serialize_dict(user_dict: dict) -> Union[bytes, str]:
-        return msgpack.packb(user_dict, use_bin_type=True)
+        return json.dumps(user_dict).encode('utf-8')
 
     def deserialize_dict(data: Union[bytes, str]) -> dict:
-        return msgpack.unpackb(data, use_list=True, encoding='utf-8')
+        return json.loads(data.decode('utf-8'))
 
+    
     

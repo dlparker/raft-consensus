@@ -10,11 +10,13 @@ import multiprocessing
 from logging.config import dictConfig
 
 import raft
+from raft.servers.server_config import LiveConfig, ClusterConfig
 from raft.servers.server import Server
 from raft.comms.udp import UDPComms
 from raft.states.state_map import StandardStateMap
 from raft.app_api.app import StateChangeMonitor
 from raft.states.follower import Follower
+from raft.serializers.msgpack import MsgpackSerializer
 from bank_teller.bank_app import BankingApp
 from raft.dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from raft.dev_tools.memory_log import MemoryLog
@@ -96,11 +98,16 @@ class UDPBankTellerServer:
             logger.info('creating server')
             endpoint = (self.host, self.port)
             app = BankingApp()
-            server = Server(name=f"{endpoint}", state_map=state_map,
-                            log=data_log, other_nodes=self.others,
-                            endpoint=endpoint,
-                            comms=UDPComms(),
-                            app=app)
+            cc = ClusterConfig(name=f"{endpoint}",
+                          endpoint=endpoint,
+                          other_nodes=self.others)
+            self.live_config = LiveConfig(cluster=cc,
+                                          working_dir=self.working_dir,
+                                          app=app, log=data_log,
+                                          comms=UDPComms(),
+                                          state_map=state_map,
+                                          serializer=MsgpackSerializer())
+            server = Server(live_config=self.live_config)
             server.start()
             logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
         except :
@@ -244,13 +251,17 @@ class ServerThread(threading.Thread):
         if self.server:
             return
         self.logger.info('creating server')
-        self.server = Server(name=self.bt_server.name,
-                             state_map=self.bt_server.state_map,
-                             log=self.bt_server.data_log,
-                             other_nodes=self.bt_server.other_nodes,
-                             endpoint=self.bt_server.endpoint,
-                             comms=self.bt_server.comms,
-                             app=self.bt_server.app)
+        cc = ClusterConfig(name=self.bt_server.name,
+                           endpoint=self.bt_server.endpoint,
+                           other_nodes=self.bt_server.other_nodes)
+        self.live_config = LiveConfig(cluster=cc,
+                                      working_dir=self.bt_server.working_dir,
+                                      app=self.bt_server.app,
+                                      log=self.bt_server.data_log,
+                                      comms=self.bt_server.comms,
+                                      state_map=self.bt_server.state_map,
+                                      serializer=MsgpackSerializer())
+        self.server = Server(live_config=self.live_config)
         self.server.set_timer_class(ControlledTimer)
         self.server.get_endpoint()
         

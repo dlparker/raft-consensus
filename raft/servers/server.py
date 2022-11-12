@@ -5,23 +5,25 @@ import logging
 import traceback
 import time
 
-from ..utils.timer import Timer
-from ..utils import task_logger
-from ..app_api.app import App
+from raft.utils.timer import Timer
+from raft.utils import task_logger
 
 class Server:
 
-    def __init__(self, name, state_map, log, other_nodes, endpoint, comms, app):
-        self.name = name
-        self.log = log
-        self.endpoint = endpoint
-        self.other_nodes = other_nodes
+    def __init__(self, live_config):
+        self.live_config = live_config
+        self.name = live_config.cluster.name
+        self.endpoint = live_config.cluster.endpoint
+        self.other_nodes = live_config.cluster.other_nodes
+        self.working_dir = live_config.working_dir
+        self.app = live_config.app
+        self.log = live_config.log
+        self.comms = live_config.comms
+        self.state_map = live_config.state_map
+        self.serializer = live_config.serializer
+        self.timer_class = Timer
         self.total_nodes = len(self.other_nodes) + 1
         self.logger = logging.getLogger(__name__)
-        self.comms = comms
-        self.timer_class = Timer
-        self.state_map = state_map
-        self.app = app
         self.comms_task = None
         self.running = False
         self.unhandled_errors = []
@@ -53,6 +55,12 @@ class Server:
             await self.state_map.state.stop()
         self.running = False
         
+    def get_live_config(self):
+        return self.live_config
+
+    def get_serializer(self):
+        return self.serializer
+    
     def get_log(self):
         return self.log
 

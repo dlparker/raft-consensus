@@ -3,7 +3,8 @@ import abc
 import msgpack
 
 from raft.messages.base_message import BaseMessage
-# abstract class for all server states
+from raft.log.log_api import LogRec
+
 class SerializerAPI(metaclass=abc.ABCMeta):
 
     @classmethod
@@ -21,3 +22,20 @@ class SerializerAPI(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def deserialize_message(data: Union[bytes, str]) -> BaseMessage:
         raise NotImplementedError
+
+    @abc.abstractmethod
+    def serialize_logrec(rec: LogRec) -> Union[bytes, str]:
+        raise NotImplementedError
+        
+    @abc.abstractmethod
+    def deserialize_logrec(data: Union[bytes, str]) -> LogRec:
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    def serialize_dict(user_dict: dict) -> Union[bytes, str]:
+        raise NotImplementedError
+        
+    @abc.abstractmethod
+    def deserialize_logrec(data: Union[bytes, str]) -> dict:
+        raise NotImplementedError
+    

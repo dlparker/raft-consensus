@@ -6,10 +6,10 @@ import logging
 import traceback
 
 from raft.app_api.app import StateChangeMonitor
-from .base_state import State, Substate
-from .candidate import Candidate
-from .follower import Follower
-from .leader import Leader
+from raft.states.base_state import State, Substate
+from raft.states.candidate import Candidate
+from raft.states.follower import Follower
+from raft.states.leader import Leader
 
 
 # abstract class for all states
