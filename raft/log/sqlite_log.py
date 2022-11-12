@@ -17,17 +17,30 @@ class Records:
         # log record indexes start at 1, per raft spec
         self.filepath = Path(storage_dir, "log.sqlite").resolve()
         self.db = None
-        self.open()
+        self.term = 0
+        self.max_commit = 0
+        self.max_index = 0
 
     def open(self) -> None:
-        exists = False
-        if self.filepath.exists():
-            exists = True
         self.db = sqlite3.connect(self.filepath,
                                   detect_types=sqlite3.PARSE_DECLTYPES |
                                   sqlite3.PARSE_COLNAMES)
         self.db.row_factory = sqlite3.Row
         self.ensure_tables()
+        cursor = self.db.cursor()
+        sql = "select * from stats"
+        cursor.execute(sql)
+        row = cursor.fetchone()
+        if row:
+            self.max_index = row['max_index']
+            self.max_commit = row['max_commit']
+            self.term = row['term']
+        
+    def close(self) -> None:
+        if self.db is None:
+            return
+        self.db.close()
+        self.db = None
 
     def ensure_tables(self):
         cursor = self.db.cursor()
@@ -36,10 +49,16 @@ class Records:
             "term INTEGER, committed bool, " \
             "user_data TEXT, listeners TEXT) " 
         cursor.execute(schema)
+        schema = f"CREATE TABLE if not exists stats " \
+            "(dummy INTERGER primary key, max_index INTEGER," \
+            " term INTEGER, max_commit INTEGER)"
+        cursor.execute(schema)
         self.db.commit()
         cursor.close()
                      
     def save_entry(self, entry):
+        if self.db is None:
+            self.open()
         cursor = self.db.cursor()
         params = []
         values = "("
@@ -60,11 +79,21 @@ class Records:
         params.append(json.dumps(entry.listeners))
         cursor.execute(sql, params)
         entry.index = cursor.lastrowid
+        if cursor.lastrowid > self.max_index:
+            self.max_index = cursor.lastrowid
+        if entry.committed:
+            if cursor.lastrowid > self.max_commit:
+                self.max_commit = cursor.lastrowid
+        sql = "replace into stats (dummy, max_index, term, max_commit)" \
+            " values (?, ?,?,?)"
+        cursor.execute(sql, [1, self.max_index, self.term, self.max_commit])
         self.db.commit()
         cursor.close()
         return entry
 
     def read_entry(self, index=None):
+        if self.db is None:
+            self.open()
         cursor = self.db.cursor()
         if index == None:
             cursor.execute("select max(rec_index) from records")
@@ -88,7 +117,20 @@ class Records:
         cursor.close()
         return log_rec
     
+    def set_term(self, value):
+        if self.db is None:
+            self.open()
+        cursor = self.db.cursor()
+        self.term = value
+        sql = "replace into stats (dummy, max_index, term, max_commit)" \
+            " values (?, ?,?,?)"
+        cursor.execute(sql, [1, self.max_index, self.term, self.max_commit])
+        self.db.commit()
+        cursor.close()
+        
     def get_last_index(self):
+        if self.db is None:
+            self.open()
         cursor = self.db.cursor()
         cursor.execute("select max(rec_index) from records")
         row = cursor.fetchone()
@@ -121,22 +163,23 @@ class SqliteLog(Log):
 
     def __init__(self, storage_dir: os.PathLike):
         self.records = Records(storage_dir)
-        self.term = 0
-        self.commit_index = 0
         self.logger = logging.getLogger(__name__)
+
+    def close(self):
+        self.records.close()
         
     def get_term(self) -> Union[int, None]:
-        return self.term
+        return self.records.term
     
     def set_term(self, value: int):
-        self.term = value
+        self.records.set_term(value)
 
     def incr_term(self):
-        self.term += 1
-        return self.term
+        self.records.set_term(self.records.term + 1)
+        return self.records.term
 
     def get_commit_index(self) -> Union[int, None]:
-        return self.commit_index
+        return self.records.max_commit
 
     def append(self, entries: List[LogRec]) -> None:
         # make copies
@@ -169,7 +212,8 @@ class SqliteLog(Log):
         # is not the same as the leader's term, meaning we have uncommitted
         # records from a different leader, so we overwrite the earlier
         # record by index
-        if save_rec.index == self.records.get_last_index() + 1:
+        next_index = self.records.max_index + 1
+        if save_rec.index == next_index:
             self.records.add_entry(save_rec)
         else:
             self.records.insert_entry(save_rec)
@@ -178,37 +222,34 @@ class SqliteLog(Log):
     def commit(self, index: int) -> None:
         if index < 1:
             raise Exception(f"cannot commit index {index}, not in records")
-        if index > self.records.get_last_index():
+        if index > self.records.max_index:
             raise Exception(f"cannot commit index {index}, not in records")
-        self.commit_index = index
         rec = self.records.get_entry_at(index)
         rec.committed = True
         self.records.save_entry(rec)
-        self.logger.debug("committed log at %s", self.commit_index)
+        self.logger.debug("committed log entry at %d, max is %d",
+                          rec.index, self.records.max_commit)
 
     def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:
         if index is None:
-            rec = self.records.get_last_entry()
+            index = self.records.max_index
         else:
             if index < 1:
                 raise Exception(f"cannot get index {index}, not in records")
-            if index > self.records.get_last_index():
+            if index > self.records.max_index:
                 raise Exception(f"cannot get index {index}, not in records")
-            rec = self.records.get_entry_at(index)
+        rec = self.records.get_entry_at(index)
         if rec is None:
             return None
         return deepcopy(rec)
 
     def get_last_index(self):
-        from_db = self.records.get_last_index()
-        if from_db == None:
-            return 0
-        return from_db
+        return self.records.max_index
 
     def get_last_term(self):
-        if self.records.get_last_index() == None:
+        rec = self.records.read_entry()
+        if rec is None:
             return 0
-        rec = self.records.get_last_entry()
         return rec.term
     
 

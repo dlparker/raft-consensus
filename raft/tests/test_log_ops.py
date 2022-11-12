@@ -131,6 +131,12 @@ class TestSqliteLog(unittest.TestCase):
             rec = sql_log.read(i)
             self.assertTrue(rec.committed)
 
+        # now close the log and try some more checks, it should reopen
+        sql_log.close()
+        for i in range(2, limit1+1):
+            rec = sql_log.read(i)
+            self.assertTrue(rec.committed)
+        
         # now rewrite a record
         rec = sql_log.read(15)
         rec.user_data = "foo"
