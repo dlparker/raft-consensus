@@ -14,9 +14,9 @@ import logging
 import traceback
 from collections import defaultdict
 
-from ..messages.serializer import Serializer
-from ..utils import task_logger
-from .comms_api import CommsAPI
+from raft.serializers.msgpack import MsgpackSerializer as Serializer
+from raft.utils import task_logger
+from raft.comms.comms_api import CommsAPI
 
 class UDPComms(CommsAPI):
     
@@ -82,7 +82,7 @@ class UDPComms(CommsAPI):
     async def on_message(self, data, addr):
         try:
             try:
-                message = Serializer.deserialize(data)
+                message = Serializer.deserialize_message(data)
             except Exception as e:  # pragma: no cover error
                 self.logger.error(traceback.format_exc())
                 self.logger.error("cannot deserialze incoming data '%s...'",
@@ -129,7 +129,7 @@ class UDP_Protocol(asyncio.DatagramProtocol):
             seq_number = self.seq_by_target[message.receiver]
             message.set_msg_number(seq_number)
             try:
-                data = Serializer.serialize(message)
+                data = Serializer.serialize_message(message)
                 self.logger.debug("sending dequed message %d %s (%s) to %s",
                                   seq_number, message,
                                   message.code, message.receiver)

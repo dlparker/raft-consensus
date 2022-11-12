@@ -105,12 +105,12 @@ class TestUtils(unittest.TestCase):
         self.assertTrue("target" in str(msg))
         self.assertTrue("10" in str(msg))
 
-        from raft.messages.serializer import Serializer
+        from raft.serializers.msgpack import MsgpackSerializer as Serializer
         # mess up the type of the vote message
         msg._code = "foo"
-        bad_data = Serializer.serialize(msg)
+        bad_data = Serializer.serialize_message(msg)
         with self.assertRaises(Exception) as context:
-            new_msg = Serializer.deserialize(bad_data)
+            new_msg = Serializer.deserialize_message(bad_data)
 
 class TestTimer(unittest.TestCase):
 

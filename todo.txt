@@ -20,8 +20,10 @@ Simplify plan:
       should instead restart election, but I think at least one test
       breaks on this change. Need to fix the test so that logic can
       match raft.pdf
+   3. DID DIFFERENTLY Convert messages to dataclasses allow
+      error in client command result
+   
 ###### DONE
-   3. Convert messages to dataclasses allow error in client command result
 
 3. State logic changes:
 ###### DONE

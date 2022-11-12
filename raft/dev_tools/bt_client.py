@@ -4,7 +4,7 @@ import time
 import asyncio
 from raft.messages.status import StatusQueryMessage
 from raft.messages.command import ClientCommandMessage
-from raft.messages.serializer import Serializer
+from raft.serializers.msgpack import MsgpackSerializer as Serializer
 from raft.dev_tools.memory_comms import get_channels, add_client, Wrapper
 
 def get_internal_ip():
@@ -33,42 +33,42 @@ class UDPBankTellerClient:
             data = self.sock.recv(1024)
         except OSError:
             raise RuntimeError("message reply timeout")
-        result = Serializer.deserialize(data)
+        result = Serializer.deserialize_message(data)
         if result.is_type("command_result"):
             return result.data
         return result
 
     def get_status(self):
         sqm = StatusQueryMessage(self.addr, self.server_addr, None, None)
-        data = Serializer.serialize(sqm)
+        data = Serializer.serialize_message(sqm)
         self.sock.sendto(data, self.server_addr)
         return self.get_result()
         
     def do_query(self):
         qm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, "query")
-        data = Serializer.serialize(qm)
+        data = Serializer.serialize_message(qm)
         self.sock.sendto(data, self.server_addr)
         return self.get_result()
 
     def do_log_stats(self):
         qm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, "log_stats")
-        data = Serializer.serialize(qm)
+        data = Serializer.serialize_message(qm)
         self.sock.sendto(data, self.server_addr)
         return self.get_result()
 
     def do_credit(self, amount):
         cm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, f"credit {amount}")
-        data = Serializer.serialize(cm)
+        data = Serializer.serialize_message(cm)
         self.sock.sendto(data, self.server_addr)
         return self.get_result()
 
     def do_debit(self, amount):
         dm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, f"debit {amount}")
-        data = Serializer.serialize(dm)
+        data = Serializer.serialize_message(dm)
         self.sock.sendto(data, self.server_addr)
         return self.get_result()
         
@@ -169,14 +169,14 @@ class MemoryBankTellerClient:
         if not w:
             raise Exception(f"timeout after {xtime - start_time}")
         data = w.data
-        result = Serializer.deserialize(data)
+        result = Serializer.deserialize_message(data)
         if result.is_type("command_result"):
             return result.data
         return result
 
     async def a_get_status(self):
         sqm = StatusQueryMessage(self.addr, self.server_addr, None, None)
-        data = Serializer.serialize(sqm)
+        data = Serializer.serialize_message(sqm)
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)
         return await self.a_get_result()
@@ -184,7 +184,7 @@ class MemoryBankTellerClient:
     async def a_do_query(self):
         qm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, "query")
-        data = Serializer.serialize(qm)
+        data = Serializer.serialize_message(qm)
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)
         return await self.a_get_result()
@@ -192,7 +192,7 @@ class MemoryBankTellerClient:
     async def a_do_log_stats(self):
         qm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, "log_stats")
-        data = Serializer.serialize(qm)
+        data = Serializer.serialize_message(qm)
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)
         return await self.a_get_result()
@@ -200,7 +200,7 @@ class MemoryBankTellerClient:
     async def a_do_credit(self, amount):
         cm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, f"credit {amount}")
-        data = Serializer.serialize(cm)
+        data = Serializer.serialize_message(cm)
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)
         return await self.a_get_result()
@@ -208,13 +208,13 @@ class MemoryBankTellerClient:
     async def a_do_debit(self, amount):
         dm = ClientCommandMessage(self.addr, self.server_addr,
                                   None, f"debit {amount}")
-        data = Serializer.serialize(dm)
+        data = Serializer.serialize_message(dm)
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)
         return await self.a_get_result()
 
     async def a_direct_message(self, message):
-        data = Serializer.serialize(message)
+        data = Serializer.serialize_message(message)
         w = Wrapper(data, self.addr)
         await (await self.get_channel()).put(w)
         
