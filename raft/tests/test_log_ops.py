@@ -4,11 +4,13 @@ import time
 import logging
 import traceback
 import os
+from pathlib import Path
 
 import pytest
 
 from raft.log.log_api import LogRec
 from raft.dev_tools.memory_log import MemoryLog
+from raft.log.sqlite_log import SqliteLog
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -85,3 +87,68 @@ class TestMemoryLog(unittest.TestCase):
             mlog.read(0)
         with self.assertRaises(Exception) as context:
             mlog.read(1000)
+
+
+class TestSqliteLog(unittest.TestCase):
+
+    def test_sqlite_log(self):
+        p = Path('/tmp/log.sqlite')
+        if p.exists():
+            p.unlink()
+        sql_log = SqliteLog("/tmp")
+        rec = sql_log.read()
+        self.assertIsNone(rec)
+        self.assertEqual(sql_log.get_last_index(), 0)
+        self.assertEqual(sql_log.get_last_term(), 0)
+        self.assertEqual(sql_log.get_term(), 0)
+        sql_log.incr_term()
+        self.assertEqual(sql_log.get_term(), 1)
+        limit1 = 100
+        for i in range(int(limit1/2)):
+            rec = LogRec(term=1, user_data=dict(index=i))
+            sql_log.append([rec,])
+        self.assertEqual(sql_log.get_last_index(), int(limit1/2))
+        self.assertEqual(sql_log.get_last_term(), 1)
+        
+        for i in range(int(limit1/2), limit1):
+            rec = LogRec(term=2, user_data=dict(index=i))
+            sql_log.append([rec,])
+        self.assertEqual(sql_log.get_last_index(), limit1)
+        self.assertEqual(sql_log.get_last_term(), 2)
+        with self.assertRaises(Exception) as context:
+            sql_log.commit(111)
+        with self.assertRaises(Exception) as context:
+            sql_log.commit(0)
+
+        sql_log.commit(1)
+        self.assertEqual(sql_log.get_commit_index(), 1)
+        rec1 = sql_log.read(1)
+        self.assertTrue(rec1.committed)
+        for i in range(1, limit1 + 1):
+            sql_log.commit(i)
+        self.assertEqual(sql_log.get_commit_index(), limit1)
+        for i in range(2, limit1+1):
+            rec = sql_log.read(i)
+            self.assertTrue(rec.committed)
+
+        # now rewrite a record
+        rec = sql_log.read(15)
+        rec.user_data = "foo"
+        x = sql_log.replace_or_append(rec)
+        self.assertEqual(x.index, 15)
+        self.assertEqual(x.user_data, "foo")
+        rec.index = None
+        with self.assertRaises(Exception) as context:
+            y = sql_log.replace_or_append(rec)
+        rec.index = 0
+        with self.assertRaises(Exception) as context:
+            y = sql_log.replace_or_append(rec)
+        rec.index = limit1 + 1
+        y = sql_log.replace_or_append(rec)
+        self.assertEqual(y.index, limit1 + 1)
+        
+        with self.assertRaises(Exception) as context:
+            sql_log.read(0)
+        with self.assertRaises(Exception) as context:
+            sql_log.read(1000)
+            
