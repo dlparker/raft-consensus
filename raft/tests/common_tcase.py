@@ -31,6 +31,7 @@ class Pauser:
         self.paused = False
         self.broadcasting = False
         self.sent_count = 0
+        self.term_start_only = False
         
     def reset(self):
         self.am_leader = False
@@ -48,9 +49,11 @@ class Pauser:
             # it is running or not
             limit = len(self.tcase.servers) - 1
         elif code == "append_entries":
-            if len(message.data['entries']) > 0:
-                first = message.data['entries'][0]
-                if first["code"] == "NO_OP":
+            if self.term_start_only:
+                if len(message.data['entries']) > 0:
+                    first = message.data['entries'][0]
+                    if first["code"] != "NO_OP":
+                        return True
                     limit = len(self.tcase.servers) - 1
                     self.tcase.logger.info("limit logic for interceptor" \
                                             " sending NO_OP, so %d",

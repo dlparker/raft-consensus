@@ -1,8 +1,10 @@
 import asyncio
 import time
+from pathlib import Path
 import os
 
 from raft.tests.common_tcase import TestCaseCommon
+from raft.log.sqlite_log import SqliteLog
 
 class TestRestarts(TestCaseCommon):
 
@@ -10,15 +12,31 @@ class TestRestarts(TestCaseCommon):
     def setUpClass(cls):
         super(TestRestarts, cls).setUpClass()
         cls.total_nodes = 3
-        cls.timeout_basis = 0.1
+        # running too slow causes problems with
+        # candidates timeout or pushing leader into
+        # problem state regarding our pausing tricks
+        cls.timeout_basis = 0.2
         if __name__.startswith("raft.tests"):
             cls.logger_name = __name__
         else:
             cls.logger_name = "raft.tests." + __name__
-        
-        
-    def test_restarts(self):
-        self.preamble()
+        cls.log_paths = {}
+
+    def change_log(self):
+        for spec in self.cluster.get_servers().values():
+            path = Path(f"/tmp/raft_tests/{spec.name}")
+            filepath = Path(path, "log.sqlite3")
+            if not spec.name in self.log_paths:
+                self.log_paths[spec.name] = filepath
+            spec.pbt_server.data_log = SqliteLog(path)
+
+    def restarts_inner(self, use_sqlite=False):
+        if use_sqlite:
+            self.timeout_basis = 1.0
+            self.cluster.timeout_basis = 1.0
+            self.preamble(pre_start_callback=self.change_log)
+        else:
+            self.preamble()
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         self.resume_waiter()
@@ -115,3 +133,8 @@ class TestRestarts(TestCaseCommon):
         # check the actual log in the follower
         self.postamble()
                       
+    def test_restarts(self):
+        self.restarts_inner()
+
+    def test_restarts_with_sqlite(self):
+        self.restarts_inner(True)

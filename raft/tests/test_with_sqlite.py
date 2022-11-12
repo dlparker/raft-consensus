@@ -153,7 +153,7 @@ class TestRestarts(TestCaseCommon):
     def setUpClass(cls):
         super(TestRestarts, cls).setUpClass()
         cls.total_nodes = 3
-        cls.timeout_basis = 1.0
+        cls.timeout_basis = 0.1
         if __name__.startswith("raft.tests"):
             cls.logger_name = __name__
         else:
@@ -225,7 +225,8 @@ class TestRestarts(TestCaseCommon):
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower
         self.postamble()
-                      
+
+        
     def a_test_new_term_backdown(self):
         # Consider a sequence during which servers crash or become
         # isolated, or "are lost".

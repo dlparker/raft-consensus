@@ -51,19 +51,19 @@ class Candidate(State):
             await asyncio.sleep(0)
             
     def candidate_interval(self):
-        min_val = self.timeout / 5
+        min_val = self.timeout / 2
         return random.uniform(min_val, self.timeout)
     
     async def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
         await self.resign()
-        return True
+        return False # make the follower handle the message
 
     async def on_heartbeat(self, message):
         self.logger.info("candidate resigning because we" \
                          "got hearbeat from leader")
         await self.resign()
-        return True
+        return False # make the follower handle the message
 
     async def on_timer(self):
         # The raft.pdf seems to indicate that the candidate should
@@ -77,6 +77,7 @@ class Candidate(State):
             self.logger.info("candidate starting new election because timer ended")
             # change the interval
             await self.candidate_timer.stop()
+            await self.candidate_timer.terminate()
             self.election_timeout = self.candidate_interval()
             self.candidate_timer = self.server.get_timer("candidate-interval",
                                                          self.log.get_term(),

@@ -20,6 +20,9 @@ class Records:
         self.term = 0
         self.max_commit = 0
         self.max_index = 0
+        # Don't call open from here, we may be in the wrong thread,
+        # at least in testing. Maybe in real server if threading is used.
+        # Let it get called when the running server is trying to use it.
 
     def open(self) -> None:
         self.db = sqlite3.connect(self.filepath,
