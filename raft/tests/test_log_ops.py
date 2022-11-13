@@ -98,6 +98,9 @@ class TestSqliteLog(unittest.TestCase):
         sql_log = SqliteLog("/tmp")
         rec = sql_log.read()
         self.assertIsNone(rec)
+        bad = sql_log.records.read_entry(None)
+        self.assertIsNone(bad)
+        
         self.assertEqual(sql_log.get_last_index(), 0)
         self.assertEqual(sql_log.get_last_term(), 0)
         self.assertEqual(sql_log.get_term(), 0)
@@ -133,6 +136,8 @@ class TestSqliteLog(unittest.TestCase):
 
         # now close the log and try some more checks, it should reopen
         sql_log.close()
+        # do double close to make sure all is well
+        sql_log.close()
         for i in range(2, limit1+1):
             rec = sql_log.read(i)
             self.assertTrue(rec.committed)
@@ -158,3 +163,34 @@ class TestSqliteLog(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             sql_log.read(1000)
             
+
+        # now test each operation that goes to the db, but close the db
+        # before each op
+        sql_log.close()
+        y = sql_log.replace_or_append(rec)
+        sql_log.close()
+        y = sql_log.read(y.index)
+        sql_log.close()
+        term = sql_log.get_term()
+        sql_log.close()
+        last_index = sql_log.get_last_index()
+        sql_log.close()
+        last_term = sql_log.get_last_term()
+        sql_log.close()
+        commit = sql_log.get_commit_index()
+        sql_log.close()
+        sql_log.set_term(term + 1)
+
+        records = sql_log.records
+        records.close()
+        records.save_entry(rec)
+        records.close()
+        records.read_entry(rec.index)
+        records.close()
+        records.set_term(term+2)
+        
+
+        # and make sure we get None if we read past end
+        bad = records.read_entry(10000)
+        self.assertIsNone(bad)
+        

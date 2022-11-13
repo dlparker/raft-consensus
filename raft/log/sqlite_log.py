@@ -111,9 +111,6 @@ class Records:
         if index == None:
             cursor.execute("select max(rec_index) from records")
             row = cursor.fetchone()
-            if not row:
-                cursor.close()
-                return None
             index = row[0]
         sql = "select * from records where rec_index = ?"
         cursor.execute(sql, [index,])
@@ -141,26 +138,11 @@ class Records:
         self.db.commit()
         cursor.close()
         
-    def get_last_index(self):
-        if self.db is None:
-            self.open()
-        cursor = self.db.cursor()
-        cursor.execute("select max(rec_index) from records")
-        row = cursor.fetchone()
-        if not row:
-            cursor.close()
-            return None
-        index = row[0]
-        cursor.close()
-        return index
     
     def get_entry_at(self, index):
         if index < 1:
             return None
         return self.read_entry(index)
-
-    def get_last_entry(self):
-        return self.read_entry(index=None)
 
     def add_entry(self, rec: LogRec) -> LogRec:
         rec.index = None
