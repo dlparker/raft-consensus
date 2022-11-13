@@ -116,7 +116,6 @@ class TestCaseCommon(unittest.TestCase):
         self.logger.info("waiting for %s", label)
         self.leader = None
         self.non_leaders = []
-        start_terms = {}
         start_time = time.time()
         while time.time() - start_time < timeout:
             # servers are in their own threads, so
@@ -130,24 +129,10 @@ class TestCaseCommon(unittest.TestCase):
                     if spec.monitor.state.get_code() == StateCode.leader:
                         self.leader = spec
                     else:
-                        if spec.name not in start_terms:
-                            if spec.server_obj:
-                                tlog = spec.server_obj.get_log()
-                                start_terms[spec.name] = tlog.get_term()
                         self.non_leaders.append(spec)
             if pause_count >= expected:
                 break
-            if self.leader is None and timeout > self.timeout_basis * 5:
-                for spec in self.servers.values():
-                    if spec.name in start_terms:
-                        if spec.server_obj:
-                            tlog = spec.server_obj.get_log()
-                            if start_terms[spec.name] > tlog.get_term() + 50:
-                                self.logger.info("election runaway")
-                                self.pause_and_break()
-                                return
-                            
-                
+        self.assertEqual(pause_count, expected)
         self.assertIsNotNone(self.leader)
         self.assertEqual(len(self.non_leaders) + 1, expected)
         return
@@ -180,12 +165,8 @@ class TestCaseCommon(unittest.TestCase):
         self.leader = None
         self.non_leaders = []
         
-    def preamble(self, num_to_start=None, slow=False, pre_start_callback=None):
-        if slow:
-            tb = 1.0
-        else:
-            tb = self.timeout_basis
-        self.servers = self.cluster.prepare(timeout_basis=tb)
+    def preamble(self, num_to_start=None,  pre_start_callback=None):
+        self.servers = self.cluster.prepare(timeout_basis=self.timeout_basis)
         if num_to_start is None:
             num_to_start = len(self.servers)
         self.pausers = {}

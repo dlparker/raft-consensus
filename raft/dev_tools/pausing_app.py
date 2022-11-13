@@ -373,6 +373,8 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.paused = False
         self.do_resume = False
         self.do_dump_state = False
+        self.do_log_stats = False
+        self.log_stats = None
 
     def replace_monitor(self, monitor):
         self.state_map.remove_state_change_monitor(self.monitor)
@@ -437,8 +439,29 @@ class PausingBankTellerServer(MemoryBankTellerServer):
     def dump_state(self):
         self.do_dump_state = True
 
+    def get_log_stats(self):
+        self.do_log_stats = True
+        while self.log_stats is None:
+            time.sleep(0.001)
+        result = self.log_stats
+        self.log_stats = None
+        return result
+
     async def in_loop_check(self, thread_obj):
         # this is called from the server thread object in that thread
+        if self.do_log_stats:
+            self.do_log_stats = False
+            # cannot get to sqlite log directly from test code because
+            # it is not in the right thread
+            # so this dodge makes it possible to request it from the
+            # test (main) thread and run it in the server thread
+            log = thread_obj.server.get_log()
+            result = dict(term=log.get_term(),
+                          last_term=log.get_last_term(),
+                          last_index=log.get_last_index(),
+                          commit_index=log.get_commit_index(),
+                          last_rec=log.read())
+            self.log_stats = result
         if self.do_dump_state:
             self.do_dump_state = False
             state = self.state_map.state

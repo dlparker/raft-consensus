@@ -191,7 +191,7 @@ class TestEdges(TestCaseCommon):
         # see lots of details about how that is done.
         # We expect a timeout because the message is never handled
         # so no reply. We also expect the server to record the error
-        self.preamble(slow=True, pre_start_callback=self.pre_start_callback)
+        self.preamble(pre_start_callback=self.pre_start_callback)
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
         client = self.leader.get_client()

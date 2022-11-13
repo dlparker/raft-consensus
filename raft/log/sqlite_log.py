@@ -17,13 +17,16 @@ class Records:
         # log record indexes start at 1, per raft spec
         self.filepath = Path(storage_dir, "log.sqlite").resolve()
         self.db = None
-        self.term = 0
-        self.max_commit = 0
-        self.max_index = 0
+        self.term = -1
+        self.max_commit = -1
+        self.max_index = -1
         # Don't call open from here, we may be in the wrong thread,
         # at least in testing. Maybe in real server if threading is used.
         # Let it get called when the running server is trying to use it.
 
+    def is_open(self):
+        return self.db is not None
+    
     def open(self) -> None:
         self.db = sqlite3.connect(self.filepath,
                                   detect_types=sqlite3.PARSE_DECLTYPES |
@@ -38,6 +41,13 @@ class Records:
             self.max_index = row['max_index']
             self.max_commit = row['max_commit']
             self.term = row['term']
+        else:
+            self.max_index = 0
+            self.max_commit = 0
+            self.term = 0
+            sql = "replace into stats (dummy, max_index, term, max_commit)" \
+                " values (?, ?,?,?)"
+            cursor.execute(sql, [1, self.max_index, self.term, self.max_commit])
         
     def close(self) -> None:
         if self.db is None:
@@ -172,19 +182,29 @@ class SqliteLog(Log):
         self.records.close()
         
     def get_term(self) -> Union[int, None]:
+        if not self.records.is_open():
+            self.records.open()
         return self.records.term
     
     def set_term(self, value: int):
+        if not self.records.is_open():
+            self.records.open()
         self.records.set_term(value)
 
     def incr_term(self):
+        if not self.records.is_open():
+            self.records.open()
         self.records.set_term(self.records.term + 1)
         return self.records.term
 
     def get_commit_index(self) -> Union[int, None]:
+        if not self.records.is_open():
+            self.records.open()
         return self.records.max_commit
 
     def append(self, entries: List[LogRec]) -> None:
+        if not self.records.is_open():
+            self.records.open()
         # make copies
         for entry in entries:
             save_rec = LogRec(code=entry.code,
@@ -197,6 +217,8 @@ class SqliteLog(Log):
         self.logger.debug("new log record %s", save_rec.index)
 
     def replace_or_append(self, entry:LogRec) -> LogRec:
+        if not self.records.is_open():
+            self.records.open()
         if entry.index is None:
             raise Exception("api usage error, call append for new record")
         if entry.index == 0:
@@ -223,6 +245,8 @@ class SqliteLog(Log):
         return deepcopy(save_rec)
     
     def commit(self, index: int) -> None:
+        if not self.records.is_open():
+            self.records.open()
         if index < 1:
             raise Exception(f"cannot commit index {index}, not in records")
         if index > self.records.max_index:
@@ -234,6 +258,8 @@ class SqliteLog(Log):
                           rec.index, self.records.max_commit)
 
     def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:
+        if not self.records.is_open():
+            self.records.open()
         if index is None:
             index = self.records.max_index
         else:
@@ -247,9 +273,13 @@ class SqliteLog(Log):
         return deepcopy(rec)
 
     def get_last_index(self):
+        if not self.records.is_open():
+            self.records.open()
         return self.records.max_index
 
     def get_last_term(self):
+        if not self.records.is_open():
+            self.records.open()
         rec = self.records.read_entry()
         if rec is None:
             return 0

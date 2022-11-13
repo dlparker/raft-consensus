@@ -136,36 +136,40 @@ class MemoryComms(CommsAPI):
                     self.logger.debug("not delivering posted message "\
                                       "because interceptor said so")
                     return
-            if target not in channels and target not in clients:
+            if target in channels or target in clients:
+                skip = False
+                channel = channels.get(target, None)
+                if channel is None:
+                    client = clients[target]
+                    queue = client.queue
+                else:
+                    queue = channel.queue
+                    if channel.partition != self.partition:
+                        self.logger.debug("%s is in partition %d, we are %d" \
+                                          " not sending %s so as to look like"
+                                          " network partition",
+                                          target, channel.partition,
+                                          self.partition, message.code)
+                        skip = True
+                if not skip:
+                    data = Serializer.serialize_message(message)
+                    w = Wrapper(data, self.endpoint)
+                    self.logger.debug("%s posted %s to %s",
+                                      self.endpoint, message.code, target)
+                    await queue.put(w)
+            else:
                 if target[1] < 5000:
                     self.logger.info("\n\n\t%s not in %s\n\n",
                                      target, list(clients.keys()))
-
-                self.logger.info("%s not connected to %s," \
+                self.logger.debug("%s not connected to %s," \
                                  " not sending %s", self.endpoint,
                                  target, message.code)
-                return
-            channel = channels.get(target, None)
-            if channel is not None:
-                if channel.partition != self.partition:
-                    self.logger.debug("%s is in partition %d, we are %d" \
-                                      " not sending %s so as to look like"
-                                      " network partition",
-                                      target, channel.partition,
-                                      self.partition, message.code)
-                    return
-                queue = channel.queue
-            else:
-                client = clients[target]
-                queue = client.queue
-            data = Serializer.serialize_message(message)
-            w = Wrapper(data, self.endpoint)
-            self.logger.debug("%s posted %s to %s",
-                              self.endpoint, message.code, target)
-            await queue.put(w)
             if self.interceptor:
-                # let test code decide to pause things after
-                # delivering
+                # We want to call the interceptor regardless of
+                # whether we could deliver the message or not,
+                # as it may be doing counting of messages for things
+                # such as heartbeats to ensure it has sent to all
+                # followers before pausing
                 self.logger.debug("calling interceptor after %s", message.code)
                 await self.interceptor.after_out_msg(message)
         except Exception: # pragma: no cover error
