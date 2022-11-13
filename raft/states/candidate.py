@@ -3,11 +3,10 @@ import traceback
 import logging
 import asyncio
 
-from ..messages.request_vote import RequestVoteMessage
-from ..utils import task_logger
-from .leader import Leader
-from .base_state import State, Substate, StateCode
-
+from raft.messages.request_vote import RequestVoteMessage
+from raft.utils import task_logger
+from raft.states.leader import Leader
+from raft.states.base_state import State, Substate, StateCode
 
 
 class Candidate(State):
@@ -27,7 +26,7 @@ class Candidate(State):
                             
     def __str__(self):
         return "candidate"
-    
+
     def start(self):
         if self.terminated:
             raise Exception("cannot start a terminated state")
@@ -51,8 +50,8 @@ class Candidate(State):
             await asyncio.sleep(0)
             
     def candidate_interval(self):
-        min_val = self.timeout / 2
-        return random.uniform(min_val, self.timeout)
+        # randomness reduces time to election success
+        return random.uniform(self.timeout * 0.5, self.timeout)
     
     async def on_append_entries(self, message):
         self.logger.info("candidate resigning because we got new entries")
@@ -67,26 +66,11 @@ class Candidate(State):
 
     async def on_timer(self):
         # The raft.pdf seems to indicate that the candidate should
-        # go straight to another election on timeout, but that seems
-        # to lower the likelihood that someone will win, as state
-        # needs to be follower for a vote to pass. This is how
-        # you would code it that way, if you thought it should be
-        # done. I'm not convinced.
-        if True:
-            # implied by raft.pdf, not clear
-            self.logger.info("candidate starting new election because timer ended")
-            # change the interval
-            await self.candidate_timer.stop()
-            await self.candidate_timer.terminate()
-            self.election_timeout = self.candidate_interval()
-            self.candidate_timer = self.server.get_timer("candidate-interval",
-                                                         self.log.get_term(),
-                                                         self.election_timeout,
-                                                         self.on_timer)
-            self.candidate_timer.start()
-            await self.start_election()
-        else:
-            await self.resign()
+        # go straight to another election on timeout, but that means
+        # that you can get into a state where nobody wins. Candidates
+        # never vote yes, so if everybody is a Candidate, nobody can win.
+        # So, we resign
+        await self.resign()
         return 
 
     async def on_vote_received(self, message):

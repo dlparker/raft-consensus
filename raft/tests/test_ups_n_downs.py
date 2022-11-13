@@ -32,8 +32,6 @@ class TestRestarts(TestCaseCommon):
 
     def restarts_inner(self, use_sqlite=False):
         if use_sqlite:
-            self.timeout_basis = 1.0
-            self.cluster.timeout_basis = 1.0
             self.preamble(pre_start_callback=self.change_log)
         else:
             self.preamble()

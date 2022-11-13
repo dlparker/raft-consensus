@@ -29,58 +29,44 @@ class Pauser:
         self.tcase = tcase
         self.am_leader = False
         self.paused = False
-        self.broadcasting = False
         self.sent_count = 0
         self.term_start_only = False
         
     def reset(self):
         self.am_leader = False
         self.paused = False
-        self.broadcasting = False
         self.sent_count = 0
+        self.term_start_only = False
         
     async def leader_pause(self, mode, code, message):
         self.am_leader = True
         self.tcase.leader = self.spec
-        
-        limit = self.tcase.expected_followers
-        if self.broadcasting or code == "heartbeat":
-            # we are sending one to each follower, whether
-            # it is running or not
+
+        check_count = False
+        if code == "heartbeat":
+            check_count = True
+        elif (code == "append_entries" and self.term_start_only
+                  and len(message.data['entries']) > 0):
+              first = message.data['entries'][0]
+              if first["code"] == "NO_OP":
+                  check_count = True
+        if check_count:
+            # we want to do all the sends, regardless
+            # of how many are running, paused, whatever
             limit = len(self.tcase.servers) - 1
-        elif code == "append_entries":
-            if self.term_start_only:
-                if len(message.data['entries']) > 0:
-                    first = message.data['entries'][0]
-                    if first["code"] != "NO_OP":
-                        return True
-                    limit = len(self.tcase.servers) - 1
-                    self.tcase.logger.info("limit logic for interceptor" \
-                                            " sending NO_OP, so %d",
-                                            limit)
-                else:
-                    self.tcase.logger.info("limit logic for interceptor" \
-                                            " not NO_OP, so %d",
-                                            limit)
-        # make sure our copy of the server spec is up to date
-        self.spec = self.tcase.servers[self.spec.name]
-        if self.spec.running:
             self.sent_count += 1
             if self.sent_count < limit:
                 self.tcase.logger.info("not pausing on %s, sent count" \
                                         " %d not yet %d", code,
                                         self.sent_count, limit)
                 return True
-        else:
-            self.tcase.logger.info("server %s not running, not counting" \
-                                    " message %s, %d not yet %d",
-                                    self.spec.name, code,
-                                    self.sent_count, limit)
-            return True
             
-
-        self.tcase.logger.info("got sent for %s followers, pausing",
-                               limit)
+            self.tcase.logger.info("got sent for %s, %s followers to count," \
+                                   " pausing",  message.receiver, limit)
+        else:
+            self.tcase.logger.info("got sent %s for %s, pausing",
+                                   message.code, message.receiver)
+            
         await self.spec.pbt_server.pause_all(TriggerType.interceptor,
                                              dict(mode=mode,
                                                   code=code))
@@ -130,6 +116,7 @@ class TestCaseCommon(unittest.TestCase):
         self.logger.info("waiting for %s", label)
         self.leader = None
         self.non_leaders = []
+        start_terms = {}
         start_time = time.time()
         while time.time() - start_time < timeout:
             # servers are in their own threads, so
@@ -143,12 +130,32 @@ class TestCaseCommon(unittest.TestCase):
                     if spec.monitor.state.get_code() == StateCode.leader:
                         self.leader = spec
                     else:
-                       self.non_leaders.append(spec)
+                        if spec.name not in start_terms:
+                            if spec.server_obj:
+                                tlog = spec.server_obj.get_log()
+                                start_terms[spec.name] = tlog.get_term()
+                        self.non_leaders.append(spec)
             if pause_count >= expected:
                 break
+            if self.leader is None and timeout > self.timeout_basis * 5:
+                for spec in self.servers.values():
+                    if spec.name in start_terms:
+                        if spec.server_obj:
+                            tlog = spec.server_obj.get_log()
+                            if start_terms[spec.name] > tlog.get_term() + 50:
+                                self.logger.info("election runaway")
+                                self.pause_and_break()
+                                return
+                            
+                
         self.assertIsNotNone(self.leader)
         self.assertEqual(len(self.non_leaders) + 1, expected)
-        return 
+        return
+
+    def dump_state(self):
+        for spec in self.servers.values():
+            spec.pbt_server.dump_state()
+            time.sleep(0.01)
 
     def resume_waiter(self):
         start_time = time.time()
@@ -188,7 +195,6 @@ class TestCaseCommon(unittest.TestCase):
             self.pausers[spec.name] = Pauser(spec, self)
         self.expected_followers = num_to_start - 1
         self.set_term_start_intercept()
-
         if pre_start_callback:
             pre_start_callback()
         started_count = 0
@@ -211,12 +217,14 @@ class TestCaseCommon(unittest.TestCase):
         for spec in self.servers.values():
             if clear:
                 spec.interceptor.clear_triggers()
+            pauser = self.pausers[spec.name]
+            pauser.term_start_only = True
             spec.interceptor.add_trigger(InterceptorMode.out_after, 
                                          AppendEntriesMessage._code,
-                                         self.pausers[spec.name].leader_pause)
+                                         pauser.leader_pause)
             spec.interceptor.add_trigger(InterceptorMode.in_before, 
                                          AppendEntriesMessage._code,
-                                         self.pausers[spec.name].follower_pause)
+                                         pauser.follower_pause)
 
     def set_hb_intercept(self, clear=True):
 
@@ -240,20 +248,23 @@ class TestCaseCommon(unittest.TestCase):
 
         self.cluster.resume_all_paused_servers()
         
-    def pause_and_break(self, go_after=True):
+    def pause_and_break(self):
         # call this to get a breakpoint that has
         # everyone stopped
         time.sleep(1)
         self.reset_pausers()
         self.set_hb_intercept()
+        self.debug_break = True
         breakpoint()
-        if go_after:
-            self.clear_intercepts()
-            self.cluster.resume_all_paused_servers()
+        # change this if you don't want dump
+        do_dump = True
+        if do_dump:
+            self.dump_state()
 
     def go_after_break(self):
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
+        self.debug_break = False
         
     def a_test_check_setup(self):
         # rename this to remove the a_ in order to

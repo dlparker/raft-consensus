@@ -153,7 +153,10 @@ class TestRestarts(TestCaseCommon):
     def setUpClass(cls):
         super(TestRestarts, cls).setUpClass()
         cls.total_nodes = 3
+        # takes a bit longer to do log ops, making it more likely
+        # that candidates will collide 
         cls.timeout_basis = 0.1
+        
         if __name__.startswith("raft.tests"):
             cls.logger_name = __name__
         else:
@@ -221,7 +224,6 @@ class TestRestarts(TestCaseCommon):
             tlog = second.server_obj.get_log()
             time.sleep(0.01)
         self.assertEqual(tlog.get_commit_index(), log_record_count)
-        self.pause_and_break(False)
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
         # check the actual log in the follower
         self.postamble()

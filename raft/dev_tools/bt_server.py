@@ -185,7 +185,7 @@ class MemoryBankTellerServer:
         self.thread.stop()
         self.thread.keep_running = False
 
-    async def in_loop_check(self):
+    async def in_loop_check(self, thread_obj):
         # override this to do something from inside the thread
         # main loop
         pass
@@ -276,7 +276,7 @@ class ServerThread(threading.Thread):
                         self.bt_server.other_nodes)
             while self.keep_running:
                 await asyncio.sleep(0.01)
-                await self.bt_server.in_loop_check()
+                await self.bt_server.in_loop_check(self)
             self.logger.info("server %s stopping", self.bt_server.endpoint)
             await self.bt_server.comms.stop()
             await self.server.stop()

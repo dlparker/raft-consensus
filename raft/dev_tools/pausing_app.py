@@ -48,12 +48,23 @@ class PCandidate(Candidate):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.paused = False
+        self.election_fail_limit = 30
+        self.election_fail_count = 0
 
     async def on_timer(self):
         if self.paused:
             return
-        return await super().on_timer()
-        
+        self.election_fail_count += 1
+        if (self.election_fail_limit and 
+            self.election_fail_count >= self.election_fail_limit):
+            self.logger.error("%d election failures!", self.election_fail_count)
+            await self.candidate_timer.stop()
+            while self.election_fail_count > 1:
+                await asyncio.sleep(0.01)
+            await self.candidate_timer.reset()
+        await super().on_timer()
+        return
+    
 class PLeader(Leader):
 
     def __init__(self, *args, **kwargs):
@@ -101,7 +112,7 @@ class PausingMonitor(StateChangeMonitor):
             new_state = PFollower(new_state.server, new_state.timeout)
         elif new_state.get_code() == StateCode.candidate:
             new_state = PCandidate(new_state.server,
-                                   new_state.election_timeout)
+                                   new_state.timeout)
         elif new_state.get_code() == StateCode.leader:
             new_state = PLeader(new_state.server,
                                 new_state.heartbeat_timeout)
@@ -361,6 +372,7 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         self.state_map.add_state_change_monitor(self.monitor)
         self.paused = False
         self.do_resume = False
+        self.do_dump_state = False
 
     def replace_monitor(self, monitor):
         self.state_map.remove_state_change_monitor(self.monitor)
@@ -422,7 +434,25 @@ class PausingBankTellerServer(MemoryBankTellerServer):
         if self.do_resume:
             raise Exception('resume did not happen!')
 
-    async def in_loop_check(self):
+    def dump_state(self):
+        self.do_dump_state = True
+
+    async def in_loop_check(self, thread_obj):
+        # this is called from the server thread object in that thread
+        if self.do_dump_state:
+            self.do_dump_state = False
+            state = self.state_map.state
+            self.logger.info("Server %s state %s", self.name, state)
+            log = thread_obj.server.get_log()
+            self.logger.info("Server %s log stats\n"
+                                 "term = %d, last_rec_term = %d "\
+                                 "last_rec_index = %d, commit = %d",
+                                 self.name, 
+                                 log.get_term(),
+                                 log.get_last_term(),
+                                 log.get_last_index(),
+                                 log.get_commit_index())
+            
         if self.do_resume:
             self.paused = False
             timer_set = get_timer_set()
