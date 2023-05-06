@@ -57,7 +57,18 @@ class Follower(State):
         return random.uniform(self.timeout, 2 * self.timeout)
 
     async def leader_lost(self):
-        if self.terminated:
+        # This is here only to ensure that a rare (impossible?)
+        # race condition is not a problem. That condition might
+        # happen if the timer fires but this method has is pending
+        # and before it can run the stop sequence or the start election
+        # sequence runs, sets terminated, then runs terminate on the
+        # timer. It seems possible that this method could run before
+        # the terminate method runs, so we check for that condition
+        # and return. Writing a test for this would require so much
+        # fiddling with the code that I am unconvinced that it would
+        # improve it, and suspect it might degrade it. So I pragma
+        # around it.
+        if self.terminated: # pragma: no cover race
             return
         await self.set_substate(Substate.leader_lost)
         return await self.start_election()
@@ -233,10 +244,9 @@ class Follower(State):
 
     async def do_commit_append(self, message):
         # per protocol, implies commit all previous records
-        start = self.log.get_commit_index()
-        if start == 0:
-            # log record indices start at 1
-            start = 1
+        # log record indices start at 1, so
+        # we never commit 0
+        start = max(self.log.get_commit_index(), 1)
         end = message.leaderCommit + 1
         self.logger.debug("on_append_entries commit %s through %s",
                           start, end-1)
@@ -300,13 +310,15 @@ class Follower(State):
         return True
     
     async def on_vote_request(self, message):
-        # For some reason I can't figure out, this
-        # message tends to come in during the process
-        # of switching states, so it can end up here
-        # despite the check for terminated in the base_state code.
-        # Since everbody's awaitn stuff, I guess it can just happen
-        if self.terminated:
-            return False
+        # trying to see if this block is no longer needed
+        if False: # pragma: no cover
+            # For some reason I can't figure out, this
+            # message tends to come in during the process
+            # of switching states, so it can end up here
+            # despite the check for terminated in the base_state code.
+            # Since everbody's awaitn stuff, I guess it can just happen
+            if self.terminated:
+                return False
         await self.leaderless_timer.reset() 
         # If this node has not voted,
         # and if lastLogIndex in message

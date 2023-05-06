@@ -12,9 +12,9 @@ from raft.log.log_api import LogRec, Log, RecordCode
 class Records:
 
     def __init__(self, storage_dir: os.PathLike):
+        # log record indexes start at 1, per raft spec
         self.index = 0
         self.entries = []
-        # log record indexes start at 1, per raft spec
         self.filepath = Path(storage_dir, "log.sqlite").resolve()
         self.db = None
         self.term = -1
@@ -98,7 +98,7 @@ class Records:
             if cursor.lastrowid > self.max_commit:
                 self.max_commit = cursor.lastrowid
         sql = "replace into stats (dummy, max_index, term, max_commit)" \
-            " values (?, ?,?,?)"
+            " values (?,?,?,?)"
         cursor.execute(sql, [1, self.max_index, self.term, self.max_commit])
         self.db.commit()
         cursor.close()

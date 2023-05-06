@@ -387,9 +387,22 @@ class Leader(State):
             # here.
             target = message.original_sender
 
+        wait_start = time.time()
         while self.command_in_progress:
             await asyncio.sleep(0.001)
-            
+            if time.time() - wait_start > 5:
+                emsg = "Timeout waiting for in progress client command"
+                self.logger.error(emsg)
+                result = CommandResult(message.data, None, False, None, emsg)
+                self.logger.debug("preparing error reply for %s",
+                                  target)
+                reply = ClientCommandResultMessage(self.server.endpoint,
+                                                   target,
+                                                   self.log.get_term(),
+                                                   result.response)
+                self.logger.debug("sending error reply message %s", reply)
+                await self.server.post_message(reply)
+                return True
         self.command_in_progress = True # will stay true until result sent
         # call the user app
         try:

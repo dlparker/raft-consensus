@@ -86,7 +86,7 @@ like ServerCore?) Find all bad spots in the states and change the
 exception clauses to call this method, execute stop on self and return.
 ---
 
-
+LOOK AT:  https://typer.tiangolo.com/
 
 ############# DONE
 Review and document new message times and ensure that they
@@ -122,4 +122,6 @@ wrong term? Or is StateDiff property good enough? Comment in code.
 ##### DONE
 See if the Pauser class used in some tests can be universal and in dev_tools
 ##### DONE
+
+
 

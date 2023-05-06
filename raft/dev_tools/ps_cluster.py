@@ -194,6 +194,7 @@ class PausingServerCluster:
             if spec.addr == addr:
                 return spec
         return None
+
     def wait_for_state(self, state_type="any", server_name=None, timeout=3):
         expected = []
         if server_name is None:
