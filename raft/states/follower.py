@@ -160,6 +160,8 @@ class Follower(State):
         laddr = message.sender
         if self.leader_addr is None:
             self.leader_addr = laddr
+            self.last_vote = None
+            self.last_vote_term = None
             self.heartbeat_count = 0
             await self.set_substate(Substate.joined)
 
@@ -310,15 +312,12 @@ class Follower(State):
         return True
     
     async def on_vote_request(self, message):
-        # trying to see if this block is no longer needed
-        if False: # pragma: no cover
-            # For some reason I can't figure out, this
-            # message tends to come in during the process
-            # of switching states, so it can end up here
-            # despite the check for terminated in the base_state code.
-            # Since everbody's awaitn stuff, I guess it can just happen
-            if self.terminated:
-                return False
+        # Used to have this code, but could not make it happen
+        # during testing, so I think it is not actually possible
+        # anymore. Some refactoring and cleanup probably eliminated it.
+        # if self.terminated:
+        #    self.logger.error("follower got on_vote_request message after terminated")
+        #    return False
         await self.leaderless_timer.reset() 
         # If this node has not voted,
         # and if lastLogIndex in message
@@ -350,9 +349,13 @@ class Follower(State):
         elif self.last_vote_term < message.term:
             self.logger.info("Old vote for old term, voting true")
             approve = True
-        elif self.last_vote == message.sender:
-            self.logger.info("last vote matches sender %s", message.sender)
-            approve = True
+        # used to have the following code, but I don't think it can
+        # happen, if you receive a vote request from the same sender
+        # twice, then the sender must have increased the term according
+        # to protocol
+        # elif self.last_vote == message.sender:
+        #     self.logger.info("last vote matches sender %s", message.sender)
+        #     approve = True
         if approve:
             self.last_vote = message.sender
             self.last_vote_term = message.term
