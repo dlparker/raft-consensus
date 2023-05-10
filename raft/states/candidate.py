@@ -124,6 +124,7 @@ class Candidate(State):
     async def start_election(self):
         if self.terminated:
             return
+        await self.set_substate(Substate.start_election)
         last_index = self.log.get_last_index()
         last_term = self.log.get_last_term()
         await self.candidate_timer.reset()

@@ -46,7 +46,10 @@ class Substate(str, Enum):
     """ Last call from leader synced commit, no new records """
     syncing_commit = "SYNCING_COMMIT"
 
-    """ Starting election """
+    """ Candidate starting election """
+    start_election = "start_election"
+
+    """ Broadcasting vote """
     voting = "VOTING"
 
     """ Just got elected """

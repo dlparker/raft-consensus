@@ -8,6 +8,7 @@ from pathlib import Path
 
 from raft.tests.common_tcase import TestCaseCommon
 
+from raft.dev_tools.pausing_app import InterceptorMode
 from raft.messages.heartbeat import HeartbeatMessage
 from raft.messages.heartbeat import HeartbeatResponseMessage
 from raft.messages.append_entries import AppendEntriesMessage
@@ -51,10 +52,18 @@ class ModCandidate(PCandidate):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.pause_before_vote_start = False
+        self.paused = False
 
-    async def on_timer(self):
-        await super().on_timer()
+    def start(self):
         self.logger.info("\n\n\t ModCandidate started \n\n")
+        super().start()
+
+    async def start_election(self):
+        if self.pause_before_vote_start:
+            self.logger.info("\n\n\t ModCandidate pausing in start_election \n\n")
+            self.paused = True
+        await super().start_election()
 
 
 class ModMonitor(PausingMonitor):
@@ -71,6 +80,7 @@ class ModMonitor(PausingMonitor):
         self.leader = None
         self.follower = None
         self.candidate = None
+        self.pause_before_vote_start = False
         
     async def new_state(self, state_map, old_state, new_state):
         if new_state.code == StateCode.leader:
@@ -87,6 +97,7 @@ class ModMonitor(PausingMonitor):
             new_state = ModCandidate(new_state.server,
                                      new_state.timeout)
             self.candidate = new_state
+            new_state.pause_before_vote_start = self.pause_before_vote_start 
             return new_state
         new_state = await super().new_state(state_map, old_state, new_state)
         return new_state
@@ -160,7 +171,7 @@ class TestCandidateVoteStartPause(unittest.TestCase):
         monitor.clear_substate_pauses()
         self.loop.run_until_complete(spec.pbt_server.resume_all())
         
-class TestCandidateReVoteStartPaused(TestCaseCommon):
+class TestElectionStartPaused(TestCaseCommon):
 
     @classmethod
     def setUpClass(cls):
@@ -201,9 +212,80 @@ class TestCandidateReVoteStartPaused(TestCaseCommon):
             
         super().preamble(num_to_start=3, pre_start_callback=cb)
         
-    def test_1(self):
+    def test_base_flow(self):
+        """ An example of how to get to the point just prior to election
+        after leader dies. Flesh this out for actual tests"""
+        
         self.preamble()
         self.logger.info("Started")
+        for spec in self.servers.values():
+            spec.monitor.set_pause_on_substate(Substate.leader_lost)
         self.clear_intercepts()
         self.cluster.resume_all_paused_servers()
+        old_leader = self.leader
+        self.cluster.stop_server(old_leader.name)
+        start_time = time.time()
+        while time.time() - start_time < timeout_basis * 2:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            pause_count = 0
+            for spec in self.servers.values():
+                if spec.pbt_server.paused:
+                    pause_count += 1
+            if pause_count == 2:
+                break
+
+        # Now we have two followers that have detected leader lost,
+        # so without intervention they will go to candidate mode next.
+        # For and actual test, you want to fiddle the state of things
+        # to ensure that you have your test conditions before you restart
+        # the servers.
+        for spec in self.servers.values():
+            spec.monitor.clear_substate_pauses()
+        self.cluster.resume_all_paused_servers()
+        
+
+    def test_state_split(self):
+        """ An example of how to get to the point just prior to election
+        after leader dies with one server already switched to Candidate
+        and the other still a follower. Flesh this out for actual tests"""
+        
+        self.preamble()
+        self.logger.info("Started")
+        candi = self.non_leaders[0]
+        follower = self.non_leaders[1]
+        self.clear_intercepts()
+        self.cluster.resume_all_paused_servers()
+
+        # pause the expected follower at the next heartbeat
+        follower.interceptor.add_trigger(InterceptorMode.in_before, 
+                                         HeartbeatMessage._code,
+                                         self.pausers[follower.name].follower_pause)
+        self.logger.info(f"\n\nAllowing follower {follower.name} pause on heartbeat\n\n")
+        time.sleep(0.05)
+        # pause the expected candidate at the leader lost 
+        candi.monitor.set_pause_on_substate(Substate.leader_lost)
+        old_leader = self.leader
+        self.cluster.stop_server(old_leader.name)
+        start_time = time.time()
+        paused_list = []
+        while time.time() - start_time < timeout_basis * 2:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            paused_list = []
+            for spec in self.servers.values():
+                if spec.pbt_server.paused:
+                    paused_list.append(spec)
+            if len(paused_list) == 2:
+                break
+        self.logger.info(f"\n\nPaused with {candi.name} about to switch to candidate"
+                         "and {follower.name} still following\n\n")
+        self.clear_intercepts()
+        candi.monitor.clear_substate_pauses()
+        self.logger.info("\n\n\n Resuming servers \n\n\n")
+        self.cluster.resume_all_paused_servers()
+        
+
         

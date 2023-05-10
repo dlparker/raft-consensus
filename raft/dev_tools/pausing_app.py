@@ -185,9 +185,9 @@ class PausingMonitor(StateChangeMonitor):
                                         dict(old_state=old_state,
                                              new_state=new_state))
 
-    def clear_pause_on_substate(self, state):
-        if str(state) in self.pause_on_substates:
-            del self.pause_on_states[str(state)]
+    def clear_pause_on_substate(self, substate):
+        if str(substate) in self.pause_on_substates:
+            del self.pause_on_states[str(substate)]
         
     async def substate_pause_method(self, monitor, state,
                                     old_substate, new_substate):
@@ -439,6 +439,11 @@ class PausingBankTellerServer(MemoryBankTellerServer):
     def dump_state(self):
         self.do_dump_state = True
 
+    def get_state(self):
+        if self.state_map:
+            return self.state_map.state
+        return None
+    
     def get_log_stats(self):
         self.do_log_stats = True
         while self.log_stats is None:

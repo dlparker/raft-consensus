@@ -81,6 +81,15 @@ class Pauser:
                                                   code=code))
         return True
 
+    async def candidate_pause(self, mode, code, message):
+        self.am_leader = False
+        self.tcase.non_leaders.append(self.spec)
+        self.paused = True
+        await self.spec.pbt_server.pause_all(TriggerType.interceptor,
+                                             dict(mode=mode,
+                                                  code=code))
+        return True
+    
 class TestCaseCommon(unittest.TestCase):
 
     @classmethod
