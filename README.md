@@ -11,11 +11,11 @@ also be easy to understand. The chosen fork base did that well.
 
 However, the original code had features that seem to indicate that it
 was just a proof of concept, not intended to be production code. This
-fork must therefore make a number of basic changes to eliminate those
+fork therefore had to make a number of basic changes to eliminate those
 features.
 
 The other main goal of the change to this fork is to make it more of a
-generalized library to aid in the construction of cluster state management,
+generalized library to aid in the construction of cluster of servers
 rather that to turn it into another key-value store implemention. 
 
 When building a server that is going to be part of a cluster that uses
