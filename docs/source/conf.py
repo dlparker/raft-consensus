@@ -12,13 +12,12 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../..'))
 sys.path.insert(0, os.path.abspath('../../raft')) # to allow referencing of rst files
 
 
 # -- Project information -----------------------------------------------------
 
-project = 'Raft server library'
+project = 'RaftFrame library'
 copyright = '2022, Dennis Parker'
 author = 'Dennis Parker'
 

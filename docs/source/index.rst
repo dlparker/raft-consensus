@@ -1,5 +1,5 @@
 
-Welcome to Raft Core documentation!
+Welcome to RaftFrame documentation!
 ========================================
 
 .. toctree::

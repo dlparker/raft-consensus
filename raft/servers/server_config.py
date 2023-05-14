@@ -1,3 +1,6 @@
+"""
+Configuration classes for setting up an instance of the class::`Server` class.
+"""
 from dataclasses import dataclass
 from typing import Any, Type
 import os
@@ -17,6 +20,16 @@ class ModulesConfig:
 
 @dataclass
 class LocalConfig:
+    """
+    Class used to supply details of the runtime configuration on the local machine to 
+    the server code. 
+
+    Args:
+        working_dir:
+            The location for the runtime to use as a working directory for output files 
+            and the like
+
+    """
     working_dir: os.PathLike # where the server should run and place log files, data files, etc
 
 @dataclass
