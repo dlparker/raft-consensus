@@ -10,7 +10,7 @@ import multiprocessing
 from logging.config import dictConfig
 
 import raft
-from raft.servers.server_config import LiveConfig, ClusterConfig
+from raft.servers.server_config import LiveConfig, ClusterConfig, LocalConfig
 from raft.servers.server import Server
 from raft.comms.udp import UDPComms
 from raft.states.state_map import StandardStateMap
@@ -102,8 +102,9 @@ class UDPBankTellerServer:
             cc = ClusterConfig(name=f"{endpoint}",
                           endpoint=endpoint,
                           other_nodes=self.others)
+            local_config = LocalConfig(working_dir=self.bt_server.working_dir)
             self.live_config = LiveConfig(cluster=cc,
-                                          working_dir=self.working_dir,
+                                          local=local_config,
                                           app=app, log=data_log,
                                           comms=UDPComms(),
                                           state_map=state_map,
@@ -256,8 +257,9 @@ class ServerThread(threading.Thread):
         cc = ClusterConfig(name=self.bt_server.name,
                            endpoint=self.bt_server.endpoint,
                            other_nodes=self.bt_server.other_nodes)
+        local_config = LocalConfig(working_dir=self.bt_server.working_dir)
         self.live_config = LiveConfig(cluster=cc,
-                                      working_dir=self.bt_server.working_dir,
+                                      local=local_config,
                                       app=self.bt_server.app,
                                       log=self.bt_server.data_log,
                                       comms=self.bt_server.comms,

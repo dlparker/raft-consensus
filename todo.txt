@@ -1,4 +1,22 @@
 =================
+Clarity plan
+
+1. Clean up server creation mess
+   1. Start using ModulesConfig in server_config.py
+   2. Build a default config example that uses production parts such as UDP comms and SQLite log
+   3. Build a default config example that uses development parts such as Memory comms
+   4. Build an echo app to use for the above examples
+   5. Generalize Working dir in LiveConfig to LocalConfig
+
+2. Move Banking Teller App to dev_tools, consider dev_tools and tests to sibling of raft, so
+   it will be easier to distribute production bits as library
+   
+
+=================
+
+
+
+=================
 Simplify plan:
 
 1. Log changes

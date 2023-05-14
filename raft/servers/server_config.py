@@ -16,6 +16,10 @@ class ModulesConfig:
     serializer: Type[SerializerAPI]
 
 @dataclass
+class LocalConfig:
+    working_dir: os.PathLike # where the server should run and place log files, data files, etc
+
+@dataclass
 class ClusterConfig:
     name: str         # name of this node in cluster
     endpoint: Any     # address for use with the CommsAPI instance
@@ -24,7 +28,7 @@ class ClusterConfig:
 @dataclass
 class LiveConfig:
     cluster: ClusterConfig
-    working_dir: os.PathLike
+    local: LocalConfig
     app: App # actual, live object
     log: Log # actual, live object
     comms: CommsAPI # actual, live object

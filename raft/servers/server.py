@@ -15,7 +15,7 @@ class Server:
         self.name = live_config.cluster.name
         self.endpoint = live_config.cluster.endpoint
         self.other_nodes = live_config.cluster.other_nodes
-        self.working_dir = live_config.working_dir
+        self.working_dir = live_config.local.working_dir
         self.app = live_config.app
         self.log = live_config.log
         self.comms = live_config.comms

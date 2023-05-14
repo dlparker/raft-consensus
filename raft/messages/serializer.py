@@ -14,7 +14,7 @@ class Serializer:
         }
         for key in message.get_extra_fields():
             data[key] = getattr(message, key)
-        return = msgpack.packb(data, use_bin_type=True)
+        return msgpack.packb(data, use_bin_type=True)
 
     @staticmethod
     def deserialize(data):
