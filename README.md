@@ -4,7 +4,7 @@
 The code orignally forked was chosen because it is the most
 understandable, straightforward implementation that provided enough of
 the raft features, compared to the other python implementations
-chosen. A key motivator of the raft algorithm is to be sufficiently
+studied. A key motivator of the raft algorithm is to be sufficiently
 understandable that it is likely to be implemented correctly. It seems
 reasonable to take as a corollary the goal that the implementation should
 also be easy to understand. The chosen fork base did that well.
