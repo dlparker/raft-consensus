@@ -6,6 +6,7 @@ Welcome to RaftFrame documentation!
    :maxdepth: 4
    :caption: Contents:
 
+   Main Components: <components.rst>
    Theory of Operations: <theory.rst>
    _autodoc/modules
 

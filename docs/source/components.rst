@@ -11,7 +11,7 @@ Server and Configuration
 
 LocalConfig
 ^^^^^^^^^^^^
-Information provided to the Server object to tell it where things are on the local system. The processes working directory, for example, and the location of log files, etc. 
+Information provided to the :class:`raft.servers.server.Server` object to tell it where things are on the local system. The processes working directory, for example, and the location of log files, etc. 
 
 
 	   
