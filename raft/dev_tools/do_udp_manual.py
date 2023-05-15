@@ -14,7 +14,7 @@ import time
 import logging
 import traceback
 
-from log_control import config_logging
+from raft.dev_tools.log_control import config_logging
 
 from raft.dev_tools.udp_cluster import UDPServerCluster
 from raft.dev_tools.bt_client import UDPBankTellerClient

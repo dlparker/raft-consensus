@@ -9,15 +9,6 @@ from raft.app_api.app import App
 from raft.comms.comms_api import CommsAPI
 from raft.states.state_map import StateMap
 from raft.serializers.api import SerializerAPI
-
-@dataclass
-class ModulesConfig:
-    app: Type[App]
-    log: Type[Log]
-    comms: Type[CommsAPI]
-    state_map: Type[StateMap]
-    serializer: Type[SerializerAPI]
-
 @dataclass
 class LocalConfig:
     """
@@ -34,12 +25,55 @@ class LocalConfig:
 
 @dataclass
 class ClusterConfig:
+    """
+    Class used to supply details of the cluster configuration to the server code.
+
+
+    Args:
+        name:
+            The name of this node in the cluster map
+        endpoint: 
+            A specification of the COMMS endpoint for this server 
+            in the form needed by the configured COMSS module.
+        other_nodes: 
+            A list of addresses of the other nodes in the cluster
+            in the form needed by the configured COMSS module.
+
+    """
     name: str         # name of this node in cluster
     endpoint: Any     # address for use with the CommsAPI instance
     other_nodes: list # addresses of other nodes in the cluster
 
 @dataclass
 class LiveConfig:
+    """
+    Class used to provide configuration to :class:raft.`servers.server.Server` in 
+    the form of instantiated classes that are ready to be used.
+
+    Args:
+        cluster: 
+            A :class:`ClusterConfig` instance that defines a cluster
+        local:
+            A :class:`LocalConfig` instance that defines the local machine configuration
+        app:
+            An instance of a class that implemenents :class:`raft.app_api.app.App` 
+            and provides an interface between the 'user' code and the RaftFrame code.
+        log:
+            An instance of a class that implments :class:`raft.log.log_api.Log` and
+            provides log record storage and access using some underlying storage 
+            technique. The default implementation for this is :class:`raft.log.sqlite_log.SqliteLog`.
+        comms:
+            An instance of a class that implments :class:`raft.comms.comss_api.CommsAPI` and
+            provides a message transport mechanism. The default implementation for this is 
+            :class:`raft.comms.udp.UDPComms`.
+        state_map:
+            An instance of a class that implments :class:`raft.states.state_map.StateMap`.
+            The default implementation for this is :class:`raft.states.state_map.StandardStateMap`.
+        serializer:
+            An instance of a class that implments :class:`raft.serializers.api.SerializerAPI`.
+            The default implementation for this is :class:`raft.serializers.msgpack.MsgpackSerializer`.
+    """
+    
     cluster: ClusterConfig
     local: LocalConfig
     app: App # actual, live object

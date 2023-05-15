@@ -1,9 +1,15 @@
+"""
+Definitions for the API of the operations log managed by the state variants.
+
+"""
 import abc
 from dataclasses import dataclass, field, asdict
 from typing import Union, List, Optional, Any
 from enum import Enum
 
 class RecordCode(str, Enum):
+    """ String enum representing purpose of record. """
+
     """ When leader starts up, marks start of term with this """
     no_op = "NO_OP"
 
@@ -34,7 +40,12 @@ class LogRec:
     
 # abstract class for all states
 class Log(metaclass=abc.ABCMeta):
-
+    """
+    Abstract base class that functions as an interface definition for 
+    implmentations of Log storage that can be used by the raft state classes
+    to create and view log records to implement the algorythm.
+    """
+    
     @abc.abstractmethod
     def get_term(self) -> int:
         raise NotImplementedError
