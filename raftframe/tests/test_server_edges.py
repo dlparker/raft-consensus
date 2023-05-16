@@ -8,7 +8,7 @@ from raftframe.tests.common_tcase import TestCaseCommon
 
 from raftframe.messages.heartbeat import HeartbeatMessage
 from raftframe.states.base_state import StateCode
-from raftframe.dev_tools.pausing_app import PausingMonitor, PLeader
+from dev_tools.pausing_app import PausingMonitor, PLeader
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":

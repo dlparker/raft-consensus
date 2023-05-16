@@ -12,15 +12,15 @@ from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.messages.append_entries import AppendResponseMessage
 from raftframe.messages.append_entries import AppendEntriesMessage
 from raftframe.states.base_state import StateCode
-from raftframe.dev_tools.ps_cluster import PausingServerCluster
-from raftframe.dev_tools.pausing_app import InterceptorMode, TriggerType
-from raftframe.dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
+from dev_tools.ps_cluster import PausingServerCluster
+from dev_tools.pausing_app import InterceptorMode, TriggerType
+from dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-from raftframe.dev_tools.pausing_app import TriggerType
+from dev_tools.pausing_app import TriggerType
 
 class Pauser:
     

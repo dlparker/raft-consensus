@@ -15,9 +15,9 @@ from raftframe.messages.append_entries import AppendResponseMessage
 from raftframe.log.log_api import LogRec
 from raftframe.states.base_state import Substate
 from raftframe.states.leader import FollowerCursor
-from raftframe.dev_tools.ps_cluster import PausingServerCluster
-from raftframe.dev_tools.pausing_app import PausingMonitor, PCandidate, PLeader
-from raftframe.dev_tools.memory_comms import MemoryComms
+from dev_tools.ps_cluster import PausingServerCluster
+from dev_tools.pausing_app import PausingMonitor, PCandidate, PLeader
+from dev_tools.memory_comms import MemoryComms
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":

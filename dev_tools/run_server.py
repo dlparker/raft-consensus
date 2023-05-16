@@ -9,8 +9,8 @@ raft_dir = sdir.parent
 basedir = raft_dir.parent
 sys.path.append(basedir.as_posix())
 
-from raftframe.dev_tools.bt_server import UDPBankTellerServer
-from raftframe.dev_tools.log_control import config_logging
+from dev_tools.bt_server import UDPBankTellerServer
+from dev_tools.log_control import config_logging
 
 if __name__=="__main__":
     nodes = [('localhost', 5000), ('localhost', 5001), ('localhost', 5002)]

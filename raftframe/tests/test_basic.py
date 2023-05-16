@@ -7,10 +7,10 @@ import os
 
 import pytest
 
-#from raftframe.dev_tools.timer import get_timer_set, ControlledTimer
+#from dev_tools.timer import get_timer_set, ControlledTimer
 from raftframe.log.log_api import LogRec, RecordCode
-from raftframe.dev_tools.timer_wrapper import get_timer_set, ControlledTimer
-from raftframe.dev_tools.memory_log import MemoryLog
+from dev_tools.timer_wrapper import get_timer_set, ControlledTimer
+from dev_tools.memory_log import MemoryLog
 from raftframe.utils.timer import Timer
 from raftframe.states.follower import Follower
 from raftframe.messages.regy import get_message_registry

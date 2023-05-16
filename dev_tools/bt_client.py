@@ -5,7 +5,7 @@ import asyncio
 from raftframe.messages.status import StatusQueryMessage
 from raftframe.messages.command import ClientCommandMessage
 from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
-from raftframe.dev_tools.memory_comms import get_channels, add_client, Wrapper
+from dev_tools.memory_comms import get_channels, add_client, Wrapper
 
 def get_internal_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

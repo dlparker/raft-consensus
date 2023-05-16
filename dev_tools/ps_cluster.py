@@ -13,12 +13,12 @@ import abc
 from raftframe.states.base_state import Substate
 from raftframe.servers.server import Server
 
-from raftframe.dev_tools.log_control import one_proc_log_setup
-from raftframe.dev_tools.bt_client import MemoryBankTellerClient
-from raftframe.dev_tools.pausing_app import PausingBankTellerServer, PausingMonitor
-from raftframe.dev_tools.pausing_app import PausingInterceptor, InterceptorMode
-from raftframe.dev_tools.bt_server import ServerThread
-from raftframe.dev_tools.memory_comms import reset_channels
+from dev_tools.log_control import one_proc_log_setup
+from dev_tools.bt_client import MemoryBankTellerClient
+from dev_tools.pausing_app import PausingBankTellerServer, PausingMonitor
+from dev_tools.pausing_app import PausingInterceptor, InterceptorMode
+from dev_tools.bt_server import ServerThread
+from dev_tools.memory_comms import reset_channels
 
 @dataclass
 class ServerSpec:

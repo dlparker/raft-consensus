@@ -3,7 +3,7 @@ from logging.config import dictConfig
 from pathlib import Path
 import copy
 
-from raftframe.dev_tools.log_server import LogSocketServer
+from dev_tools.log_server import LogSocketServer
 
 have_logging_server = False
 logging_set_once = False
@@ -23,12 +23,12 @@ def set_levels(handler_names):
     #log_loggers['raftframe.states.follower:heartbeat'] = debug_log
     log_loggers['raftframe.states.leader'] = debug_log
     #log_loggers['raftframe.states.leader:heartbeat'] = debug_log
-    #log_loggers['raftframe.dev_tools.memory_log'] = debug_log
+    #log_loggers['dev_tools.memory_log'] = debug_log
     log_loggers['raftframe.tests'] = debug_log
-    #log_loggers['raftframe.dev_tools.timer_wrapper'] = debug_log
-    #log_loggers['raftframe.dev_tools.pausing_app'] = debug_log
+    #log_loggers['dev_tools.timer_wrapper'] = debug_log
+    #log_loggers['dev_tools.pausing_app'] = debug_log
     #log_loggers['raftframe.states.timer'] = debug_log
-    #log_loggers['raftframe.dev_tools.memory_comms'] = debug_log
+    #log_loggers['dev_tools.memory_comms'] = debug_log
     return log_loggers
     
 def config_server_logging(main_config, filepath):

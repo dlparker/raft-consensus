@@ -14,10 +14,10 @@ import time
 import logging
 import traceback
 
-from raftframe.dev_tools.log_control import config_logging
+from dev_tools.log_control import config_logging
 
-from raftframe.dev_tools.udp_cluster import UDPServerCluster
-from raftframe.dev_tools.bt_client import UDPBankTellerClient
+from dev_tools.udp_cluster import UDPServerCluster
+from dev_tools.bt_client import UDPBankTellerClient
 
 config,_ = config_logging("test.log")
 dictConfig(config)

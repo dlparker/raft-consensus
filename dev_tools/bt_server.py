@@ -19,9 +19,9 @@ from raftframe.states.follower import Follower
 from raftframe.serializers.msgpack import MsgpackSerializer
 from raftframe.serializers.json import JsonSerializer
 from bank_teller.bank_app import BankingApp
-from raftframe.dev_tools.timer_wrapper import ControlledTimer, get_timer_set
-from raftframe.dev_tools.memory_log import MemoryLog
-from raftframe.dev_tools.memory_comms import MemoryComms, MessageInterceptor
+from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
+from dev_tools.memory_log import MemoryLog
+from dev_tools.memory_comms import MemoryComms, MessageInterceptor
 
 manager = multiprocessing.Manager()
 csns = manager.Namespace()

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from raftframe.log.log_api import LogRec
-from raftframe.dev_tools.memory_log import MemoryLog
+from dev_tools.memory_log import MemoryLog
 from raftframe.log.sqlite_log import SqliteLog
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")

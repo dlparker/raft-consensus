@@ -10,12 +10,12 @@ from pathlib import Path
 from raftframe.messages.append_entries import AppendEntriesMessage
 from raftframe.messages.heartbeat import HeartbeatMessage
 from raftframe.messages.command import ClientCommandMessage
-from raftframe.dev_tools.memory_comms import MemoryComms
+from dev_tools.memory_comms import MemoryComms
 from raftframe.log.log_api import LogRec
 from raftframe.states.base_state import Substate
-from raftframe.dev_tools.ps_cluster import PausingServerCluster
-from raftframe.dev_tools.pausing_app import PausingMonitor, PFollower
-from raftframe.dev_tools.pausing_app import InterceptorMode, TriggerType
+from dev_tools.ps_cluster import PausingServerCluster
+from dev_tools.pausing_app import PausingMonitor, PFollower
+from dev_tools.pausing_app import InterceptorMode, TriggerType
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":

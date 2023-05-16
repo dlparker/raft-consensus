@@ -11,10 +11,10 @@ from typing import Tuple, List, Union
 from enum import Enum
 import abc
 
-from raftframe.dev_tools.bt_server import UDPBankTellerServer
-from raftframe.dev_tools.bt_server import clear_bt_server_cs_dict, get_bt_server_cs_dict
-from raftframe.dev_tools.bt_client import UDPBankTellerClient
-from raftframe.dev_tools.log_control import (servers_as_procs_log_setup,
+from dev_tools.bt_server import UDPBankTellerServer
+from dev_tools.bt_server import clear_bt_server_cs_dict, get_bt_server_cs_dict
+from dev_tools.bt_client import UDPBankTellerClient
+from dev_tools.log_control import (servers_as_procs_log_setup,
                                              stop_logging_server,
                                              have_logging_server)
 
@@ -96,7 +96,7 @@ class UDPServerCluster:
     def start_one_server(self, name):
         if self.logging_type == "devel_mp":
             # doesn't seem to work to import in module global space
-            from raftframe.dev_tools.log_control import have_logging_server
+            from dev_tools.log_control import have_logging_server
             if not have_logging_server:
                 raise Exception('no logging server!')
                 

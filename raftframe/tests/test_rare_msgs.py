@@ -9,7 +9,7 @@ from raftframe.tests.common_tcase import TestCaseCommon
 
 from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.states.base_state import StateCode
-from raftframe.dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
+from dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
 
 
 class ModFollower(PFollower):

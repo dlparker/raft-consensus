@@ -8,8 +8,8 @@ from enum import Enum
 from dataclasses import dataclass
 
 from raftframe.messages.status import StatusQueryMessage, StatusQueryResponseMessage
-from raftframe.dev_tools.memory_comms import MemoryComms, MessageInterceptor
-from raftframe.dev_tools.memory_comms import reset_channels
+from dev_tools.memory_comms import MemoryComms, MessageInterceptor
+from dev_tools.memory_comms import reset_channels
 
 #LOGGING_TYPE = "silent" for no log at all
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")

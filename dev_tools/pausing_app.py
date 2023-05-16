@@ -12,10 +12,10 @@ from raftframe.states.candidate import Candidate
 from raftframe.states.leader import Leader
 from raftframe.states.state_map import StandardStateMap, StateMap
 from raftframe.app_api.app import StateChangeMonitor
-from raftframe.dev_tools.memory_comms import MessageInterceptor
+from dev_tools.memory_comms import MessageInterceptor
 
-from raftframe.dev_tools.bt_server import MemoryBankTellerServer
-from raftframe.dev_tools.timer_wrapper import get_timer_set
+from dev_tools.bt_server import MemoryBankTellerServer
+from dev_tools.timer_wrapper import get_timer_set
 
 class PFollower(Follower):
 

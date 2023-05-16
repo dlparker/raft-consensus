@@ -8,7 +8,7 @@ from pathlib import Path
 
 from raftframe.tests.common_tcase import TestCaseCommon
 
-from raftframe.dev_tools.pausing_app import InterceptorMode
+from dev_tools.pausing_app import InterceptorMode
 from raftframe.messages.heartbeat import HeartbeatMessage
 from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.messages.append_entries import AppendEntriesMessage
@@ -17,11 +17,11 @@ from raftframe.messages.request_vote import RequestVoteMessage
 from raftframe.messages.request_vote import RequestVoteResponseMessage
 from raftframe.messages.status import StatusQueryResponseMessage
 from raftframe.states.base_state import Substate, StateCode
-from raftframe.dev_tools.bt_client import MemoryBankTellerClient
-from raftframe.dev_tools.ps_cluster import PausingServerCluster
-from raftframe.dev_tools.pausing_app import PausingMonitor, PFollower, PLeader
-from raftframe.dev_tools.pausing_app import PCandidate
-from raftframe.dev_tools.timer_wrapper import get_all_timer_sets
+from dev_tools.bt_client import MemoryBankTellerClient
+from dev_tools.ps_cluster import PausingServerCluster
+from dev_tools.pausing_app import PausingMonitor, PFollower, PLeader
+from dev_tools.pausing_app import PCandidate
+from dev_tools.timer_wrapper import get_all_timer_sets
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
