@@ -12,6 +12,7 @@
 #
 import os
 import sys
+from pathlib import Path
 sys.path.insert(0, os.path.abspath('../../dev_tools')) # to allow referencing of rst files
 
 
@@ -55,8 +56,12 @@ html_theme = 'sphinx_rtd_theme'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+raftloc =  Path("../../docs/build/html").resolve()
 
-intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
+intersphinx_mapping = {'python': ('https://docs.python.org/3', None),
+                       'raftframe':
+                       ((str(raftloc), None)),
+                       }
 autodoc_typehints="description"
 autodoc_typehints_description_target="all"
 todo_include_todos=True

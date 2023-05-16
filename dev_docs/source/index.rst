@@ -8,6 +8,7 @@ Welcome to RaftFrame Developer documentation!
 
    _autodoc/modules
 
+	  
 Modules
 =======
 
@@ -20,3 +21,9 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+Things
+======
+
+   :class:`raftframe.servers.server_config.LocalConfig`
+  
