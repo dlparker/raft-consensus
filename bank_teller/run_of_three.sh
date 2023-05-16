@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Add raft package to PYTHONPATH
+# Add raftframe package to PYTHONPATH
 export PYTHONPATH="${PYTHONPATH}:$(pwd)/../"
 
 if [ $# -ne 1 ]; then

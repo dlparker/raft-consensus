@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 sdir = Path(__file__).parent.resolve()
 basedir = sdir.parent
-raft_dir = Path(basedir, 'raft')
+raft_dir = Path(basedir, 'raftframe')
 test_dir = Path(raft_dir, "tests")
 sys.path.append(basedir.as_posix())
 sys.path.append(test_dir.as_posix())
@@ -11,8 +11,8 @@ print(sys.path)
 from logging.config import dictConfig
 wdir = os.getcwd()
 
-from raft.tests.bt_server import UDPBankTellerServer
-from raft.tests.log_control import config_logging
+from raftframe.tests.bt_server import UDPBankTellerServer
+from raftframe.tests.log_control import config_logging
 
 def run_server(ipv4, port, endpoints):
     config,_ = config_logging(f"server_{port}.log")

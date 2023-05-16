@@ -1,7 +1,7 @@
 from typing import Union
 import logging
-from raft.app_api.app import App, CommandResult
-from raft.log.log_api import RecordCode
+from raftframe.app_api.app import App, CommandResult
+from raftframe.log.log_api import RecordCode
 
 class BankingApp(App):
 

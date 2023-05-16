@@ -34,24 +34,24 @@ pytest --verbose \
        $STOP_OPTION \
        $LOG_OPTION \
       -s \
-      raft/tests/test_basic.py \
-      raft/tests/test_candidate_edges.py \
-      raft/tests/test_delayed_start.py \
-      raft/tests/test_mem_comms.py \
-      raft/tests/test_ps_cluster.py \
-      raft/tests/test_server_edges.py \
-      raft/tests/test_state_map.py \
-      raft/tests/test_udp_comms.py \
-      raft/tests/test_log_pulls.py \
-      raft/tests/test_follower_edges.py \
-      raft/tests/test_leader_edges.py \
-      raft/tests/test_backdown.py 
+      raftframe/tests/test_basic.py \
+      raftframe/tests/test_candidate_edges.py \
+      raftframe/tests/test_delayed_start.py \
+      raftframe/tests/test_mem_comms.py \
+      raftframe/tests/test_ps_cluster.py \
+      raftframe/tests/test_server_edges.py \
+      raftframe/tests/test_state_map.py \
+      raftframe/tests/test_udp_comms.py \
+      raftframe/tests/test_log_pulls.py \
+      raftframe/tests/test_follower_edges.py \
+      raftframe/tests/test_leader_edges.py \
+      raftframe/tests/test_backdown.py
 
 
 if [ -z ${DO_COVERAGE+x} ]; then
     foo=""
 else
-    coverage combine --rcfile=`pwd`/raft/coverage.cfg --append
-    coverage html --rcfile=`pwd`/raft/coverage.cfg
-    coverage report --rcfile=`pwd`/raft/coverage.cfg
+    coverage combine --rcfile=`pwd`/raftframe/coverage.cfg --append
+    coverage html --rcfile=`pwd`/raftframe/coverage.cfg
+    coverage report --rcfile=`pwd`/raftframe/coverage.cfg
 fi    

@@ -35,7 +35,7 @@ pytest --verbose \
 if [ -z ${DO_COVERAGE+x} ]; then
     foo=""
 else
-    coverage combine --rcfile=`pwd`/raft/coverage.cfg --append
-    coverage html --rcfile=`pwd`/raft/coverage.cfg
-    coverage report --rcfile=`pwd`/raft/coverage.cfg
+    coverage combine --rcfile=`pwd`/raftframe/coverage.cfg --append
+    coverage html --rcfile=`pwd`/raftframe/coverage.cfg
+    coverage report --rcfile=`pwd`/raftframe/coverage.cfg
 fi    
