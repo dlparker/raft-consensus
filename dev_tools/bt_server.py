@@ -102,7 +102,7 @@ class UDPBankTellerServer:
             cc = ClusterConfig(name=f"{endpoint}",
                           endpoint=endpoint,
                           other_nodes=self.others)
-            local_config = LocalConfig(working_dir=self.bt_server.working_dir)
+            local_config = LocalConfig(working_dir=self.working_dir)
             self.live_config = LiveConfig(cluster=cc,
                                           local=local_config,
                                           app=app, log=data_log,

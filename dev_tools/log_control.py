@@ -16,7 +16,7 @@ def set_levels(handler_names):
     log_loggers['raftframe'] = info_log
     warn_log = dict(handlers=handler_names, level="WARNING", propagate=False)
     debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
-    #log_loggers['raftframe.servers.server'] = debug_log
+    log_loggers['raftframe.servers.server'] = debug_log
     log_loggers['raftframe.states.state_map'] = debug_log
     log_loggers['raftframe.states.base_state'] = debug_log
     log_loggers['raftframe.states.follower'] = debug_log

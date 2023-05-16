@@ -4,15 +4,15 @@ from pathlib import Path
 sdir = Path(__file__).parent.resolve()
 basedir = sdir.parent
 raft_dir = Path(basedir, 'raftframe')
-test_dir = Path(raft_dir, "tests")
+dev_dir = Path(basedir, "dev_tools")
 sys.path.append(basedir.as_posix())
-sys.path.append(test_dir.as_posix())
+sys.path.append(dev_dir.as_posix())
 print(sys.path)
 from logging.config import dictConfig
 wdir = os.getcwd()
 
-from tests.bt_server import UDPBankTellerServer
-from tests.log_control import config_logging
+from dev_tools.bt_server import UDPBankTellerServer
+from dev_tools.log_control import config_logging
 
 def run_server(ipv4, port, endpoints):
     config,_ = config_logging(f"server_{port}.log")
@@ -21,7 +21,7 @@ def run_server(ipv4, port, endpoints):
     server = UDPBankTellerServer(port,
                                  os.getcwd(),
                                  f"server_{port}",
-                                 endpoints, False)
+                                 endpoints, timeout_basis=0.1)
     server.start()
 
 

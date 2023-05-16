@@ -2,9 +2,13 @@ import sys
 from pathlib import Path
 sdir = Path(__file__).parent.resolve()
 basedir = sdir.parent
+raft_dir = Path(basedir, 'raftframe')
+dev_dir = Path(basedir, "dev_tools")
 sys.path.append(basedir.as_posix())
+sys.path.append(dev_dir.as_posix())
 print(sys.path)
-from tests.bt_client import UDPBankTellerClient
+
+from dev_tools.bt_client import UDPBankTellerClient
 
 
 def run_client(server_host, server_port):
