@@ -18,7 +18,7 @@ from raftframe.app_api.app import StateChangeMonitor
 from raftframe.states.follower import Follower
 from raftframe.serializers.msgpack import MsgpackSerializer
 from raftframe.serializers.json import JsonSerializer
-from bank_teller.bank_app import BankingApp
+from dev_tools.bank_app import BankingApp
 from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor

@@ -1,3 +1,8 @@
+"""
+  At one point this was identical to the bank_app.py file in the bank_teller
+  demonstration program, because it was copied here from there. Expected to 
+  diverge over time.
+"""
 from typing import Union
 import logging
 from raftframe.app_api.app import App, CommandResult
