@@ -5,7 +5,7 @@ import logging
 import traceback
 import os
 
-from raftframe.tests.common_tcase import TestCaseCommon
+from tests.common_tcase import TestCaseCommon
 
 from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.states.base_state import StateCode
@@ -154,10 +154,10 @@ class TestRestarts(TestCaseCommon):
         super(TestRestarts, cls).setUpClass()
         cls.total_nodes = 3
         cls.timeout_basis = 0.1
-        if __name__.startswith("raftframe.tests"):
+        if __name__.startswith("tests"):
             cls.logger_name = __name__
         else:
-            cls.logger_name = "raftframe.tests." + __name__
+            cls.logger_name = "tests." + __name__
 
     def change_log(self):
         for spec in self.cluster.get_servers().values():

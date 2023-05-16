@@ -33,7 +33,7 @@ pytest --verbose \
        $COVER_OPTION \
        $STOP_OPTION \
        $LOG_OPTION \
-      -s raftframe/tests
+      -s tests
 if [ -z ${DO_COVERAGE+x} ]; then
     foo=""
 else

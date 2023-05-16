@@ -43,7 +43,7 @@ class TestOddPaths(unittest.TestCase):
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-        self.logger = logging.getLogger("raftframe.tests." + __name__)
+        self.logger = logging.getLogger("tests." + __name__)
                 
     def tearDown(self):
         self.cluster.stop_all_servers()

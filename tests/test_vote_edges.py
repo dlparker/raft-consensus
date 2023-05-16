@@ -6,7 +6,7 @@ import traceback
 import os
 from pathlib import Path
 
-from raftframe.tests.common_tcase import TestCaseCommon
+from tests.common_tcase import TestCaseCommon
 
 from dev_tools.pausing_app import InterceptorMode
 from raftframe.messages.heartbeat import HeartbeatMessage
@@ -122,7 +122,7 @@ class TestCandidateVoteStartPause(unittest.TestCase):
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-        self.logger = logging.getLogger("raftframe.tests." + __name__)
+        self.logger = logging.getLogger("tests." + __name__)
                 
     def tearDown(self):
         self.cluster.stop_all_servers()
@@ -191,7 +191,7 @@ class TestElectionStartPaused(TestCaseCommon):
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
-        self.logger = logging.getLogger("raftframe.tests." + __name__)
+        self.logger = logging.getLogger("tests." + __name__)
                 
     def tearDown(self):
         self.cluster.stop_all_servers()

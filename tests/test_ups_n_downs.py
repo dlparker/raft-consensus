@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 import os
 
-from raftframe.tests.common_tcase import TestCaseCommon
+from tests.common_tcase import TestCaseCommon
 from raftframe.log.sqlite_log import SqliteLog
 
 class TestRestarts(TestCaseCommon):
@@ -16,10 +16,10 @@ class TestRestarts(TestCaseCommon):
         # candidates timeout or pushing leader into
         # problem state regarding our pausing tricks
         cls.timeout_basis = 0.2
-        if __name__.startswith("raftframe.tests"):
+        if __name__.startswith("tests"):
             cls.logger_name = __name__
         else:
-            cls.logger_name = "raftframe.tests." + __name__
+            cls.logger_name = "tests." + __name__
         cls.log_paths = {}
 
     def change_log(self):

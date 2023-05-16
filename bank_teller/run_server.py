@@ -11,8 +11,8 @@ print(sys.path)
 from logging.config import dictConfig
 wdir = os.getcwd()
 
-from raftframe.tests.bt_server import UDPBankTellerServer
-from raftframe.tests.log_control import config_logging
+from tests.bt_server import UDPBankTellerServer
+from tests.log_control import config_logging
 
 def run_server(ipv4, port, endpoints):
     config,_ = config_logging(f"server_{port}.log")

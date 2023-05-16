@@ -24,7 +24,7 @@ def set_levels(handler_names):
     log_loggers['raftframe.states.leader'] = debug_log
     #log_loggers['raftframe.states.leader:heartbeat'] = debug_log
     #log_loggers['dev_tools.memory_log'] = debug_log
-    log_loggers['raftframe.tests'] = debug_log
+    log_loggers['tests'] = debug_log
     #log_loggers['dev_tools.timer_wrapper'] = debug_log
     #log_loggers['dev_tools.pausing_app'] = debug_log
     #log_loggers['raftframe.states.timer'] = debug_log

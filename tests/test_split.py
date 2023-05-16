@@ -6,7 +6,7 @@ import traceback
 import os
 from pathlib import Path
 
-from raftframe.tests.common_tcase import TestCaseCommon
+from tests.common_tcase import TestCaseCommon
 
 class TestSplit(TestCaseCommon):
 
@@ -18,10 +18,10 @@ class TestSplit(TestCaseCommon):
         cls.total_nodes = 5
         # Need to go a little slower with 5 servers than 3
         cls.timeout_basis = 0.2
-        if __name__.startswith("raftframe.tests"):
+        if __name__.startswith("tests"):
             cls.logger_name = __name__
         else:
-            cls.logger_name = "raftframe.tests." + __name__
+            cls.logger_name = "tests." + __name__
         
     def test_leader_stays_split(self):
         # Preamble starts 5 servers (self.total_nodes) and

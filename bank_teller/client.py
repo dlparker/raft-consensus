@@ -4,7 +4,7 @@ sdir = Path(__file__).parent.resolve()
 basedir = sdir.parent
 sys.path.append(basedir.as_posix())
 print(sys.path)
-from raftframe.tests.bt_client import UDPBankTellerClient
+from tests.bt_client import UDPBankTellerClient
 
 
 def run_client(server_host, server_port):

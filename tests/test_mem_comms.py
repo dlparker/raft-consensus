@@ -41,7 +41,7 @@ class TestBasic(unittest.TestCase):
         
     @classmethod
     def setUpClass(cls):
-        cls.logger = logging.getLogger("raftframe.tests")
+        cls.logger = logging.getLogger("tests")
         cls.logger.info("")
         
     @classmethod
@@ -273,7 +273,7 @@ class TestDebugControls(unittest.TestCase):
         
     @classmethod
     def setUpClass(cls):
-        cls.logger = logging.getLogger("raftframe.tests")
+        cls.logger = logging.getLogger("tests")
         cls.logger.info("")
         
     @classmethod

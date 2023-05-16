@@ -5,7 +5,7 @@ import logging
 import traceback
 import os
 
-from raftframe.tests.common_tcase import TestCaseCommon
+from tests.common_tcase import TestCaseCommon
 
 class TestCommands(TestCaseCommon):
     
