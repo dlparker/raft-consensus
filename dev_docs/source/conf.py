@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath('../../dev_tools')) # to allow referencing of
 
 # -- Project information -----------------------------------------------------
 
-project = 'RaftFrame library'
+project = 'RaftFrame Developer Tools'
 copyright = '2022, Dennis Parker'
 author = 'Dennis Parker'
 
