@@ -14,6 +14,7 @@ import os
 import sys
 from pathlib import Path
 sys.path.insert(0, os.path.abspath('../../dev_tools')) # to allow referencing of rst files
+sys.path.insert(0, os.path.abspath('../../bank_teller')) # to allow referencing of rst files
 
 
 # -- Project information -----------------------------------------------------
