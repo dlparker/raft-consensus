@@ -51,6 +51,75 @@ standard components (by inheritance) to add hooks and callbacks.
 A secondary means is to replace standard components, as is done with the CommsAPI
 implementation. 
 
+***************
+Pausing Servers
+***************
+
+The customer servers used for the threaded, single process cluster
+implement a "pause" by entering an async wait loop waiting until a
+resume flag is set somehow. Since this is async, other things will
+continue to happen, and some of those things will change the state of
+the server. Timer base operations are the primary example. The state
+classes use timers to trigger elements of the Raft protocol. The
+Leader uses a timer to send heartbeats, and the followers use a timer
+to ensure that a heartbeat has arrived in less than the specified time
+limit, else it starts an election. The Candidate uses a timer to
+detect whether the voting period has expired without resolution and
+switches back to Follower state.
+
+Messages can also defeat the idea of being paused. For example, if a Candidate
+receives a heartbeat from a Leader and the state is valid, then the Cadidate
+switches back to a Follower.
+
+In order to suspend servers at some desired state, these async events need
+to be prevented, or delayed more likely. The timers need to be paused any
+time that the server pauses, for whatever reason. Depending on the state
+of the servers when the pause begins, it may also be necessary to interrupt
+message processing to prevent state changes.
+
+--------------
+Pausing timers
+--------------
+
+The three state classes, Follower, Candidate and Leader all schedule callbacks
+from timers in order to detect and respond to changes in cluster state. These
+timer callbacks need to be delayed during any pause. These suspendable servers
+therefore use a special timer class that can be paused, and that is cataloged
+in a way that it is easy to find all the timers in a thread and pause and
+resume them. This is accomplished by replacing all timer instances with
+instances of the :class:`dev_tools.timer_wrapper.ControlledTimer` class,
+which registers itself with the :class:`dev_tools.timer_wrapper.TimerSet`
+class, an instance of which is stored in thread local storage, so each
+thread has a TimerSet instance that has a reference to every ControlledTimer.
+
+The method of replacing the normal timer class with the ControlledTimer is
+based on the fact that the state classes setup their timers by calling the
+get_timer or get_timer_class method on the :class:`raftframe.servers.server.Server`
+class. This makes it simple to substitute the ControlledTimer for the whole
+server without complicating the initialization of the state classes.
+
+-------------
+Pausing Comms
+-------------
+
+The :class:dev_tools.memory_comms.MemoryComms class implements
+the CommsAPI, but adds an "interceptor" feature, such that it can be dynamically
+configured to pause just before or just after sending or just before or just after
+receiving (processing, actually) a message of a particular type.
+
+So, for example, you can configure all the servers to stop after sending the heartbeat
+message and before processing a received heartbeat message. If the server state is
+Leader, then it will send the heartbeat and then pause. If a server receives this message
+it will pause before processing it. Note that this example will result in only one server
+pausing before processing, so if the cluster size > 2 then the other servers will eventually
+timeout waiting for the heartbeat, so care must be taken to work around this issue.
+
+As an extra option the pre-send and pre-processing interceptors functions can return False, thereby
+telling the MemoryComms code not to send or process the targeted message.
+
+This interceptor based pausing can be used in conjunction with other pausing techniques
+to ensure that a paused server does not process an incoming message while in the paused state.
+
 ===============
 The Banking App
 ===============
@@ -76,6 +145,22 @@ The other type is the "pausing app" flavor of cluster, with all servers run in d
 threads in a single process, using a number of wrapper components including an in-memory
 implementation of the CommsAP. 
 
+
+------------
+Test Servers
+------------
+
+There are two test server base classes that are intended to run in the two types of cluster setups,
+multiprocessing/UDP and threaded/Memory. Both use the :class:`bank_app.BankingApp`
+as the App API implementation.
+
+The :class:`dev_tools.bt_server.UDPBankTellerServer` the in memory log implementation
+:class:`dev_tools.memory_log.MemoryLog`. It also uses a special StateMap implementation
+that records current state and substate information via a python multiprocessing
+manager instance, thus allowing test code to check the state and substate values for
+subprocesses. The class has a class method that provides the multiprocess process startup
+sequence.
+
 -----------
 Pausing App
 -----------
@@ -90,5 +175,6 @@ using memory structures to emulate storage and transport
 operations. It uses the :class:`bank_app.BankingApp`
 for the app, and it responds to calls to the start method by
 starting a thread to run the server.
+
 
 

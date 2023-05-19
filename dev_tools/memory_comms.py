@@ -77,6 +77,7 @@ class MemoryComms(CommsAPI):
         self.keep_running = False
         self.logger = logging.getLogger(__name__)
         self.interceptor = None
+        self.pause_new = False
         self.partition = 0 # used to support faked network partitioning
 
     def set_interceptor(self, interceptor: MessageInterceptor):
@@ -106,6 +107,12 @@ class MemoryComms(CommsAPI):
             self.task.cancel()
             await asyncio.sleep(0)
 
+    def pause_new_messages(self):
+        self.pause_new = True
+
+    def resume_new_messages(self):
+        self.pause_new = False
+    
     def are_out_queues_empty(self):
         global channels
         any_full = False
@@ -122,6 +129,8 @@ class MemoryComms(CommsAPI):
         # make sure addresses are tuples
         message._sender = (message.sender[0], message.sender[1])
         message._receiver = (message.receiver[0], message.receiver[1])
+        while self.pause_new:
+            await asyncio.sleep(0.01)
         try:
             target = message.receiver
             # this can happen at startup, waiting for
@@ -185,6 +194,8 @@ class MemoryComms(CommsAPI):
                     if "loop is closed" in str(r_e):
                         self.keep_running = False
                         return
+                while self.pause_new:
+                    await asyncio.sleep(0.01)
                 addr = w.addr
                 data = w.data
                 try:

@@ -185,9 +185,9 @@ class PausingMonitor(StateChangeMonitor):
                                         dict(old_state=old_state,
                                              new_state=new_state))
 
-    def clear_pause_on_substate(self, substate):
-        if str(substate) in self.pause_on_substates:
-            del self.pause_on_states[str(substate)]
+    def clear_pause_on_state(self, state):
+        if str(state) in self.pause_on_states:
+            del self.pause_on_states[str(state)]
         
     async def substate_pause_method(self, monitor, state,
                                     old_substate, new_substate):

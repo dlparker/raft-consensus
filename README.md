@@ -1,6 +1,8 @@
 
-# fork of [baonguyen2604/raft-consensus](https://github.com/baonguyen2604/raft-consensus)
+# Raft Based Server Library
 
+This code began life as a fork of
+[baonguyen2604/raft-consensus](https://github.com/baonguyen2604/raft-consensus)
 The code orignally forked was chosen because it is the most
 understandable, straightforward implementation that provided enough of
 the raft features, compared to the other python implementations
