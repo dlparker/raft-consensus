@@ -7,10 +7,10 @@ import shutil
 import logging
 
 if __name__=="__main__":
-    sdir = Path(__file__).parent.resolve()
-    raft_dir = sdir.parent
-    basedir = raft_dir.parent
-    sys.path.append(basedir.as_posix())
+    #sdir = Path(__file__).parent.resolve()
+    #raft_dir = sdir.parent
+    #basedir = raft_dir.parent
+    #sys.path.append(basedir.as_posix())
     
     from dev_tools.pserver import PServer
     from dev_tools.log_control import config_logging

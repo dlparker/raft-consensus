@@ -38,9 +38,9 @@ class PauseSupportMonitor(StateChangeMonitor):
     async def new_substate(self, state_map: StateMap,
                             state: State,
                             substate: Substate) -> None:
-        await self.pserver.new_state(state_map,
-                                     state,
-                                     substate)
+        await self.pserver.new_substate(state_map,
+                                        state,
+                                        substate)
 
 
 class PServer:
@@ -100,13 +100,13 @@ class PServer:
         await self.resume_new_messages()
         await self.resume_timers()
     
-    async def pause_on_state(self, state):
+    def pause_on_state(self, state):
         self.pausing_states[str(state)] = self.state_pause_method
+
+    def clear_pause_on_state(self, state: State):
+        if str(state) in self.pausing_states:
+            del self.pausing_states[str(state)]
          
-    def clear_pause_on_substate(self, state: State):
-        if state in self.pausing_states:
-            del self.pausing_states[state]
-            
     async def state_pause_method(self, state_map, old_state, new_state):
         await self.pause()
 
@@ -117,12 +117,12 @@ class PServer:
             return await self.pausing_states[str(new_state)](state_map, old_state, new_state)
         return new_state
                 
-    async def pause_on_substate(self, substate):
-        self.pausing_substates[substate] = self.substate_pause_method
+    def pause_on_substate(self, substate):
+        self.pausing_substates[str(substate)] = self.substate_pause_method
 
     def clear_pause_on_substate(self, substate: Substate):
-        if substate in self.pausing_substates:
-            del self.pausing_substates[substate]
+        if str(substate) in self.pausing_substates:
+            del self.pausing_substates[str(substate)]
 
     async def substate_pause_method(self, state_map,
                                     state, substate):
@@ -132,8 +132,8 @@ class PServer:
                             state: State,
                             substate: Substate) -> None:
         if str(substate) in self.pausing_substates:
-            await self.pausing_states[str(substate)](state_map, state, substate)
-        return new_state
+            print(f'\n\nThread {self.thread.name} pausing on substate {substate}\n\n')
+            await self.pausing_substates[str(substate)](state_map, state, substate)
             
     async def interceptor_pause_method(self, mode, code, message):
         await self.pause()
