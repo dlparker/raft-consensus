@@ -224,8 +224,11 @@ class PServer:
             
         if self.do_resume:
             self.paused = False
-            timer_set = get_timer_set()
-            timer_set.resume_all()
+            self.pause_noted = False
+            await self.resume_timers()
+            await self.resume_new_messages()
+            #timer_set = get_timer_set()
+            #timer_set.resume_all()
             self.do_resume = False
             self.logger.info("<<<<<<< %s %s resumed", self.port,
                              self.state_map.state)
@@ -250,7 +253,7 @@ class ServerThread(threading.Thread):
         await get_timer_set().pause_all()
 
     async def resume_timers(self):
-        await get_timer_set().resume()
+        get_timer_set().resume_all()
 
     def run(self):
         self.pserver.thread_ident = threading.get_ident()

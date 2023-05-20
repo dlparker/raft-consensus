@@ -3,29 +3,22 @@ import os
 import sys
 import time
 import asyncio
-import pdb
-from pathlib import Path
-from logging.config import dictConfig
-import shutil
 import logging
+from pathlib import Path
 from raftframe.states.base_state import State, Substate
 from dev_tools.pserver import PServer
-from dev_tools.log_control import config_logging
 
 
 class PausingCluster:
 
-    def __init__(self, server_count):
+    def __init__(self, server_count, working_dir=None):
         self.server_count = server_count
         self.debugging = False
+        if working_dir is None:
+            working_dir = Path(f"/tmp/raft_tests")
+        self.working_dir = working_dir
         self.nodes = []
         self.servers = []
-        wdir = Path(f"/tmp/raft_tests/p_server")
-        if wdir.exists():
-            shutil.rmtree(wdir)
-        wdir.mkdir(parents=True)
-        config,_ = config_logging(f"{wdir.as_posix()}/server.log")
-        dictConfig(config)
         for i in range(self.server_count):
             self.nodes.append(('localhost', 5000+i))
     
@@ -36,7 +29,7 @@ class PausingCluster:
                 if ot[1] == this_node[1]:
                     continue
                 others.append(ot)
-            server = PServer(this_node[1], wdir,
+            server = PServer(this_node[1], self.working_dir,
                          f"server_{i}", others, False)
             self.servers.append(server)
 

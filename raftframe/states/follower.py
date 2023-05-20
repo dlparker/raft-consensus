@@ -158,7 +158,7 @@ class Follower(State):
         await self.leaderless_timer.reset()
         self.logger.debug("append %s %s", message, message.data)
         laddr = message.sender
-        if self.leader_addr is None:
+        if self.leader_addr is None or self.leader_addr != laddr:
             self.leader_addr = laddr
             self.last_vote = None
             self.last_vote_term = None

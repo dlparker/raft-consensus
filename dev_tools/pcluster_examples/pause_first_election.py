@@ -18,11 +18,20 @@ import os
 import sys
 import time
 import asyncio
+from pathlib import Path
+import shutil
 from raftframe.states.base_state import State, Substate
 from dev_tools.pserver import PServer
 from dev_tools.pcluster import PausingCluster
+from dev_tools.log_control import one_proc_log_setup
 
 if __name__=="__main__":
+
+    wdir = Path(f"/tmp/raft_tests")
+    if wdir.exists():
+        shutil.rmtree(wdir)
+    wdir.mkdir(parents=True)
+    one_proc_log_setup(f"{wdir.as_posix()}/server.log")
 
     pc = PausingCluster(3)
     go_flag = False
