@@ -23,25 +23,6 @@ from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor
 
-class PauseSupportMonitor(StateChangeMonitor):
-
-    def __init__(self, pserver):
-        self.pserver = pserver
-
-    async def new_state(self, state_map: StateMap,
-                        old_state: Union[State, None],
-                        new_state: Substate) -> State:
-        return await self.pserver.new_state(state_map,
-                                            old_state,
-                                            new_state)
-
-    async def new_substate(self, state_map: StateMap,
-                            state: State,
-                            substate: Substate) -> None:
-        await self.pserver.new_substate(state_map,
-                                        state,
-                                        substate)
-
 
 class PServer:
 
@@ -58,7 +39,12 @@ class PServer:
         self.endpoint = (self.host, self.port)
         self.thread_started = False
         self.thread_ident = None
+        self.running = False
         self.paused = False
+        self.pause_callback = None
+        self.pause_noted = False
+        self.resume_callback = None
+        self.resume_noted = False
         self.do_log_stats = False
         self.do_dump_state = False
         self.do_resume = False
@@ -94,11 +80,10 @@ class PServer:
         await self.pause_timers()
         await self.pause_new_messages()
         self.paused = True
+        self.logger.debug("%s, %s paused", self.name, self.thread_ident)
 
-    async def resume(self):
-        self.paused = False
-        await self.resume_new_messages()
-        await self.resume_timers()
+    def resume(self):
+        self.do_resume = True
     
     def pause_on_state(self, state):
         self.pausing_states[str(state)] = self.state_pause_method
@@ -114,6 +99,7 @@ class PServer:
                         old_state: Union[State, None],
                         new_state: Substate) -> State:
         if str(new_state) in self.pausing_states:
+            self.logger.debug("%s, %s pausing on %s", self.name, self.thread_ident, new_state)
             return await self.pausing_states[str(new_state)](state_map, old_state, new_state)
         return new_state
                 
@@ -132,7 +118,7 @@ class PServer:
                             state: State,
                             substate: Substate) -> None:
         if str(substate) in self.pausing_substates:
-            print(f'\n\nThread {self.thread.name} pausing on substate {substate}\n\n')
+            self.logger.debug("%s, %s pausing on %s", self.name, self.thread_ident, substate)
             await self.pausing_substates[str(substate)](state_map, state, substate)
             
     async def interceptor_pause_method(self, mode, code, message):
@@ -159,21 +145,25 @@ class PServer:
 
     async def before_in_msg(self, message) -> bool:
         if message.code in self.in_befores:
+            self.logger.debug("%s, %s pausing before in %s", self.name, self.thread_ident, message.code)
             return await self.interceptor_pause_method('IN_BEFORE', message.code, message)
         return True
 
     async def after_in_msg(self, message) -> bool:
         if message.code in self.in_afters:
+            self.logger.debug("%s, %s pausing after in %s", self.name, self.thread_ident, message.code)
             return await self.interceptor_pause_method('IN_AFTER', message.code, message)
         return True
 
     async def before_out_msg(self, message) -> bool:
         if message.code in self.out_befores:
+            self.logger.debug("%s, %s pausing before out %s", self.name, self.thread_ident, message.code)
             return await self.interceptor_pause_method('OUT_BEFORE', message.code, message)
         return True
 
     async def after_out_msg(self, message) -> bool:
         if message.code in self.out_afters:
+            self.logger.debug("%s, %s pausing after out %s", self.name, self.thread_ident, message.code)
             return await self.interceptor_pause_method('OUT_AFTER', message.code, message)
         return True
 
@@ -196,9 +186,15 @@ class PServer:
     def stop(self):
         self.thread.stop()
         self.thread.keep_running = False
+        self.logger.debug("%s, %s stopped", self.name, self.thread_ident)
 
     async def in_loop_check(self, thread_obj):
         # this is called from the server thread object in that thread
+
+        if self.paused and not self.pause_noted:
+            self.pause_noted = True
+            if self.pause_callback:
+                await self.pause_callback(self)
         if self.do_log_stats:
             self.do_log_stats = False
             # cannot get to sqlite log directly from test code because
@@ -233,6 +229,10 @@ class PServer:
             self.do_resume = False
             self.logger.info("<<<<<<< %s %s resumed", self.port,
                              self.state_map.state)
+            if not self.resume_noted:
+                self.resume_noted = True
+                if self.resume_callback:
+                    await self.resume_callback(self)
         
 class ServerThread(threading.Thread):
 
@@ -254,6 +254,7 @@ class ServerThread(threading.Thread):
 
     def run(self):
         self.pserver.thread_ident = threading.get_ident()
+        self.pserver.running = True
         if not self.ready:
             self.logger.info("memory comms bank teller server waiting for config")
             while not self.ready:
@@ -277,6 +278,7 @@ class ServerThread(threading.Thread):
                 pass
         finally:
             loop.close()        
+            self.pserver.running = False
 
     def go(self):
         self.ready = True
@@ -341,3 +343,22 @@ class ServerThread(threading.Thread):
 
         
         
+class PauseSupportMonitor(StateChangeMonitor):
+
+    def __init__(self, pserver):
+        self.pserver = pserver
+
+    async def new_state(self, state_map: StateMap,
+                        old_state: Union[State, None],
+                        new_state: Substate) -> State:
+        return await self.pserver.new_state(state_map,
+                                            old_state,
+                                            new_state)
+
+    async def new_substate(self, state_map: StateMap,
+                            state: State,
+                            substate: Substate) -> None:
+        await self.pserver.new_substate(state_map,
+                                        state,
+                                        substate)
+
