@@ -15,7 +15,7 @@ class TestCommands(TestCaseCommon):
         first = self.non_leaders[0]
         second = self.non_leaders[1]
         self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 through direct leader call\n\n")
         self.result = None
         self.log_record_count = 0
@@ -24,7 +24,7 @@ class TestCommands(TestCaseCommon):
             self.result = result
 
         async def direct_command(command):
-            state = self.leader.server_obj.state_map.state
+            state = self.leader.state_map.get_state()
             await state.on_internal_command(command, callback)
             self.log_record_count = state.log.get_last_index()
 
@@ -36,6 +36,6 @@ class TestCommands(TestCaseCommon):
             time.sleep(0.01)
         self.assertIsNotNone(self.result)
         self.assertEqual(self.result['balance'], 10)
-        first_log = first.server_obj.get_log()
+        first_log = first.thread.server.get_log()
         self.assertEqual(first_log.get_last_index(), self.log_record_count)
         self.postamble()
