@@ -50,8 +50,9 @@ class Follower(State):
     async def stop(self):
         # ignore already terminated, just make sure it is done
         self.terminated = True
-        if not self.leaderless_timer.terminated:
+        if self.leaderless_timer and not self.leaderless_timer.terminated:
             await self.leaderless_timer.terminate()
+            self.leaderless_timer = None
         
     def election_interval(self):
         return random.uniform(self.timeout, 2 * self.timeout)

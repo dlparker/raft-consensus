@@ -96,9 +96,10 @@ class TestOddMsgs(unittest.TestCase):
 
         async def resume_callback(pserver):
             self.logger.info(f'{pserver.name} resumed')
+            
         server.pause_callback = pause_callback
         server.resume_callback = resume_callback
-        # pause candidate at start
+        # pause candidate at starto
         server.pause_on_substate(Substate.voting)
         server.start()
         self.logger.info("waiting for switch to candidate and pause")
@@ -337,6 +338,7 @@ class TestOddMsgs(unittest.TestCase):
         self.release_to_resign(pserver, try_append)
         self.assertFalse(pserver.state_map.get_state() == candidate)
         pserver.resume()
+
         
     def test_vote_response_1(self):
         pserver = self.preamble()

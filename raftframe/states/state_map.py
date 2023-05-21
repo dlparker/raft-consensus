@@ -52,8 +52,7 @@ class StateMap(metaclass=abc.ABCMeta):
         raise NotImplementedError
         
     @abc.abstractmethod
-    def start_state_change(self, old_state: Union[str, None],
-                           new_state: str) -> None:
+    def start_state_change(self, new_state: str) -> None:
         raise NotImplementedError
     
     @abc.abstractmethod
@@ -127,8 +126,7 @@ class StandardStateMap(StateMap):
     def changing_state(self) -> bool:
         return self.changing
 
-    def start_state_change(self, old_state: Union[str, None],
-                           new_state: str) -> None:
+    def start_state_change(self, old_state: Union[str, None], new_state: str) -> None:
         self.changing = True
         self.pre_change = self.state
     
@@ -136,6 +134,14 @@ class StandardStateMap(StateMap):
                             new_state: str) -> None:
         self.changing = False
         self.pre_change = None
+        for monitor in self.monitors:
+            try:
+                monitor.finish_state_change(new_state)
+            except GeneratorExit: # pragma: no cover error
+                raise
+            except:
+                self.logger.error("Monitor finish_state_change call got exception \n\t%s",
+                                  traceback.format_exc())
     
     def failed_state_change(self, old_state: Union[str, None],
                             target_state: str,
@@ -153,7 +159,9 @@ class StandardStateMap(StateMap):
         if state != self.state:
             msg = 'set_substate call on non-current state!'
             self.logger.error(msg)
+            breakpoint()
             raise Exception(msg)
+        self.substate = substate
         for monitor in self.monitors:
             try:
                 await monitor.new_substate(self, state, substate)
@@ -163,11 +171,15 @@ class StandardStateMap(StateMap):
                 self.logger.error("Monitor new_substate call got" \
                                   " exception \n\t%s",
                                   traceback.format_exc())
-        self.substate = substate
         
     async def switch_to_follower(self, old_state: Optional[State] = None) -> Follower:
         if not self.server:
             raise Exception('must call activate before this method!')
+        self.start_state_change(self.state, 'follower')
+        if old_state:
+            os_name = str(old_state)
+        else:
+            os_name = None
         self.logger.info("switching state from %s to follower", self.state)
         follower =  Follower(server=self.server,
                              timeout=self.follower_leaderless_timeout)
@@ -180,10 +192,6 @@ class StandardStateMap(StateMap):
                 self.logger.error("Monitor new_state call got exception \n\t%s",
                                   traceback.format_exc())
         self.state = follower
-        if old_state:
-            os_name = str(old_state)
-        else:
-            os_name = None
         follower.start()
         await asyncio.sleep(0)
         self.finish_state_change(os_name, 'follower')
@@ -193,6 +201,11 @@ class StandardStateMap(StateMap):
         if not self.server:
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to candidate", self.state)
+        self.start_state_change(self.state, 'candidate')
+        if old_state:
+            os_name = str(old_state)
+        else:
+            os_name = None
         candidate =  Candidate(server=self.server,
                                timeout=self.candidate_voting_timeout)
         for monitor in self.monitors:
@@ -204,10 +217,6 @@ class StandardStateMap(StateMap):
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
         self.state = candidate
-        if old_state:
-            os_name = str(old_state)
-        else:
-            os_name = None
         candidate.start()
         await asyncio.sleep(0)
         self.finish_state_change(os_name, 'candidate')
@@ -217,6 +226,11 @@ class StandardStateMap(StateMap):
         if not self.server:
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to leader", self.state)
+        self.start_state_change(self.state, 'leader')
+        if old_state:
+            os_name = str(old_state)
+        else:
+            os_name = None
         leader =  Leader(server=self.server,
                          heartbeat_timeout=self.leader_heartbeat_timeout)
 
@@ -229,13 +243,9 @@ class StandardStateMap(StateMap):
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
         self.state = leader
-        if old_state:
-            os_name = str(old_state)
-        else:
-            os_name = None
         leader.start()
         await asyncio.sleep(0)
-        self.finish_state_change(os_name, 'candidate')
+        self.finish_state_change(os_name, 'leader')
         return leader
 
     

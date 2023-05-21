@@ -48,6 +48,7 @@ class PServer:
         self.pause_context = None
         self.resume_callback = None
         self.resume_noted = False
+        self.run_once_in_thread = None
         self.do_log_stats = False
         self.do_dump_state = False
         self.do_resume = False
@@ -71,87 +72,128 @@ class PServer:
         return self.thread.server
     
     async def pause_timers(self):
+        self.logger.debug("%s, %s pausing timers", self.name, self.thread_ident)
         await self.thread.pause_timers()
 
     async def resume_timers(self):
+        self.logger.debug("%s, %s resuming timers", self.name, self.thread_ident)
         await self.thread.resume_timers()
         
     async def pause_new_messages(self):
+        self.logger.debug("%s, %s pausing new messages", self.name, self.thread_ident)
         self.comms.pause_new_messages()
 
     async def resume_new_messages(self):
+        self.logger.debug("%s, %s resuming new messages", self.name, self.thread_ident)
         self.comms.resume_new_messages()
 
     async def pause(self):
         await self.pause_timers()
         await self.pause_new_messages()
         self.paused = True
-        self.logger.debug("%s, %s paused", self.name, self.thread_ident)
+        self.logger.debug("%s, %s pause signaled to server thread", self.name, self.thread_ident)
 
     def resume(self):
         self.do_resume = True
+        self.logger.debug("%s, %s resume signaled to server thread", self.name, self.thread_ident)
     
     def pause_on_state(self, state):
+        self.logger.debug("%s, %s setting pause on state %s", self.name, self.thread_ident, state)
         self.pausing_states[str(state)] = self.state_pause_method
 
     def clear_pause_on_state(self, state: State):
+        self.logger.debug("%s, %s clearing pause on state %s", self.name, self.thread_ident, state)
         if str(state) in self.pausing_states:
             del self.pausing_states[str(state)]
          
     def clear_state_pauses(self):
+        self.logger.debug("%s, %s setting pause on all states", self.name, self.thread_ident)
         self.pausing_states = {}
 
     async def state_pause_method(self, state_map, old_state, new_state):
         await self.pause()
+        self.logger.debug("%s, %s starting pause wait loop on state %s", self.name,
+                          self.thread_ident, self.pause_context.state)
+        while self.paused:
+            try:
+                await asyncio.sleep(0.001)
+            except asyncio.exceptions.CancelledError:
+                break
 
     async def new_state(self, state_map: StateMap,
                         old_state: Union[State, None],
                         new_state: Substate) -> State:
         if str(new_state) in self.pausing_states:
             self.logger.debug("%s, %s pausing on %s", self.name, self.thread_ident, new_state)
-            self.pause_context = PauseContext(self, PauseReason.state)
+            self.pause_context = PauseContext(self, PauseReason.state, state=new_state)
             return await self.pausing_states[str(new_state)](state_map, old_state, new_state)
         return new_state
                 
     def pause_on_substate(self, substate):
+        self.logger.debug("%s, %s setting pause on substate %s", self.name, self.thread_ident, substate)
         self.pausing_substates[str(substate)] = self.substate_pause_method
 
     def clear_pause_on_substate(self, substate: Substate):
+        self.logger.debug("%s, %s clearing pause on substate %s", self.name, self.thread_ident, substate)
         if str(substate) in self.pausing_substates:
             del self.pausing_substates[str(substate)]
 
     def clear_substate_pauses(self):
+        self.logger.debug("%s, %s setting pause on all substates", self.name, self.thread_ident)
         self.pausing_substates = {}
 
     async def substate_pause_method(self, state_map,
                                     state, substate):
         await self.pause()
+        self.logger.debug("%s, %s starting pause wait loop on substate %s", self.name,
+                          self.thread_ident, self.pause_context.substate)
+        while self.paused:
+            try:
+                await asyncio.sleep(0.001)
+            except asyncio.exceptions.CancelledError:
+                break
 
     async def new_substate(self, state_map: StateMap,
                             state: State,
                             substate: Substate) -> None:
         if str(substate) in self.pausing_substates:
             self.logger.debug("%s, %s pausing on %s", self.name, self.thread_ident, substate)
-            self.pause_context = PauseContext(self, PauseReason.substate)
+            self.pause_context = PauseContext(self, PauseReason.substate, substate=substate)
+            old_substate = state_map.substate
+            # for our purposes, we want the new substate to already be active
+            state_map.substate = substate
             await self.pausing_substates[str(substate)](state_map, state, substate)
             
     async def interceptor_pause_method(self, mode, code, message):
         await self.pause()
+        self.logger.debug("%s, %s starting pause wait loop on message %s %s ", self.name,
+                          self.thread_ident, self.pause_context.message_code,
+                          self.pause_context.reason)
+        while self.paused:
+            try:
+                await asyncio.sleep(0.001)
+            except asyncio.exceptions.CancelledError:
+                break
         return True
         
     async def pause_before_out_message(self, code):
+        self.logger.debug("%s, %s setting pause before out of %s", self.name, self.thread_ident, code)
         self.out_befores[code] = self.intercept_method
 
     async def pause_after_out_message(self, code):
+        self.logger.debug("%s, %s setting pause after out of %s", self.name, self.thread_ident, code)
         self.out_afters[code] = self.intercept_method
         
     async def pause_before_in_message(self, code):
+        self.logger.debug("%s, %s setting pause before in of %s", self.name, self.thread_ident, code)
         self.in_befores[code] = self.intercept_method
 
     async def pause_after_in_message(self, code):
+        self.logger.debug("%s, %s setting pause after in of %s", self.name, self.thread_ident, code)
         self.in_afters[code] = self.intercept_method
 
     def clear_message_triggers(self):
+        self.logger.debug("%s, %s clearing all message triggers", self.name, self.thread_ident, code)
         self.in_befores = {}
         self.in_afters = {}
         self.out_befores = {}
@@ -160,41 +202,44 @@ class PServer:
     async def before_in_msg(self, message) -> bool:
         if message.code in self.in_befores:
             self.logger.debug("%s, %s pausing before in %s", self.name, self.thread_ident, message.code)
-            self.pause_context = PauseContext(self, PauseReason.in_before)
+            self.pause_context = PauseContext(self, PauseReason.in_before, message_code=message.code)
             return await self.interceptor_pause_method('IN_BEFORE', message.code, message)
         return True
 
     async def after_in_msg(self, message) -> bool:
         if message.code in self.in_afters:
             self.logger.debug("%s, %s pausing after in %s", self.name, self.thread_ident, message.code)
-            self.pause_context = PauseContext(self, PauseReason.in_after)
+            self.pause_context = PauseContext(self, PauseReason.in_after, message_code=message.code)
             return await self.interceptor_pause_method('IN_AFTER', message.code, message)
         return True
 
     async def before_out_msg(self, message) -> bool:
         if message.code in self.out_befores:
             self.logger.debug("%s, %s pausing before out %s", self.name, self.thread_ident, message.code)
-            self.pause_context = PauseContext(self, PauseReason.out_before)
+            self.pause_context = PauseContext(self, PauseReason.out_before, message_code=message.code)
             return await self.interceptor_pause_method('OUT_BEFORE', message.code, message)
         return True
 
     async def after_out_msg(self, message) -> bool:
         if message.code in self.out_afters:
             self.logger.debug("%s, %s pausing after out %s", self.name, self.thread_ident, message.code)
-            self.pause_context = PauseContext(self, PauseReason.out_after)
+            self.pause_context = PauseContext(self, PauseReason.out_after, message_code=message.code)
             return await self.interceptor_pause_method('OUT_AFTER', message.code, message)
         return True
 
     def start_thread(self):
         if not self.thread_started:
+            self.logger.debug("%s, %s starting server thread but not calling go", self.name, self.thread_ident)
             self.thread.start()
             self.thread_started = True
         return self.thread
 
     def start(self):
         if not self.thread_started:
+            self.logger.debug("%s, %s starting server thread", self.name, self.thread_ident)
             self.thread.start()
             self.thread_started = True
+        self.logger.debug("%s, %s calling server thread go", self.name, self.thread_ident)
         self.thread.go()
 
     def configure(self):
@@ -256,6 +301,13 @@ class PServer:
                 if self.resume_callback:
                     await self.resume_callback(self)
         
+        if self.run_once_in_thread:
+            self.logger.debug("%s server thread calling run_once_in_thread %s", self.name,
+                              self.run_once_in_thread)
+            func = self.run_once_in_thread
+            self.run_once_in_thread = None
+            func(self)
+            
 class ServerThread(threading.Thread):
 
     def __init__(self, pserver):
@@ -384,6 +436,9 @@ class PauseSupportMonitor(StateChangeMonitor):
                                         state,
                                         substate)
 
+    def finish_state_change(self,  new_state: str) -> None:
+        pass
+    
 class PauseReason(str, Enum):
 
     state = "STATE"
@@ -397,3 +452,6 @@ class PauseReason(str, Enum):
 class PauseContext:
     server: PServer
     reason: PauseReason
+    state: State = None
+    substate: Substate = None
+    message_code: str = None
