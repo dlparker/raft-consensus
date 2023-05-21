@@ -54,6 +54,7 @@ if __name__=="__main__":
     pc.start_all()
     paused = []
     while len(paused) < 3:
+        paused = []
         for server in pc.servers:
             if server.paused:
                 paused.append(server)
@@ -72,6 +73,7 @@ if __name__=="__main__":
         server.stop()
     stopped = []
     while len(stopped) < 3:
+        stopped = []
         for server in pc.servers:
             if not server.running:
                 stopped.append(server)

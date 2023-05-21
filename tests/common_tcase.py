@@ -11,85 +11,14 @@ from raftframe.messages.heartbeat import HeartbeatMessage
 from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.messages.append_entries import AppendResponseMessage
 from raftframe.messages.append_entries import AppendEntriesMessage
-from raftframe.states.base_state import StateCode
-from dev_tools.ps_cluster import PausingServerCluster
-from dev_tools.pausing_app import InterceptorMode, TriggerType
-from dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
+from raftframe.states.base_state import StateCode, Substate
+
+from dev_tools.pcluster import PausingCluster
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
     LOGGING_TYPE = "devel_one_proc"
 
-from dev_tools.pausing_app import TriggerType
-
-class Pauser:
-    
-    def __init__(self, spec, tcase):
-        self.spec = spec
-        self.tcase = tcase
-        self.am_leader = False
-        self.paused = False
-        self.sent_count = 0
-        self.term_start_only = False
-        
-    def reset(self):
-        self.am_leader = False
-        self.paused = False
-        self.sent_count = 0
-        self.term_start_only = False
-        
-    async def leader_pause(self, mode, code, message):
-        self.am_leader = True
-        self.tcase.leader = self.spec
-
-        check_count = False
-        if code == "heartbeat":
-            check_count = True
-        elif (code == "append_entries" and self.term_start_only
-                  and len(message.data['entries']) > 0):
-              first = message.data['entries'][0]
-              if first["code"] == "NO_OP":
-                  check_count = True
-        if check_count:
-            # we want to do all the sends, regardless
-            # of how many are running, paused, whatever
-            limit = len(self.tcase.servers) - 1
-            self.sent_count += 1
-            if self.sent_count < limit:
-                self.tcase.logger.info("not pausing on %s, sent count" \
-                                        " %d not yet %d", code,
-                                        self.sent_count, limit)
-                return True
-            
-            self.tcase.logger.info("got sent for %s, %s followers to count," \
-                                   " pausing",  message.receiver, limit)
-        else:
-            self.tcase.logger.info("got sent %s for %s, pausing",
-                                   message.code, message.receiver)
-            
-        await self.spec.pbt_server.pause_all(TriggerType.interceptor,
-                                             dict(mode=mode,
-                                                  code=code))
-        return True
-    
-    async def follower_pause(self, mode, code, message):
-        self.am_leader = False
-        self.tcase.non_leaders.append(self.spec)
-        self.paused = True
-        await self.spec.pbt_server.pause_all(TriggerType.interceptor,
-                                             dict(mode=mode,
-                                                  code=code))
-        return True
-
-    async def candidate_pause(self, mode, code, message):
-        self.am_leader = False
-        self.tcase.non_leaders.append(self.spec)
-        self.paused = True
-        await self.spec.pbt_server.pause_all(TriggerType.interceptor,
-                                             dict(mode=mode,
-                                                  code=code))
-        return True
-    
 class TestCaseCommon(unittest.TestCase):
 
     @classmethod
@@ -103,10 +32,10 @@ class TestCaseCommon(unittest.TestCase):
         pass
     
     def setUp(self):
-        self.cluster = PausingServerCluster(server_count=self.total_nodes,
-                                            logging_type=LOGGING_TYPE,
-                                            base_port=5000,
-                                            timeout_basis=self.timeout_basis)
+        self.cluster = PausingCluster(server_count=self.total_nodes,
+                                      logging_type=LOGGING_TYPE,
+                                      base_port=5000,
+                                      timeout_basis=self.timeout_basis)
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -115,7 +44,7 @@ class TestCaseCommon(unittest.TestCase):
         self.logger = logging.getLogger(self.logger_name)
                 
     def tearDown(self):
-        self.cluster.stop_all_servers()
+        self.cluster.stop_all()
         time.sleep(0.1)
         self.loop.close()
 
@@ -132,13 +61,13 @@ class TestCaseCommon(unittest.TestCase):
             time.sleep(0.01)
             pause_count = 0
             self.non_leaders = []
-            for spec in self.servers.values():
-                if spec.pbt_server.paused:
+            for server in self.cluster.servers:
+                if server.paused:
                     pause_count += 1
-                    if spec.monitor.state.get_code() == StateCode.leader:
-                        self.leader = spec
+                    if server.state_map.get_state().get_code() == StateCode.leader:
+                        self.leader = server
                     else:
-                        self.non_leaders.append(spec)
+                        self.non_leaders.append(server)
             if pause_count >= expected:
                 break
         self.assertEqual(pause_count, expected)
@@ -147,8 +76,8 @@ class TestCaseCommon(unittest.TestCase):
         return
 
     def dump_state(self):
-        for spec in self.servers.values():
-            spec.pbt_server.dump_state()
+        for server in self.cluster.servers:
+            server.dump_state()
             time.sleep(0.01)
 
     def resume_waiter(self):
@@ -158,38 +87,36 @@ class TestCaseCommon(unittest.TestCase):
             # blocking this one is fine
             time.sleep(0.01)
             pause_count = 0
-            for spec in self.servers.values():
-                if spec.running:
-                    if spec.pbt_server.paused:
+            for server in self.cluster.servers:
+                if server.running:
+                    if server.paused:
                         pause_count += 1
             if pause_count == 0:
                 break
         self.assertEqual(pause_count, 0)
-
-    def reset_pausers(self):
-        for name in self.servers.keys():
-            self.pausers[name].reset()
 
     def reset_roles(self):
         self.leader = None
         self.non_leaders = []
         
     def preamble(self, num_to_start=None,  pre_start_callback=None):
-        self.servers = self.cluster.prepare(timeout_basis=self.timeout_basis)
         if num_to_start is None:
-            num_to_start = len(self.servers)
+            num_to_start = len(self.cluster.servers)
         self.pausers = {}
         self.leader = None
         self.non_leaders = []
-        for spec in self.servers.values():
-            self.pausers[spec.name] = Pauser(spec, self)
         self.expected_followers = num_to_start - 1
-        self.set_term_start_intercept()
         if pre_start_callback:
             pre_start_callback()
         started_count = 0
-        for spec in self.cluster.get_servers().values():
-            self.cluster.start_one_server(spec.name)
+        for server in self.cluster.servers:
+            # pause leader after new term record
+            server.pause_on_substate(Substate.became_leader)
+            # pause followers after they accept leader
+            server.pause_on_substate(Substate.joined)
+            
+        for server in self.cluster.servers:
+            server.start()
             started_count += 1
             if started_count == num_to_start:
                 break
@@ -197,16 +124,11 @@ class TestCaseCommon(unittest.TestCase):
         self.pause_waiter("waiting for pause first election done (append)",
                           expected = started_count)
 
-    def update_pauser(self, spec):
-        # call when you restart a server, old pauser will not work
-        pauser = Pauser(spec, self)
-        self.pausers[spec.name] = pauser
-        return pauser
-
     def set_term_start_intercept(self, clear=True):
-        for spec in self.servers.values():
+        """broken"""
+        for server in self.servers:
             if clear:
-                spec.interceptor.clear_triggers()
+                spec.interceptor.clear_message_triggers()
             pauser = self.pausers[spec.name]
             pauser.term_start_only = True
             spec.interceptor.add_trigger(InterceptorMode.out_after, 
@@ -228,41 +150,23 @@ class TestCaseCommon(unittest.TestCase):
                                          HeartbeatMessage._code,
                                          self.pausers[spec.name].follower_pause)
     def clear_intercepts(self):
-        for spec in self.servers.values():
-            spec.interceptor.clear_triggers()
+        for server in self.cluster.servers:
+            server.clear_message_triggers()
         
     def postamble(self):
     
-        for spec in self.servers.values():
-            spec.interceptor.clear_triggers()
+        for server in self.cluster.servers:
+            server.clear_message_triggers()
 
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         
-    def pause_and_break(self):
-        # call this to get a breakpoint that has
-        # everyone stopped
-        time.sleep(1)
-        self.reset_pausers()
-        self.set_hb_intercept()
-        self.debug_break = True
-        breakpoint()
-        # change this if you don't want dump
-        do_dump = True
-        if do_dump:
-            self.dump_state()
-
-    def go_after_break(self):
-        self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
-        self.debug_break = False
-        
-    def a_test_check_setup(self):
+    def test_check_setup(self):
         # rename this to remove the a_ in order to
         # check the basic control flow if you think
         # it might be brokens
         self.preamble(num_to_start=3)
         self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)

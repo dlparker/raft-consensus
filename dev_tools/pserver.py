@@ -20,6 +20,7 @@ from raftframe.states.base_state import State, Substate
 from raftframe.app_api.app import StateChangeMonitor
 from raftframe.states.follower import Follower
 from raftframe.serializers.msgpack import MsgpackSerializer
+from dev_tools.bt_client import MemoryBankTellerClient
 from dev_tools.bank_app import BankingApp
 from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
@@ -38,9 +39,10 @@ class PServer:
         self.other_nodes = others
         self.name = name
         self.timeout_basis = timeout_basis
-        self.endpoint = (self.host, self.port)
+        self.endpoint = ('localhost', self.port)
         self.thread_started = False
         self.thread_ident = None
+        self.client = None
         self.running = False
         self.paused = False
         self.pause_callback = None
@@ -67,6 +69,8 @@ class PServer:
         self.thread.name = f"{self.port}"
         self.monitor = PauseSupportMonitor(self)
         self.state_map.add_state_change_monitor(self.monitor)
+        self.interceptor = Interceptor(self)
+        self.comms.set_interceptor(self.interceptor)
 
     def get_raftframe_server(self):
         return self.thread.server
@@ -176,24 +180,32 @@ class PServer:
                 break
         return True
         
-    async def pause_before_out_message(self, code):
+    def pause_before_out_message(self, code, intercept_method=None):
+        if intercept_method is None:
+            intercept_method = self.interceptor_pause_method
         self.logger.debug("%s, %s setting pause before out of %s", self.name, self.thread_ident, code)
-        self.out_befores[code] = self.intercept_method
+        self.out_befores[code] = intercept_method
 
-    async def pause_after_out_message(self, code):
+    def pause_after_out_message(self, code, intercept_method=None):
+        if intercept_method is None:
+            intercept_method = self.interceptor_pause_method
         self.logger.debug("%s, %s setting pause after out of %s", self.name, self.thread_ident, code)
-        self.out_afters[code] = self.intercept_method
+        self.out_afters[code] = intercept_method
         
-    async def pause_before_in_message(self, code):
+    def pause_before_in_message(self, code, intercept_method=None):
+        if intercept_method is None:
+            intercept_method = self.interceptor_pause_method
         self.logger.debug("%s, %s setting pause before in of %s", self.name, self.thread_ident, code)
-        self.in_befores[code] = self.intercept_method
+        self.in_befores[code] = intercept_method
 
-    async def pause_after_in_message(self, code):
+    def pause_after_in_message(self, code, intercept_method=None):
+        if intercept_method is None:
+            intercept_method = self.interceptor_pause_method
         self.logger.debug("%s, %s setting pause after in of %s", self.name, self.thread_ident, code)
-        self.in_afters[code] = self.intercept_method
+        self.in_afters[code] = intercept_method
 
     def clear_message_triggers(self):
-        self.logger.debug("%s, %s clearing all message triggers", self.name, self.thread_ident, code)
+        self.logger.debug("%s, %s clearing all message triggers", self.name, self.thread_ident)
         self.in_befores = {}
         self.in_afters = {}
         self.out_befores = {}
@@ -307,6 +319,11 @@ class PServer:
             func = self.run_once_in_thread
             self.run_once_in_thread = None
             func(self)
+
+    def get_client(self):
+        if not self.client:
+            self.client = MemoryBankTellerClient(*self.endpoint)
+        return self.client
             
 class ServerThread(threading.Thread):
 
@@ -413,10 +430,6 @@ class ServerThread(threading.Thread):
         if self.running:
             raise Exception("Server did not stop")
 
-
-
-        
-        
 class PauseSupportMonitor(StateChangeMonitor):
 
     def __init__(self, pserver):
@@ -438,6 +451,23 @@ class PauseSupportMonitor(StateChangeMonitor):
 
     def finish_state_change(self,  new_state: str) -> None:
         pass
+
+class Interceptor(MessageInterceptor):
+
+    def __init__(self, server):
+        self.server = server
+
+    async def before_in_msg(self, message) -> bool:
+        return await self.server.before_in_msg(message)
+
+    async def after_in_msg(self, message) -> bool:
+        return await self.server.after_in_msg(message)
+        
+    async def before_out_msg(self, message) -> bool:
+        return await self.server.before_out_msg(message)
+
+    async def after_out_msg(self, message) -> bool:
+        return await self.server.after_out_msg(message)
     
 class PauseReason(str, Enum):
 

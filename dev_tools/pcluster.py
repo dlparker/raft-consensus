@@ -50,6 +50,10 @@ class PausingCluster:
         for server in self.servers:
             server.start()
 
+    def resume_all(self):
+        for server in self.servers:
+            server.resume()
+            
     def stop_all(self):
         for server in self.servers:
             server.stop()

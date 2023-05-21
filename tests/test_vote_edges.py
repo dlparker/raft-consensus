@@ -18,10 +18,7 @@ from raftframe.messages.request_vote import RequestVoteResponseMessage
 from raftframe.messages.status import StatusQueryResponseMessage
 from raftframe.states.base_state import Substate, StateCode
 from dev_tools.bt_client import MemoryBankTellerClient
-from dev_tools.ps_cluster import PausingServerCluster
-from dev_tools.pausing_app import PausingMonitor, PFollower, PLeader
-from dev_tools.pausing_app import PCandidate
-from dev_tools.timer_wrapper import get_all_timer_sets
+from dev_tools.pcluster import PausingCluster
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -29,79 +26,7 @@ if LOGGING_TYPE != "silent":
 
 timeout_basis = 0.1
 
-class ModLeader(PLeader):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def start(self):
-        self.logger.info("\n\n\t ModLeader started \n\n")
-        super().start()
-
-        
-class ModFollower(PFollower):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def start(self):
-        self.logger.info("\n\n\t ModFollower started \n\n")
-        super().start()
-
-class ModCandidate(PCandidate):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.pause_before_vote_start = False
-        self.paused = False
-
-    def start(self):
-        self.logger.info("\n\n\t ModCandidate started \n\n")
-        super().start()
-
-    async def start_election(self):
-        if self.pause_before_vote_start:
-            self.logger.info("\n\n\t ModCandidate pausing in start_election \n\n")
-            self.paused = True
-        await super().start_election()
-
-
-class ModMonitor(PausingMonitor):
-
-    def __init__(self, orig_monitor):
-        super().__init__(orig_monitor.pbt_server,
-                         orig_monitor.name,
-                         orig_monitor.logger)
-        self.state_map = orig_monitor.state_map
-        self.state = orig_monitor.state
-        self.substate = orig_monitor.substate
-        self.pbt_server.state_map.remove_state_change_monitor(orig_monitor)
-        self.pbt_server.state_map.add_state_change_monitor(self)
-        self.leader = None
-        self.follower = None
-        self.candidate = None
-        self.pause_before_vote_start = False
-        
-    async def new_state(self, state_map, old_state, new_state):
-        if new_state.code == StateCode.leader:
-            new_state = ModLeader(new_state.server,
-                                  new_state.heartbeat_timeout)
-            self.leader = new_state
-            return new_state
-        if new_state.code == StateCode.follower:
-            new_state = ModFollower(new_state.server,
-                                    new_state.timeout)
-            self.follower = new_state
-            return new_state
-        if new_state.code == StateCode.candidate:
-            new_state = ModCandidate(new_state.server,
-                                     new_state.timeout)
-            self.candidate = new_state
-            new_state.pause_before_vote_start = self.pause_before_vote_start 
-            return new_state
-        new_state = await super().new_state(state_map, old_state, new_state)
-        return new_state
-    
 class TestCandidateVoteStartPause(unittest.TestCase):
 
     @classmethod
@@ -114,9 +39,10 @@ class TestCandidateVoteStartPause(unittest.TestCase):
         pass
     
     def setUp(self):
-        self.cluster = PausingServerCluster(server_count=3,
-                                            logging_type=LOGGING_TYPE,
-                                            base_port=5000)
+        self.cluster = PausingCluster(server_count=3,
+                                      logging_type=LOGGING_TYPE,
+                                      base_port=5000,
+                                      timeout_basis=timeout_basis)
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -125,51 +51,41 @@ class TestCandidateVoteStartPause(unittest.TestCase):
         self.logger = logging.getLogger("tests." + __name__)
                 
     def tearDown(self):
-        self.cluster.stop_all_servers()
+        self.cluster.stop_all()
         time.sleep(0.1)
         self.loop.close()
 
-    def preamble(self, slow=False):
-        if slow:
-            tb = 1.0
-        else:
-            tb = timeout_basis
-        servers = self.cluster.prepare(timeout_basis=tb)
+    def preamble(self):
         # start just the one server and wait for it
         # to pause in candidate state
         first_mon = None
-        for sname in ("server_0", "server_1", "server_2"):
-            spec = servers[sname]
-            monitor = spec.monitor
-            spec.monitor = monitor = ModMonitor(monitor)
-            spec.pbt_server.replace_monitor(monitor)
-            monitor.set_pause_on_substate(Substate.voting)
-            if first_mon is None:
-                first_mon = monitor
-        self.cluster.start_one_server("server_0")
+        for server in self.cluster.servers:
+            server.pause_on_substate(Substate.voting)
+        server = self.cluster.servers[0]
+        server.start()
         self.logger.info("waiting for switch to candidate")
         start_time = time.time()
         while time.time() - start_time < 10 * timeout_basis:
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.01)
-            if first_mon.state is not None:
-                if str(first_mon.state) == "candidate":
-                    if first_mon.substate == Substate.voting:
-                        if first_mon.pbt_server.paused:
+            state = server.state_map.get_state()
+            if state is not None:
+                if str(state) == "candidate":
+                    if state.substate == Substate.voting:
+                        if server.paused:
                             break
         
-        self.assertEqual(first_mon.substate, Substate.voting)
-        self.assertTrue(first_mon.pbt_server.paused)
-        return spec
+        self.assertEqual(state.substate, Substate.voting)
+        self.assertTrue(server.paused)
+        return server
         
     def test_1(self):
-        spec = self.preamble()
-        monitor = spec.monitor
-        candidate = monitor.state
+        pserver = self.preamble()
+        candidate = pserver.state_map.get_state()
         self.logger.info("Candidate paused")
-        monitor.clear_substate_pauses()
-        self.loop.run_until_complete(spec.pbt_server.resume_all())
+        pserver.clear_substate_pauses()
+        pserver.resume()
         
 class TestElectionStartPaused(TestCaseCommon):
 
@@ -183,9 +99,10 @@ class TestElectionStartPaused(TestCaseCommon):
         pass
     
     def setUp(self):
-        self.cluster = PausingServerCluster(server_count=3,
-                                            logging_type=LOGGING_TYPE,
-                                            base_port=5000)
+        self.cluster = PausingCluster(server_count=3,
+                                      logging_type=LOGGING_TYPE,
+                                      base_port=5000,
+                                      timeout_basis=timeout_basis)
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -194,44 +111,30 @@ class TestElectionStartPaused(TestCaseCommon):
         self.logger = logging.getLogger("tests." + __name__)
                 
     def tearDown(self):
-        self.cluster.stop_all_servers()
+        self.cluster.stop_all()
         time.sleep(0.1)
         self.loop.close()
 
-    def preamble(self, slow=False):
-        if slow:
-            tb = 1.0
-        else:
-            tb = timeout_basis
-        self.timeout_basis = tb
-        def cb():
-            for spec in self.servers.values():
-                monitor = spec.monitor
-                spec.monitor = monitor = ModMonitor(monitor)
-                spec.pbt_server.replace_monitor(monitor)
-            
-        super().preamble(num_to_start=3, pre_start_callback=cb)
-        
     def test_base_flow(self):
         """ An example of how to get to the point just prior to election
         after leader dies. Flesh this out for actual tests"""
         
         self.preamble()
         self.logger.info("Started")
-        for spec in self.servers.values():
-            spec.monitor.set_pause_on_substate(Substate.leader_lost)
+        for pserver in self.cluster.servers:
+            pserver.pause_on_substate(Substate.leader_lost)
         self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         old_leader = self.leader
-        self.cluster.stop_server(old_leader.name)
+        old_leader.stop()
         start_time = time.time()
         while time.time() - start_time < timeout_basis * 2:
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.01)
             pause_count = 0
-            for spec in self.servers.values():
-                if spec.pbt_server.paused:
+            for server in self.cluster.servers:
+                if server.paused:
                     pause_count += 1
             if pause_count == 2:
                 break
@@ -241,51 +144,55 @@ class TestElectionStartPaused(TestCaseCommon):
         # For and actual test, you want to fiddle the state of things
         # to ensure that you have your test conditions before you restart
         # the servers.
-        for spec in self.servers.values():
-            spec.monitor.clear_substate_pauses()
-        self.cluster.resume_all_paused_servers()
+        for server in self.cluster.servers:
+            server.clear_substate_pauses()
+        self.cluster.resume_all()
         
 
     def test_state_split(self):
         """ An example of how to get to the point just prior to election
         after leader dies with one server already switched to Candidate
         and the other still a follower. Flesh this out for actual tests"""
-        
+
         self.preamble()
         self.logger.info("Started")
         candi = self.non_leaders[0]
         follower = self.non_leaders[1]
         self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
-
         # pause the expected follower at the next heartbeat
-        follower.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[follower.name].follower_pause)
-        self.logger.info(f"\n\nAllowing follower {follower.name} pause on heartbeat\n\n")
-        time.sleep(0.05)
-        # pause the expected candidate at the leader lost 
-        candi.monitor.set_pause_on_substate(Substate.leader_lost)
-        old_leader = self.leader
-        self.cluster.stop_server(old_leader.name)
+        follower.pause_before_in_message(HeartbeatMessage._code)
+        self.logger.info(f"\n\nSetting follower {follower.name} pause on heartbeat\n\n")
+        self.cluster.resume_all()
         start_time = time.time()
-        paused_list = []
         while time.time() - start_time < timeout_basis * 2:
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.01)
-            paused_list = []
-            for spec in self.servers.values():
-                if spec.pbt_server.paused:
-                    paused_list.append(spec)
-            if len(paused_list) == 2:
+            if follower.paused:
                 break
+        self.assertTrue(follower.paused)
+        # pause the expected candidate at the leader lost, which is before the
+        # switch to candidate
+        candi.pause_on_substate(Substate.leader_lost)
+        # now stop the leader
+        old_leader = self.leader
+        old_leader.stop()
+        start_time = time.time()
+        while time.time() - start_time < timeout_basis * 2:
+            # servers are in their own threads, so
+            # blocking this one is fine
+            time.sleep(0.01)
+            if candi.paused:
+                break
+        self.assertTrue(candi.paused)
         self.logger.info(f"\n\nPaused with {candi.name} about to switch to candidate"
                          "and {follower.name} still following\n\n")
         self.clear_intercepts()
-        candi.monitor.clear_substate_pauses()
+        candi.clear_substate_pauses()
+        follower.clear_message_triggers()
         self.logger.info("\n\n\n Resuming servers \n\n\n")
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
+        time.sleep(0.1)
         
 
         

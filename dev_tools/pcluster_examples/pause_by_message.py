@@ -21,6 +21,7 @@ import asyncio
 from pathlib import Path
 import shutil
 from raftframe.states.base_state import State, Substate
+from raftframe.messages.heartbeat import HeartbeatMessage
 from dev_tools.pserver import PServer
 from dev_tools.pcluster import PausingCluster
 from dev_tools.log_control import one_proc_log_setup
@@ -60,10 +61,10 @@ if __name__=="__main__":
     for server in pc.servers:
         server.pause_callback = pause_callback
         server.resume_callback = resume_callback
-        # pause leader after new term record
-        server.pause_on_substate(Substate.became_leader)
-        # pause followers after they accept leader
-        server.pause_on_substate(Substate.joined)
+        # pause followers when they get first heartbeat
+        server.pause_before_in_message(HeartbeatMessage._code)
+        # pause leader after all heartbeats sent
+        server.pause_on_substate(Substate.sent_heartbeat)
     pc.start_all()
     paused = []
     while len(paused) < 3:
@@ -76,6 +77,9 @@ if __name__=="__main__":
     while not go_flag:
         time.sleep(0.1)
     print('Got go flag, resuming')
+    for server in pc.servers:
+        server.clear_message_triggers()
+        server.clear_substate_pauses()
     for server in pc.servers:
         server.resume()
     print('All resumed')

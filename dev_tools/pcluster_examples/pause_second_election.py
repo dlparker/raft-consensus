@@ -119,6 +119,7 @@ if __name__=="__main__":
             server.stop()
     stopped = []
     while len(stopped) < 3:
+        stopped = []
         for server in pc.servers:
             if not server.running:
                 stopped.append(server)
