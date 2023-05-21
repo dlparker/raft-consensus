@@ -9,6 +9,8 @@ import time
 import multiprocessing
 from typing import Union
 from logging.config import dictConfig
+from dataclasses import dataclass, field
+from enum import Enum
 
 import raftframe
 from raftframe.servers.server_config import LiveConfig, ClusterConfig, LocalConfig
@@ -23,7 +25,7 @@ from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor
 
-
+    
 class PServer:
 
     def __init__(self, port, working_dir, name, others,
@@ -43,6 +45,7 @@ class PServer:
         self.paused = False
         self.pause_callback = None
         self.pause_noted = False
+        self.pause_context = None
         self.resume_callback = None
         self.resume_noted = False
         self.do_log_stats = False
@@ -64,6 +67,9 @@ class PServer:
         self.monitor = PauseSupportMonitor(self)
         self.state_map.add_state_change_monitor(self.monitor)
 
+    def get_raftframe_server(self):
+        return self.thread.server
+    
     async def pause_timers(self):
         await self.thread.pause_timers()
 
@@ -92,6 +98,9 @@ class PServer:
         if str(state) in self.pausing_states:
             del self.pausing_states[str(state)]
          
+    def clear_state_pauses(self):
+        self.pausing_states = {}
+
     async def state_pause_method(self, state_map, old_state, new_state):
         await self.pause()
 
@@ -100,6 +109,7 @@ class PServer:
                         new_state: Substate) -> State:
         if str(new_state) in self.pausing_states:
             self.logger.debug("%s, %s pausing on %s", self.name, self.thread_ident, new_state)
+            self.pause_context = PauseContext(self, PauseReason.state)
             return await self.pausing_states[str(new_state)](state_map, old_state, new_state)
         return new_state
                 
@@ -110,6 +120,9 @@ class PServer:
         if str(substate) in self.pausing_substates:
             del self.pausing_substates[str(substate)]
 
+    def clear_substate_pauses(self):
+        self.pausing_substates = {}
+
     async def substate_pause_method(self, state_map,
                                     state, substate):
         await self.pause()
@@ -119,6 +132,7 @@ class PServer:
                             substate: Substate) -> None:
         if str(substate) in self.pausing_substates:
             self.logger.debug("%s, %s pausing on %s", self.name, self.thread_ident, substate)
+            self.pause_context = PauseContext(self, PauseReason.substate)
             await self.pausing_substates[str(substate)](state_map, state, substate)
             
     async def interceptor_pause_method(self, mode, code, message):
@@ -146,24 +160,28 @@ class PServer:
     async def before_in_msg(self, message) -> bool:
         if message.code in self.in_befores:
             self.logger.debug("%s, %s pausing before in %s", self.name, self.thread_ident, message.code)
+            self.pause_context = PauseContext(self, PauseReason.in_before)
             return await self.interceptor_pause_method('IN_BEFORE', message.code, message)
         return True
 
     async def after_in_msg(self, message) -> bool:
         if message.code in self.in_afters:
             self.logger.debug("%s, %s pausing after in %s", self.name, self.thread_ident, message.code)
+            self.pause_context = PauseContext(self, PauseReason.in_after)
             return await self.interceptor_pause_method('IN_AFTER', message.code, message)
         return True
 
     async def before_out_msg(self, message) -> bool:
         if message.code in self.out_befores:
             self.logger.debug("%s, %s pausing before out %s", self.name, self.thread_ident, message.code)
+            self.pause_context = PauseContext(self, PauseReason.out_before)
             return await self.interceptor_pause_method('OUT_BEFORE', message.code, message)
         return True
 
     async def after_out_msg(self, message) -> bool:
         if message.code in self.out_afters:
             self.logger.debug("%s, %s pausing after out %s", self.name, self.thread_ident, message.code)
+            self.pause_context = PauseContext(self, PauseReason.out_after)
             return await self.interceptor_pause_method('OUT_AFTER', message.code, message)
         return True
 
@@ -194,7 +212,7 @@ class PServer:
         if self.paused and not self.pause_noted:
             self.pause_noted = True
             if self.pause_callback:
-                await self.pause_callback(self)
+                await self.pause_callback(self, self.pause_context)
         if self.do_log_stats:
             self.do_log_stats = False
             # cannot get to sqlite log directly from test code because
@@ -225,6 +243,7 @@ class PServer:
         if self.do_resume:
             self.paused = False
             self.pause_noted = False
+            self.pause_context = None
             await self.resume_timers()
             await self.resume_new_messages()
             #timer_set = get_timer_set()
@@ -365,3 +384,16 @@ class PauseSupportMonitor(StateChangeMonitor):
                                         state,
                                         substate)
 
+class PauseReason(str, Enum):
+
+    state = "STATE"
+    substate = "SUBSTATE"
+    out_before = "OUT_BEFORE"
+    out_after = "OUT_AFTER"
+    in_before = "IN_BEFORE"
+    in_after = "IN_AFTER"
+    
+@dataclass
+class PauseContext:
+    server: PServer
+    reason: PauseReason

@@ -82,6 +82,7 @@ class StandardStateMap(StateMap):
         self.queue = None
         self.logger = None
         self.monitors = None
+        self.timeout_basis = timeout_basis
         self.follower_leaderless_timeout = 0.75 * timeout_basis
         self.candidate_voting_timeout = 0.5 * timeout_basis
         self.leader_heartbeat_timeout = 0.5 * timeout_basis

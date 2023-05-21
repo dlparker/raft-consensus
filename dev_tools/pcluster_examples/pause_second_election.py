@@ -35,7 +35,7 @@ if __name__=="__main__":
     first_done = False
     first_leader = None
     second_leader = None
-    async def pause_callback(pserver):
+    async def pause_callback(pserver, context):
         global go_flag
         global first_done
         global first_leader
@@ -47,7 +47,7 @@ if __name__=="__main__":
             print("I am paused in leader server")
         elif str(state) == "candidate":
             print("I am paused in candidate server")
-        if str(state) == "follower":
+        elif str(state) == "follower":
             print("I am paused in follower server")
         if not first_done:
             first_done = True

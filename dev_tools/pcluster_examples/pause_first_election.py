@@ -35,7 +35,7 @@ if __name__=="__main__":
 
     pc = PausingCluster(3)
     go_flag = False
-    async def pause_callback(pserver):
+    async def pause_callback(pserver, context):
         global go_flag
         state = pserver.state_map.get_state()
         print(f'{pserver.name} {state} pausing')
@@ -43,7 +43,7 @@ if __name__=="__main__":
             print("I am paused in leader server")
         elif str(state) == "candidate":
             print("I am paused in candidate server")
-        if str(state) == "follower":
+        elif str(state) == "follower":
             print("I am paused in follower server")
 
         log = pserver.thread.server.get_log()

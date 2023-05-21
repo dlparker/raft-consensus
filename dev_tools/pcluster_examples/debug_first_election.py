@@ -25,7 +25,7 @@ if __name__=="__main__":
 
     pc = PausingCluster(3)
 
-    async def pause_callback(pserver):
+    async def pause_callback(pserver, context):
         state = pserver.state_map.get_state()
         print(f'{pserver.name} {state} pausing')
         if str(state) == "leader":

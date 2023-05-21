@@ -7,7 +7,6 @@ import logging
 import dataclasses
 from dataclasses import dataclass, field
 from typing import Tuple, List, Union
-from enum import Enum
 import abc
 
 from raftframe.states.base_state import Substate
