@@ -9,10 +9,10 @@ from tests.common_tcase import TestCaseCommon
 
 from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.states.base_state import StateCode
-from dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
+from raftframe.states.follower import Follower
+from dev_tools.pserver import PauseSupportMonitor
 
-
-class ModFollower(PFollower):
+class ModFollower(Follower):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -20,7 +20,6 @@ class ModFollower(PFollower):
         self.skip_to_append = False
         self.send_higher_term_on_hb = False
         self.send_higher_term_on_ae = False
-        self.lie_about_index = False
         self.never_beat = False
 
     def set_skip_to_append(self, flag):
@@ -31,9 +30,6 @@ class ModFollower(PFollower):
 
     def set_send_higher_term_on_ae(self, flag):
         self.send_higher_term_on_ae = flag
-
-    def set_lie_about_index(self, flag):
-        self.lie_about_index = flag
 
     def start(self):
         super().start()
@@ -59,12 +55,6 @@ class ModFollower(PFollower):
             # do it once only
             self.send_higher_term_on_hb = False
             term = message.term + 1
-        if self.lie_about_index:
-            success = False
-            # do it once only
-            self.lie_about_index = False
-            last_index += 1
-            last_term += 1
         if not intercept:
             return await super().on_heartbeat(message)
         self.logger.debug("\n\n\tintercepting heartbeat to force append" \
@@ -99,22 +89,19 @@ class ModFollower(PFollower):
             return await super().on_append_entries(message)
         return await super().on_append_entries(message)
         
-class ModMonitor(PausingMonitor):
+class ModMonitor(PauseSupportMonitor):
 
     
     def __init__(self, orig_monitor):
-        super().__init__(orig_monitor.pbt_server,
-                         orig_monitor.name,
-                         orig_monitor.logger)
-        self.state_map = orig_monitor.state_map
-        self.state = orig_monitor.state
-        self.substate = orig_monitor.substate
-        self.pbt_server.state_map.remove_state_change_monitor(orig_monitor)
-        self.pbt_server.state_map.add_state_change_monitor(self)
+        super().__init__(orig_monitor.pserver)
+        self.state_map = self.pserver.state_map
+        self.state = self.state_map.state
+        self.substate = self.state_map.substate
+        self.state_map.remove_state_change_monitor(orig_monitor)
+        self.state_map.add_state_change_monitor(self)
         self.skip_to_append = False
         self.send_higher_term_on_hb = False
         self.send_higher_term_on_ae = False
-        self.lie_about_index = False
         self.never_beat = False
 
     def set_skip_to_append(self, flag):
@@ -126,13 +113,12 @@ class ModMonitor(PausingMonitor):
     def set_send_higher_term_on_ae(self, flag):
         self.send_higher_term_on_ae = flag
         
-    def set_lie_about_index(self, flag):
-        self.lie_about_index = flag
-
     def set_never_beat(self, flag):
         self.never_beat = flag
     
     async def new_state(self, state_map, old_state, new_state):
+        self.state = self.state_map.get_state()
+        self.substate = self.state_map.get_substate()
         new_state = await super().new_state(state_map, old_state, new_state)
         if new_state.code == StateCode.follower:
             self.state = ModFollower(new_state.server,
@@ -140,11 +126,9 @@ class ModMonitor(PausingMonitor):
             self.state.set_skip_to_append(self.skip_to_append)
             self.state.set_send_higher_term_on_hb(self.send_higher_term_on_hb)
             self.state.set_send_higher_term_on_ae(self.send_higher_term_on_ae)
-            self.state.set_lie_about_index(self.lie_about_index)
             self.state.set_never_beat(self.never_beat)
             return self.state
         return new_state
-
 
 class TestRareMessages(TestCaseCommon):
 
@@ -152,12 +136,19 @@ class TestRareMessages(TestCaseCommon):
     def setUpClass(cls):
         super(TestRareMessages, cls).setUpClass()
         cls.total_nodes = 3
-        cls.timeout_basis = 0.2
+        cls.timeout_basis = 0.5
         if __name__.startswith("tests"):
             cls.logger_name = __name__
         else:
             cls.logger_name = "tests." + __name__
-            
+
+    def setup(self):
+        super().setup()
+        self.addCleanup(self.cleanup)
+        
+    def cleanup(self):
+        print("\n\n\n\n IN CLEANUP \n\n\n\n")
+        
     # All the tests in the case use a cluster of three servers
     # as configured by the TestCaseCommon setUp method.
     def test_append_first(self):
@@ -171,16 +162,17 @@ class TestRareMessages(TestCaseCommon):
         # yet processed it, are paused before delivery of the
         # message to the follower code.
         self.preamble(num_to_start=2)
-        for spec in self.cluster.get_servers().values():
-            if spec != self.leader:
-                if spec.running:
-                    first = spec
+        for pserver in self.cluster.servers:
+            if pserver != self.leader:
+                if pserver.running:
+                    first = pserver
                 else:
-                    second = spec
+                    second = pserver
+
         self.assertIsNotNone(first)
         self.assertIsNotNone(second)
         self.clear_intercepts()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         status = client.get_status()
@@ -190,13 +182,13 @@ class TestRareMessages(TestCaseCommon):
         res = client.do_query()
         self.assertEqual(res['balance'], 10)
         # wait for follower to have commit
-        log_record_count = self.leader.server_obj.get_log().get_last_index()
-        tlog = first.server_obj.get_log()
+        log_record_count = self.leader.thread.server.get_log().get_last_index()
+        tlog = first.thread.server.get_log()
         start_time = time.time()
         while time.time() - start_time < 10 * self.timeout_basis:
             if tlog.get_commit_index() == log_record_count:
                 break
-            tlog = first.server_obj.get_log()
+            tlog = first.thread.server.get_log()
             time.sleep(0.01)
         self.assertEqual(tlog.get_commit_index(), log_record_count)
 
@@ -205,15 +197,17 @@ class TestRareMessages(TestCaseCommon):
 
         second.monitor = ModMonitor(second.monitor)
         second.monitor.set_skip_to_append(True)
-        self.cluster.start_one_server(second.name)
-        log_record_count = self.leader.server_obj.get_log().get_last_index()
-        tlog = second.server_obj.get_log()
+        second.clear_substate_pauses()
+        second.start()
+        log_record_count = self.leader.thread.server.get_log().get_last_index()
         # sometimes elections are slow
         start_time = time.time()
-        while time.time() - start_time < 30 * self.timeout_basis:
-            if tlog.get_commit_index() == log_record_count:
-                break
-            tlog = second.server_obj.get_log()
+        while time.time() - start_time < 20 * self.timeout_basis:
+            if second.thread and second.thread.server:
+                tlog = second.thread.server.get_log()
+                if tlog.get_commit_index() == log_record_count:
+                    break
+                tlog = second.thread.server.get_log()
             time.sleep(0.01)
         self.assertEqual(tlog.get_commit_index(), log_record_count)
 

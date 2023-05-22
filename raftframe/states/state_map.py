@@ -78,6 +78,7 @@ class StandardStateMap(StateMap):
     def __init__(self, timeout_basis=1.0):
         self.server = None
         self.state = None
+        self.substate = None
         self.queue = None
         self.logger = None
         self.monitors = None
@@ -95,7 +96,6 @@ class StandardStateMap(StateMap):
             self.monitors = []
         self.server = server
         self.state = None
-        self.substate = None
         self.logger = logging.getLogger(__name__)
         self.logger.info("activating state map for server %s", server)
         return await self.switch_to_follower()

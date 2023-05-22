@@ -45,6 +45,7 @@ class PServer:
         self.client = None
         self.running = False
         self.paused = False
+        self.do_direct_pause = False
         self.pause_callback = None
         self.pause_noted = False
         self.pause_context = None
@@ -91,6 +92,9 @@ class PServer:
         self.logger.debug("%s, %s resuming new messages", self.name, self.thread_ident)
         self.comms.resume_new_messages()
 
+    def direct_pause(self):
+        self.do_direct_pause = True
+            
     async def pause(self):
         await self.pause_timers()
         await self.pause_new_messages()
@@ -266,6 +270,10 @@ class PServer:
     async def in_loop_check(self, thread_obj):
         # this is called from the server thread object in that thread
 
+        if self.do_direct_pause:
+            # somebody synchronously asked us to pause
+            self.do_direct_pause = False
+            await self.pause()
         if self.paused and not self.pause_noted:
             self.pause_noted = True
             if self.pause_callback:
