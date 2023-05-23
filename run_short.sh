@@ -20,7 +20,7 @@ fi
 if [ -z ${DO_COVERAGE+x} ]; then
     COVER_OPTION=""
 else
-    COVER_OPTION="--cov=raft --cov-config=`pwd`/raft/coverage.cfg --cov-report=html --cov-report=term"
+    COVER_OPTION="--cov=raftframe --cov-config=`pwd`/raftframe/coverage.cfg --cov-report=html --cov-report=term"
 fi    
 
 if [[ `which pytest` != $VIRTUAL_ENV/bin/pytest ]]; then
@@ -34,18 +34,16 @@ pytest --verbose \
        $STOP_OPTION \
        $LOG_OPTION \
       -s \
-      raftframe/tests/test_basic.py \
-      raftframe/tests/test_candidate_edges.py \
-      raftframe/tests/test_delayed_start.py \
-      raftframe/tests/test_mem_comms.py \
-      raftframe/tests/test_ps_cluster.py \
-      raftframe/tests/test_server_edges.py \
-      raftframe/tests/test_state_map.py \
-      raftframe/tests/test_udp_comms.py \
-      raftframe/tests/test_log_pulls.py \
-      raftframe/tests/test_follower_edges.py \
-      raftframe/tests/test_leader_edges.py \
-      raftframe/tests/test_backdown.py
+      tests/common_tcase.py \
+      tests/test_basic.py \
+      tests/test_candidate_edges.py \
+      tests/test_commands.py \
+      tests/test_follower_edges.py \
+      tests/test_leader_edges.py \
+      tests/test_log_ops.py \
+      tests/test_mem_comms.py \
+      tests/test_rare_msgs.py \
+      tests/test_vote_edges.py 
 
 
 if [ -z ${DO_COVERAGE+x} ]; then
