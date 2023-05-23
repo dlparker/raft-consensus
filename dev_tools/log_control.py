@@ -29,7 +29,7 @@ def set_levels(handler_names):
     #log_loggers['dev_tools.pausing_app'] = debug_log
     log_loggers['dev_tools.pserver'] = debug_log
     #log_loggers['raftframe.states.timer'] = debug_log
-    log_loggers['dev_tools.memory_comms'] = debug_log
+    #log_loggers['dev_tools.memory_comms'] = debug_log
     return log_loggers
     
 def config_server_logging(main_config, filepath):

@@ -33,7 +33,7 @@ class TestSplit(TestCaseCommon):
         # yet processed it, are paused before delivery of the
         # message to the follower code.
         self.preamble()
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         self.resume_waiter()
         self.logger.debug("\n\n\tCredit 10 \n\n")
@@ -58,7 +58,7 @@ class TestSplit(TestCaseCommon):
         lost_1.pbt_server.comms.set_partition(1)
         lost_2.pbt_server.comms.set_partition(1)
         
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
 
         self.logger.debug("\n\n\tAdding 10 via do_credit\n\n")
@@ -104,7 +104,7 @@ class TestSplit(TestCaseCommon):
                       
     def test_leader_lost_split(self):
         self.preamble()
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         self.resume_waiter()
         self.logger.debug("\n\n\tCredit 10 \n\n")
@@ -156,7 +156,7 @@ class TestSplit(TestCaseCommon):
                     self.cluster.resume_paused_server(spec.name, wait=False)
         else:
             self.reset_pausers()
-            self.clear_intercepts()
+            self.clear_pause_triggers()
             self.cluster.resume_all_paused_servers()
         new_leader = None
         start_time = time.time()

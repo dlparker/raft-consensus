@@ -35,20 +35,28 @@ class PausingCluster:
     
         for i in range(self.server_count):
             this_node = self.nodes[i]
-            others = []
-            for ot in self.nodes:
-                if ot[1] == this_node[1]:
-                    continue
-                others.append(ot)
-            server = PServer(port=this_node[1], working_dir=self.working_dir,
-                             name=f"server_{i}", others=others,
-                             log_config=self.log_config,
-                             timeout_basis=self.timeout_basis)
+            server = self.prepare_server(this_node)
             self.servers.append(server)
 
+    def prepare_server(self, addr):
+        others = []
+        for ot in self.nodes:
+            if ot == addr:
+                continue
+            others.append(ot)
+        server = PServer(port=addr[1], working_dir=self.working_dir,
+                         name=f"server_{addr[1]}", others=others,
+                         log_config=self.log_config,
+                         timeout_basis=self.timeout_basis)
+        return server
+        
     def start_all(self):
         for server in self.servers:
             server.start()
+
+    def pause_all(self):
+        for server in self.servers:
+            server.direct_pause()
 
     def resume_all(self):
         for server in self.servers:
@@ -58,3 +66,11 @@ class PausingCluster:
         for server in self.servers:
             server.stop()
 
+    def regen_server(self, stopped_server):
+        index = 0
+        for server in self.servers:
+            if stopped_server == server:
+                server = self.prepare_server(server.endpoint)
+                self.servers[index] = server
+                return server
+            index += 1

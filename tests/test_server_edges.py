@@ -113,7 +113,7 @@ class TestEdges(TestCaseCommon):
     
     def test_simple_calls(self):
         self.preamble()
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         client = self.leader.get_client()
         status = client.get_status()
@@ -143,7 +143,7 @@ class TestEdges(TestCaseCommon):
         # We target the leader server because it will
         # normally process client messages.
         self.preamble(pre_start_callback=self.pre_start_callback)
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         client = self.leader.get_client()
         status = client.get_status()
@@ -192,7 +192,7 @@ class TestEdges(TestCaseCommon):
         # We expect a timeout because the message is never handled
         # so no reply. We also expect the server to record the error
         self.preamble(pre_start_callback=self.pre_start_callback)
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         client = self.leader.get_client()
         status = client.get_status()

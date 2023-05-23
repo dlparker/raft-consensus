@@ -35,7 +35,7 @@ class TestRestarts(TestCaseCommon):
             self.preamble(pre_start_callback=self.change_log)
         else:
             self.preamble()
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         self.resume_waiter()
         self.logger.debug("\n\n\tCredit 10 \n\n")
@@ -60,7 +60,7 @@ class TestRestarts(TestCaseCommon):
         self.pause_waiter("waiting for pause leader lost new election",
                           expected=2)
         second_leader = self.leader
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         self.logger.debug("\n\n\tQuery to %s \n\n", second_leader.name)
         client2 = self.leader.get_client()

@@ -14,7 +14,7 @@ class TestCommands(TestCaseCommon):
 
         first = self.non_leaders[0]
         second = self.non_leaders[1]
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 through direct leader call\n\n")
         self.result = None

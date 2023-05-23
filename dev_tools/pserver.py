@@ -273,8 +273,11 @@ class PServer:
         if self.do_direct_pause:
             # somebody synchronously asked us to pause
             self.do_direct_pause = False
-            await self.pause()
-        if self.paused and not self.pause_noted:
+            await self.pause_timers()
+            await self.pause_new_messages()
+            self.logger.info("Server %s direct pause done\n", self.name)
+            self.paused = True
+        elif self.paused and not self.pause_noted:
             self.pause_noted = True
             if self.pause_callback:
                 await self.pause_callback(self, self.pause_context)

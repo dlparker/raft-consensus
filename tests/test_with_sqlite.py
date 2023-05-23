@@ -185,7 +185,7 @@ class TestRestarts(TestCaseCommon):
         self.logger.debug("\n\n\tPreamble Done\n\n")
         self.assertIsNotNone(first)
         self.assertIsNotNone(second)
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all_paused_servers()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()

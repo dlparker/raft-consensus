@@ -100,6 +100,21 @@ class Follower(State):
         # with no new entries. This variation in the protocol
         # is to help the programmer reason better about the behavior
         # of the system by making this distinction.
+        if message.term <  self.log.get_term():
+            self.logger.info("heartbeat -> false leader %s term less than " \
+                                        "local %s, rejecting",
+                             message.term, self.log.get_term())
+            data = dict(success=False,
+                        prevLogIndex=message.prevLogIndex,
+                        prevLogTerm=message.prevLogTerm,
+                        last_index=self.log.get_last_index(),
+                        last_term=self.log.get_last_term())
+            reply = HeartbeatResponseMessage(message.receiver,
+                                             message.sender,
+                                             term=self.log.get_term(),
+                                             data=data)
+            await self.server.post_message(reply)
+            return True
         self.heartbeat_logger.debug("resetting leaderless_timer on heartbeat")
         await self.leaderless_timer.reset()
         self.heartbeat_logger.debug("heartbeat from %s", message.sender)
@@ -110,12 +125,14 @@ class Follower(State):
             self.heartbeat_count = 0
             self.last_vote = None
             self.last_vote_term = None
+            self.logger.debug("setting substate to joined")
             await self.set_substate(Substate.joined)
         if message.term > self.log.get_term():
             self.logger.info("heartbeat -> leader %s term different " \
                                         "from local %s, updating",
                               message.term, self.log.get_term())
             self.log.set_term(message.term)
+
         # We are in sync if the our last log record and the
         # leader's last log record are the same, which
         # means both the index and the term must match
@@ -155,24 +172,7 @@ class Follower(State):
         return True
 
     async def on_append_entries(self, message):
-        self.logger.info("resetting leaderless_timer on append entries")
-        await self.leaderless_timer.reset()
-        self.logger.debug("append %s %s", message, message.data)
-        laddr = message.sender
-        if self.leader_addr is None or self.leader_addr != laddr:
-            self.leader_addr = laddr
-            self.last_vote = None
-            self.last_vote_term = None
-            self.heartbeat_count = 0
-            await self.set_substate(Substate.joined)
-
-        # Regardless of the log ops, make sure we agree with leader as
-        # to what term it is
-        if message.term > self.log.get_term():
-            self.logger.info("on_append -> leader %s term different, " \
-                                        "updating local %s",
-                              message.term, self.log.get_term())
-            self.log.set_term(message.term)
+        # first make sure it is not some rogue claimant to the throne
         if message.term < self.log.get_term():
             # This means leader should resign, we have
             # been talking to a later leader
@@ -184,6 +184,27 @@ class Follower(State):
             self.server.record_illegal_message_state(message.sender,
                                                      msg, message.data)
             return await self.do_bad_append(message)
+        self.logger.info("resetting leaderless_timer on append entries")
+        await self.leaderless_timer.reset()
+        self.logger.debug("append prev_term = %d prev_log = %d commit = %d %s %s",
+                          message.prevLogTerm, message.prevLogIndex, message.leaderCommit,
+                          message, message.data)
+        laddr = message.sender
+        if self.leader_addr is None or self.leader_addr != laddr:
+            self.leader_addr = laddr
+            self.last_vote = None
+            self.last_vote_term = None
+            self.heartbeat_count = 0
+            self.logger.debug("setting substate to joined new leader %s", laddr)
+            await self.set_substate(Substate.joined)
+
+        # Regardless of the log ops, make sure we agree with leader as
+        # to what term it is
+        if message.term > self.log.get_term():
+            self.logger.info("on_append -> leader %s term different, " \
+                                        "updating local %s",
+                              message.term, self.log.get_term())
+            self.log.set_term(message.term)
         # If we don't have the record prior to the current appends,
         # the leader should backdown till we do
         if self.log.get_last_index() < message.prevLogIndex:
@@ -370,6 +391,10 @@ class Follower(State):
             self.logger.info("my last vote = %s, index %d, last term %d",
                              self.last_vote, last_index, last_term)
             await self.send_vote_response_message(message, votedYes=False)
+        if message.term > self.log.get_term():
+            # regardless, increase the term to no less than that of the
+            # sender
+            self.log.set_term(message.term)
         return True
         
     async def on_client_command(self, message):

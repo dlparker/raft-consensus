@@ -123,7 +123,7 @@ class TestElectionStartPaused(TestCaseCommon):
         self.logger.info("Started")
         for pserver in self.cluster.servers:
             pserver.pause_on_substate(Substate.leader_lost)
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all()
         old_leader = self.leader
         old_leader.stop()
@@ -158,7 +158,7 @@ class TestElectionStartPaused(TestCaseCommon):
         self.logger.info("Started")
         candi = self.non_leaders[0]
         follower = self.non_leaders[1]
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         # pause the expected follower at the next heartbeat
         follower.pause_before_in_message(HeartbeatMessage._code)
         self.logger.info(f"\n\nSetting follower {follower.name} pause on heartbeat\n\n")
@@ -187,7 +187,7 @@ class TestElectionStartPaused(TestCaseCommon):
         self.assertTrue(candi.paused)
         self.logger.info(f"\n\nPaused with {candi.name} about to switch to candidate"
                          "and {follower.name} still following\n\n")
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         candi.clear_substate_pauses()
         follower.clear_message_triggers()
         self.logger.info("\n\n\n Resuming servers \n\n\n")

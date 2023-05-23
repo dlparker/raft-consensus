@@ -550,6 +550,10 @@ class Leader(State):
             await self.send_heartbeat()
         self.logger.warning("leader unexpectedly got append entries from %s",
                             message.sender)
+        if message.term > self.log.get_term():
+            self.logger.info("new leader has taken over, resigning")
+            await self.resign()
+            return False # should make follower handle it
         return True
     
     async def on_heartbeat(self, message):
@@ -559,9 +563,8 @@ class Leader(State):
         if message.term > self.log.get_term():
             self.logger.info("new leader has taken over, resigning")
             await self.resign()
-            return True
-        self.logger.warning("Why am I getting hearbeat when I am leader?"\
-                            "\n\t%s", message)
+            return False # should make follower handle it
+        self.logger.warning("Bogus leadership claim \n\t%s", message)
         return True
 
 

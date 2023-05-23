@@ -149,9 +149,11 @@ class TestCaseCommon(unittest.TestCase):
             spec.interceptor.add_trigger(InterceptorMode.in_before, 
                                          HeartbeatMessage._code,
                                          self.pausers[spec.name].follower_pause)
-    def clear_intercepts(self):
+    def clear_pause_triggers(self):
         for server in self.cluster.servers:
             server.clear_message_triggers()
+            server.clear_state_pauses()
+            server.clear_substate_pauses()
         
     def postamble(self):
     
@@ -165,7 +167,7 @@ class TestCaseCommon(unittest.TestCase):
         # check the basic control flow if you think
         # it might be brokens
         self.preamble(num_to_start=3)
-        self.clear_intercepts()
+        self.clear_pause_triggers()
         self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()

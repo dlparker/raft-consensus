@@ -4,6 +4,8 @@ pause_list = []
 def pytest_enter_pdb(config, pdb):
     global curtest_item
     global pause_list
+    if curtest_item is None:
+        return
     test_case = curtest_item._testcase
 
     if hasattr(test_case, "cluster"):
@@ -18,6 +20,8 @@ def pytest_enter_pdb(config, pdb):
     
 def pytest_leave_pdb(config, pdb):
     global pause_list
+    if pause_list is None or len(pause_list) == 0:
+        return
     for server in pause_list:
         server.resume()
         print(f"pytest_leave_pdb resumed server {server.name}")
