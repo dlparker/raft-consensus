@@ -8,6 +8,7 @@ import os
 from tests.common_tcase import TestCaseCommon
 
 from raftframe.messages.append_entries import AppendEntriesMessage
+from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.states.base_state import StateCode, Substate
 from raftframe.states.follower import Follower
 from dev_tools.pserver import PauseSupportMonitor
@@ -399,8 +400,6 @@ class TestRareMessages(TestCaseCommon):
         second.monitor.set_send_higher_term_on_ae(True)
         for server in self.cluster.servers:
             server.clear_substate_pauses()
-            server.pause_on_substate(Substate.became_leader)
-            server.pause_on_substate(Substate.joined)
         second.start()
         self.logger.debug("\n\n\tAwaiting new leader on rejected higher term in add entry\n")
         new_leader = None
@@ -408,12 +407,10 @@ class TestRareMessages(TestCaseCommon):
         # wait for second to start
         while time.time() - start_time < 10 * self.timeout_basis:
             if second.thread and second.thread.server:
-                if second.paused:
-                    break
+                break
             time.sleep(0.01)
         self.assertIsNotNone(second.thread)
         self.assertIsNotNone(second.thread.server)
-        second.resume()
         # elections can take many tries
         start_time = time.time()
         while time.time() - start_time < 30 * self.timeout_basis:
@@ -428,7 +425,7 @@ class TestRareMessages(TestCaseCommon):
             time.sleep(0.01)
         self.assertIsNotNone(new_leader)
         self.logger.debug(f'old leader {old_leader.name} new leader {new_leader.name}')
-        self.cluster.resume_all()
+
         self.logger.debug("\n\n\tAwaiting log update at %s\n",
                           second.name)
         start_time = time.time()
@@ -446,7 +443,6 @@ class TestRareMessages(TestCaseCommon):
         self.assertNotEqual(old_leader_state,
                             self.leader.state_map.get_state())
         self.logger.debug("\n\n\tDone with test, starting shutdown\n")
-        # check the actual log in the follower
         self.postamble()
 
     def test_backdown(self):
