@@ -20,7 +20,7 @@ fi
 if [ -z ${DO_COVERAGE+x} ]; then
     COVER_OPTION=""
 else
-    COVER_OPTION="--cov=raft --cov-config=`pwd`/raft/coverage.cfg --cov-report=html --cov-report=term"
+    COVER_OPTION="--cov=raftframe --cov-config=`pwd`/raftframe/coverage.cfg --cov-report=html --cov-report=term"
 fi    
 
 if [[ `which pytest` != $VIRTUAL_ENV/bin/pytest ]]; then
