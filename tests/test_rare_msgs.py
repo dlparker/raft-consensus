@@ -16,6 +16,7 @@ from dev_tools.pserver import PauseSupportMonitor
 class ModFollower(Follower):
 
     def __init__(self, *args, **kwargs):
+        self.monitor = kwargs.pop('monitor')
         super().__init__(*args, **kwargs)
         self.have_append = False
         self.skip_to_append = False
@@ -88,6 +89,9 @@ class ModFollower(Follower):
             self.send_higher_term_on_ae = False
             term = message.term + 1
             self.log.set_term(term)
+            self.logger.debug("inserting higher term value to cause appendEntries reject")
+            self.monitor.set_send_higher_term_on_ae(False)
+            self.logger.debug("Disabling higher term on appendEntries after one pass")
             return await super().on_append_entries(message)
         return await super().on_append_entries(message)
         
@@ -124,7 +128,8 @@ class ModMonitor(PauseSupportMonitor):
         new_state = await super().new_state(state_map, old_state, new_state)
         if new_state.code == StateCode.follower:
             self.state = ModFollower(new_state.server,
-                                         new_state.timeout)
+                                     new_state.timeout,
+                                     monitor=self)
             self.state.set_skip_to_append(self.skip_to_append)
             self.state.set_send_higher_term_on_hb(self.send_higher_term_on_hb)
             self.state.set_send_higher_term_on_ae(self.send_higher_term_on_ae)

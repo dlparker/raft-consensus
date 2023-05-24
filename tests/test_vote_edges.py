@@ -69,6 +69,9 @@ class TestCandidateVoteStartPause(unittest.TestCase):
             # servers are in their own threads, so
             # blocking this one is fine
             time.sleep(0.01)
+            if server.state_map.server is None:
+                # too soon, let it activate
+                continue
             state = server.state_map.get_state()
             if state is not None:
                 if str(state) == "candidate":
