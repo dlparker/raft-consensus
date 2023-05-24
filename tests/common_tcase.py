@@ -124,31 +124,6 @@ class TestCaseCommon(unittest.TestCase):
         self.pause_waiter("waiting for pause first election done (append)",
                           expected = started_count)
 
-    def set_term_start_intercept(self, clear=True):
-        """broken"""
-        for server in self.servers:
-            if clear:
-                spec.interceptor.clear_message_triggers()
-            pauser = self.pausers[spec.name]
-            pauser.term_start_only = True
-            spec.interceptor.add_trigger(InterceptorMode.out_after, 
-                                         AppendEntriesMessage._code,
-                                         pauser.leader_pause)
-            spec.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         AppendEntriesMessage._code,
-                                         pauser.follower_pause)
-
-    def set_hb_intercept(self, clear=True):
-
-        for spec in self.servers.values():
-            if clear:
-                spec.interceptor.clear_triggers()
-            spec.interceptor.add_trigger(InterceptorMode.out_after, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].leader_pause)
-            spec.interceptor.add_trigger(InterceptorMode.in_before, 
-                                         HeartbeatMessage._code,
-                                         self.pausers[spec.name].follower_pause)
     def clear_pause_triggers(self):
         for server in self.cluster.servers:
             server.clear_message_triggers()

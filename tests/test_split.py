@@ -6,6 +6,8 @@ import traceback
 import os
 from pathlib import Path
 
+from raftframe.messages.heartbeat import HeartbeatMessage
+from raftframe.states.base_state import StateCode, Substate
 from tests.common_tcase import TestCaseCommon
 
 class TestSplit(TestCaseCommon):
@@ -22,7 +24,17 @@ class TestSplit(TestCaseCommon):
             cls.logger_name = __name__
         else:
             cls.logger_name = "tests." + __name__
-        
+
+    def set_hb_intercept(self, clear=True):
+
+        for pserver in self.cluster.servers:
+            if clear:
+                pserver.clear_message_triggers()
+                pserver.clear_state_pauses()
+                pserver.clear_substate_pauses()
+            pserver.pause_on_substate(Substate.sent_heartbeat)
+            pserver.pause_before_in_message(HeartbeatMessage._code)
+            
     def test_leader_stays_split(self):
         # Preamble starts 5 servers (self.total_nodes) and
         # waits for them to complete the leader election.
@@ -34,8 +46,7 @@ class TestSplit(TestCaseCommon):
         # message to the follower code.
         self.preamble()
         self.clear_pause_triggers()
-        self.cluster.resume_all_paused_servers()
-        self.resume_waiter()
+        self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
@@ -55,43 +66,43 @@ class TestSplit(TestCaseCommon):
                           " network partitioned, %s and %s\n\n",
                           lost_1.name, lost_2.name)
 
-        lost_1.pbt_server.comms.set_partition(1)
-        lost_2.pbt_server.comms.set_partition(1)
+        lost_1.comms.set_partition(1)
+        lost_2.comms.set_partition(1)
         
         self.clear_pause_triggers()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
 
         self.logger.debug("\n\n\tAdding 10 via do_credit\n\n")
         client.do_credit(10)
-        log_record_count = self.leader.server_obj.get_log().get_last_index()
+        log_record_count = self.leader.thread.server.get_log().get_last_index()
         start_time = time.time()
         while time.time() - start_time < 4:
             done = []
-            for spec in [leader, kept_1, kept_2]:
-                tlog = spec.server_obj.get_log()
+            for pserver in [leader, kept_1, kept_2]:
+                tlog = pserver.thread.server.get_log()
                 # log indices are 1 offset, not zero
                 if tlog.get_commit_index() == log_record_count:
-                    done.append(spec)
+                    done.append(pserver)
             
             if len(done) == 3:
                 break
         self.assertEqual(len(done), 3, msg="Log commits missing for 4 seconds")
-        for spec in [lost_1, lost_2]:
-            tlog = spec.server_obj.get_log()
+        for pserver in [lost_1, lost_2]:
+            tlog = pserver.thread.server.get_log()
             # log indices are 1 offset, not zero
             self.assertTrue(tlog.get_commit_index() < log_record_count)
         self.logger.debug("\n\n\tHealing fake network partition\n\n")
-        lost_1.pbt_server.comms.set_partition(0)
-        lost_2.pbt_server.comms.set_partition(0)
+        lost_1.comms.set_partition(0)
+        lost_2.comms.set_partition(0)
         
         start_time = time.time()
         while time.time() - start_time < 4:
             done = []
-            for spec in [lost_1, lost_2]:
-                tlog = spec.server_obj.get_log()
+            for pserver in [lost_1, lost_2]:
+                tlog = pserver.thread.server.get_log()
                 # log indices are 1 offset, not zero
                 if tlog.get_commit_index() == log_record_count:
-                    done.append(spec)
+                    done.append(pserver)
             
             if len(done) == 2:
                 break
@@ -104,9 +115,13 @@ class TestSplit(TestCaseCommon):
                       
     def test_leader_lost_split(self):
         self.preamble()
+        leader = self.leader
+        lost_1 = self.non_leaders[0]
+        kept_1 = self.non_leaders[1]
+        kept_2 = self.non_leaders[2]
+        kept_3 = self.non_leaders[3]
         self.clear_pause_triggers()
-        self.cluster.resume_all_paused_servers()
-        self.resume_waiter()
+        self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         client.do_credit(10)
@@ -115,70 +130,54 @@ class TestSplit(TestCaseCommon):
         self.assertEqual(res['balance'], 10)
         time.sleep(0.01) # allow time for the commit messages to flow
 
-        log_record_count = self.leader.server_obj.get_log().get_last_index()
+        log_record_count = self.leader.thread.server.get_log().get_last_index()
         start_time = time.time()
         while time.time() - start_time < 2:
             done = []
-            for spec in self.cluster.get_servers().values():
-                tlog = spec.server_obj.get_log()
+            for pserver in self.cluster.servers:
+                tlog = pserver.thread.server.get_log()
                 # log indices are 1 offset, not zero
                 if tlog.get_commit_index() == log_record_count:
-                    done.append(spec)
+                    done.append(pserver)
             if len(done) == 5:
                 break
             time.sleep(0.1)
         self.assertEqual(len(done), 5,
                          msg="Post heal log commits missing for 2 seconds")
 
-        self.reset_pausers()
         self.set_hb_intercept()
-        self.pause_waiter("Waiting for all to pause on heartbeat")
-        leader = self.leader
-        lost_1 = self.non_leaders[0]
-        kept_1 = self.non_leaders[1]
-        kept_2 = self.non_leaders[2]
-        kept_3 = self.non_leaders[3]
+        self.wait_till_paused(5)
 
         self.logger.debug("\n\n\tIsolating two servers as though" \
                           " network partitioned, leader %s and %s\n\n",
                           leader.name, lost_1.name)
 
-        leader.pbt_server.comms.set_partition(1)
-        lost_1.pbt_server.comms.set_partition(1)
+        leader.comms.set_partition(1)
+        lost_1.comms.set_partition(1)
 
-        if False:
-            # if you are debugging, you might want to do this
-            # let the three kept servers run, but not the
-            # "partitioned" ones
-            for spec in self.servers.values():
-                if spec in [kept_1, kept_2, kept_3]:
-                    spec.interceptor.clear_triggers()
-                    self.cluster.resume_paused_server(spec.name, wait=False)
-        else:
-            self.reset_pausers()
-            self.clear_pause_triggers()
-            self.cluster.resume_all_paused_servers()
+        self.clear_pause_triggers()
+        self.cluster.resume_all()
         new_leader = None
         start_time = time.time()
         while time.time() - start_time < 10 * self.timeout_basis:
-            for spec in [kept_1, kept_2, kept_3]:
-                if str(spec.server_obj.state_map.state) == "leader":
-                    new_leader = spec
+            for pserver in [kept_1, kept_2, kept_3]:
+                if str(pserver.thread.server.state_map.state) == "leader":
+                    new_leader = pserver
                     break
             if new_leader:
                 break
             time.sleep(0.1)
         self.assertIsNotNone(new_leader)
         
-        term = new_leader.server_obj.get_log().get_term()
+        term = new_leader.thread.server.get_log().get_term()
         done = []
         start_time = time.time()
         while time.time() - start_time < 5 * self.timeout_basis:
             done = []
-            for spec in [kept_1, kept_2, kept_3]:
-                tlog = spec.server_obj.get_log()
+            for pserver in [kept_1, kept_2, kept_3]:
+                tlog = pserver.thread.server.get_log()
                 if tlog.get_term() == term:
-                    done.append(spec)
+                    done.append(pserver)
             if len(done) == 3:
                 break
             time.sleep(0.1)
@@ -190,38 +189,38 @@ class TestSplit(TestCaseCommon):
         client2.do_credit(10)
         start_time = time.time()
         while time.time() - start_time < 10 * self.timeout_basis:
-            log_record_count = new_leader.server_obj.get_log().get_last_index()
+            log_record_count = new_leader.thread.server.get_log().get_last_index()
             done = []
-            for spec in [kept_1, kept_2, kept_3]:
-                tlog = spec.server_obj.get_log()
+            for pserver in [kept_1, kept_2, kept_3]:
+                tlog = pserver.thread.server.get_log()
                 # log indices are 1 offset, not zero
                 if tlog.get_commit_index() == log_record_count:
-                    done.append(spec)
+                    done.append(pserver)
             if len(done) == 3:
                 break
             time.sleep(0.1)
         msg=f"Log commits missing for {10 * self.timeout_basis} seconds"
         self.assertEqual(len(done), 3, msg)
-        for spec in [leader, lost_1]:
-            tlog = spec.server_obj.get_log()
+        for pserver in [leader, lost_1]:
+            tlog = pserver.thread.server.get_log()
             # log indices are 1 offset, not zero
             self.assertTrue(tlog.get_commit_index() < log_record_count)
         self.logger.debug("\n\n\tHealing fake network partition\n\n")
-        leader.pbt_server.comms.set_partition(0)
-        lost_1.pbt_server.comms.set_partition(0)
-        for spec in self.servers.values():
-            if spec in [leader, lost_1]:
-                spec.interceptor.clear_triggers()
-                self.cluster.resume_paused_server(spec.name, wait=False)
+        leader.comms.set_partition(0)
+        lost_1.comms.set_partition(0)
+        for pserver in self.cluster.servers:
+            if pserver in [leader, lost_1]:
+                pserver.clear_message_triggers()
+                pserver.resume()
         
         start_time = time.time()
         while time.time() - start_time <  10 * self.timeout_basis:
             done = []
-            for spec in [leader, lost_1]:
-                tlog = spec.server_obj.get_log()
+            for pserver in [leader, lost_1]:
+                tlog = pserver.thread.server.get_log()
                 # log indices are 1 offset, not zero
                 if tlog.get_commit_index() == log_record_count:
-                    done.append(spec)
+                    done.append(pserver)
             
             if len(done) == 2:
                 break
@@ -235,3 +234,18 @@ class TestSplit(TestCaseCommon):
         # check the actual log in the follower
         self.postamble()
                       
+    def wait_till_paused(self, expected=None):
+        if expected is None:
+            expected = self.total_nodes
+        paused = []
+        start_time = time.time()
+        while time.time() - start_time < 3 * self.timeout_basis:
+            paused = []
+            for server in self.cluster.servers:
+                if server.paused:
+                    paused.append(server)
+            if len(paused) == expected:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(paused), expected)
+

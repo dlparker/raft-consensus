@@ -159,7 +159,6 @@ class StandardStateMap(StateMap):
         if state != self.state:
             msg = 'set_substate call on non-current state!'
             self.logger.error(msg)
-            breakpoint()
             raise Exception(msg)
         self.substate = substate
         for monitor in self.monitors:

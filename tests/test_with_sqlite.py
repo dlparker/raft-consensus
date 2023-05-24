@@ -4,16 +4,18 @@ import time
 import logging
 import traceback
 import os
+from pathlib import Path
 
 from tests.common_tcase import TestCaseCommon
 
 from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.states.base_state import StateCode
+from raftframe.states.follower import Follower
 from raftframe.log.sqlite_log import SqliteLog
-from dev_tools.pausing_app import PausingMonitor, PLeader, PFollower
+from dev_tools.pserver import PauseSupportMonitor
 
 
-class ModFollower(PFollower):
+class ModFollower(Follower):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -100,18 +102,16 @@ class ModFollower(PFollower):
             return await super().on_append_entries(message)
         return await super().on_append_entries(message)
         
-class ModMonitor(PausingMonitor):
+class ModMonitor(PauseSupportMonitor):
 
     
     def __init__(self, orig_monitor):
-        super().__init__(orig_monitor.pbt_server,
-                         orig_monitor.name,
-                         orig_monitor.logger)
-        self.state_map = orig_monitor.state_map
-        self.state = orig_monitor.state
-        self.substate = orig_monitor.substate
-        self.pbt_server.state_map.remove_state_change_monitor(orig_monitor)
-        self.pbt_server.state_map.add_state_change_monitor(self)
+        super().__init__(orig_monitor.pserver)
+        self.state_map = self.pserver.state_map
+        self.state = self.state_map.state
+        self.substate = self.state_map.substate
+        self.state_map.remove_state_change_monitor(orig_monitor)
+        self.state_map.add_state_change_monitor(self)
         self.skip_to_append = False
         self.send_higher_term_on_hb = False
         self.send_higher_term_on_ae = False
@@ -159,34 +159,35 @@ class TestRestarts(TestCaseCommon):
         else:
             cls.logger_name = "tests." + __name__
 
-    def change_log(self):
-        for spec in self.cluster.get_servers().values():
-            spec.pbt_server.data_log = SqliteLog(f"/tmp/raft_tests/{spec.name}")
+    def change_log(self, reset=True):
+        for pserver in self.cluster.servers:
+            path = Path(f"/tmp/raft_tests/{pserver.name}")
+            if not path.exists():
+                path.mkdir(parents=True)
+            filepath = Path(path, "log.sqlite")
+            if filepath.exists() and reset:
+                filepath.unlink()
+            pserver.data_log = SqliteLog(path)
             
     # All the tests in the case use a cluster of three servers
     # as configured by the TestCaseCommon setUp method.
     def test_append_first(self):
         # Preamble starts 2 of 3 servers
         # (num_to_start arg of self.total_nodes) and
-        # waits for them to complete the leader election.
-        # When it returns, the servers are paused at the point
-        # where the leader has sent the initial AppendEntries
-        # message containing the no-op log record that marks
-        # the beginning of the term. The followers have not
-        # yet processed it, are paused before delivery of the
-        # message to the follower code.
+        # waits for them to complete the leader election
+        # and pause.
         self.preamble(num_to_start=2, pre_start_callback=self.change_log)
-        for spec in self.cluster.get_servers().values():
-            if spec != self.leader:
-                if spec.running:
-                    first = spec
+        for pserver in self.cluster.servers:
+            if pserver != self.leader:
+                if pserver.running:
+                    first = pserver
                 else:
-                    second = spec
+                    second = pserver
         self.logger.debug("\n\n\tPreamble Done\n\n")
         self.assertIsNotNone(first)
         self.assertIsNotNone(second)
         self.clear_pause_triggers()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         self.logger.debug("\n\n\tCredit 10 \n\n")
         client = self.leader.get_client()
         status = client.get_status()
@@ -199,11 +200,11 @@ class TestRestarts(TestCaseCommon):
         # log operations from main thread (this one) don't work
         # when using sqlite, as it requires single threaded access.
         # therefore we need to do this dodge
-        log_stats = self.leader.pbt_server.get_log_stats()
+        log_stats = self.leader.get_log_stats()
         log_record_count = log_stats['last_index']
         start_time = time.time()
         while time.time() - start_time < 10 * self.timeout_basis:
-            f_log_stats = first.pbt_server.get_log_stats()
+            f_log_stats = first.get_log_stats()
             if f_log_stats['commit_index'] == log_record_count:
                 break
             time.sleep(0.01)
@@ -214,16 +215,16 @@ class TestRestarts(TestCaseCommon):
 
         second.monitor = ModMonitor(second.monitor)
         second.monitor.set_skip_to_append(True)
-        self.cluster.start_one_server(second.name)
+        second.start()
         # log operations from main thread (this one) don't work
         # when using sqlite, as it requires single threaded access.
         # therefore we need to do this dodge
-        log_stats = self.leader.pbt_server.get_log_stats()
+        log_stats = self.leader.get_log_stats()
         log_record_count = log_stats['last_index']
         # sometimes elections are slow
         start_time = time.time()
         while time.time() - start_time < 30 * self.timeout_basis:
-            s_log_stats = first.pbt_server.get_log_stats()
+            s_log_stats = first.get_log_stats()
             if s_log_stats['commit_index'] == log_record_count:
                 break
             time.sleep(0.01)

@@ -43,6 +43,11 @@ pytest --verbose \
       tests/test_log_ops.py \
       tests/test_mem_comms.py \
       tests/test_rare_msgs.py \
+      tests/test_server_edges.py \
+      tests/test_split.py \
+      tests/test_state_map.py \
+      tests/test_udp_comms.py \
+      tests/test_ups_n_downs.py \
       tests/test_vote_edges.py 
 
 

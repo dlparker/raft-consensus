@@ -53,6 +53,7 @@ class PServer:
         self.resume_noted = False
         self.run_once_in_thread = None
         self.do_log_stats = False
+        self.log_stats = None
         self.do_dump_state = False
         self.do_resume = False
         self.in_befores = {}
@@ -267,6 +268,14 @@ class PServer:
         self.thread.keep_running = False
         self.logger.debug("%s, %s stopped", self.name, self.thread_ident)
 
+    def get_log_stats(self):
+        self.do_log_stats = True
+        while self.log_stats is None:
+            time.sleep(0.001)
+        result = self.log_stats
+        self.log_stats = None
+        return result
+    
     async def in_loop_check(self, thread_obj):
         # this is called from the server thread object in that thread
 

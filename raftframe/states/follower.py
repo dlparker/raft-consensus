@@ -235,7 +235,9 @@ class Follower(State):
             # This is the most common case, appending along
             # without anybody getting out of sync
             return await self.do_good_append(message)
-            
+
+        if len(message.data['entries']) == 0:
+            print(f"\n\n{self.log.get_last_index()} != {message.prevLogIndex}\n\n")
         # Leader must be resending or overwriting.
         # Overwriting can happen due to leadership changes.
         # Resending can happen due to race between AppendEntries

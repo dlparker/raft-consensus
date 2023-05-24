@@ -327,9 +327,11 @@ class Leader(State):
         cursor.last_sent_index = entries[-1]['index']
         message._receiver = addr
         self.logger.debug("(term %d) sending AppendEntries " \
-                          " %d entries to %s, first is %s",
+                          " %d entries to %s, first is %s " \
+                          " prev_term = %d prev_index = %d " ,
                           self.log.get_term(),
-                          len(entries), addr, start_index)
+                          len(entries), addr, start_index,
+                          prev_term, prev_index)
         await self.server.post_message(message)
         
     async def do_backdown(self, message):

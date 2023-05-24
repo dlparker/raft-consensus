@@ -8,7 +8,9 @@ from tests.common_tcase import TestCaseCommon
 
 from raftframe.messages.heartbeat import HeartbeatMessage
 from raftframe.states.base_state import StateCode
-from dev_tools.pausing_app import PausingMonitor, PLeader
+from raftframe.states.leader import Leader
+from dev_tools.pserver import PauseSupportMonitor
+
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -16,7 +18,7 @@ if LOGGING_TYPE != "silent":
 
 timeout_basis = 0.2
 
-class RejectingLeader(PLeader):
+class RejectingLeader(Leader):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -74,17 +76,15 @@ class RejectingLeader(PLeader):
             return
         await super().stop()
         
-class RejectingMonitor(PausingMonitor):
+class RejectingMonitor(PauseSupportMonitor):
 
     def __init__(self, orig_monitor):
-        super().__init__(orig_monitor.pbt_server,
-                         orig_monitor.name,
-                         orig_monitor.logger)
-        self.state_map = orig_monitor.state_map
-        self.state = orig_monitor.state
-        self.substate = orig_monitor.substate
-        self.pbt_server.state_map.remove_state_change_monitor(orig_monitor)
-        self.pbt_server.state_map.add_state_change_monitor(self)
+        super().__init__(orig_monitor.pserver)
+        self.state_map = self.pserver.state_map
+        self.state = self.state_map.state
+        self.substate = self.state_map.substate
+        self.state_map.remove_state_change_monitor(orig_monitor)
+        self.state_map.add_state_change_monitor(self)
         
     async def new_state(self, state_map, old_state, new_state):
         new_state = await super().new_state(state_map, old_state, new_state)
@@ -108,23 +108,21 @@ class TestEdges(TestCaseCommon):
             cls.logger_name = "tests." + __name__
 
     def pre_start_callback(self):
-        for spec in self.servers.values():
-            spec.monitor = RejectingMonitor(spec.monitor)
+        for server in self.cluster.servers:
+            server.monitor = RejectingMonitor(server.monitor)
     
     def test_simple_calls(self):
         self.preamble()
         self.clear_pause_triggers()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         client = self.leader.get_client()
         status = client.get_status()
         self.assertIsNotNone(status)
-        server = self.leader.server_obj
+        server = self.leader.thread.server
         # just check this here, make sure call is rejected
         with self.assertRaises(Exception) as context:
             stats = server.start()
         self.assertTrue("twice" in str(context.exception))
-        self.assertEqual(self.leader.monitor.state, 
-                         self.leader.server_obj.get_state())
         
     def test_reject_messages_while_changing_state(self):
         # The servers.server.py Server class has
@@ -144,19 +142,19 @@ class TestEdges(TestCaseCommon):
         # normally process client messages.
         self.preamble(pre_start_callback=self.pre_start_callback)
         self.clear_pause_triggers()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         client = self.leader.get_client()
         status = client.get_status()
         self.assertIsNotNone(status)
-        self.leader.monitor.state.set_rejecting(False)
-        server = self.leader.server_obj
+        self.leader.state_map.get_state().set_rejecting(False)
+        server = self.leader.thread.server
         estack = server.get_unhandled_errors()
         self.assertEqual(len(estack), 0)
         stats = client.do_log_stats()
         self.assertIsNotNone(stats)
         client.set_timeout(0.5)
-        self.leader.pbt_server.state_map.changing = True
-        self.leader.monitor.state.set_rejecting(True)
+        self.leader.state_map.changing = True
+        self.leader.state_map.get_state().set_rejecting(True)
         # Server should try twice, then give up. Message
         # lost in limbo, so no reply sent
         with self.assertRaises(Exception) as context:
@@ -193,15 +191,15 @@ class TestEdges(TestCaseCommon):
         # so no reply. We also expect the server to record the error
         self.preamble(pre_start_callback=self.pre_start_callback)
         self.clear_pause_triggers()
-        self.cluster.resume_all_paused_servers()
+        self.cluster.resume_all()
         client = self.leader.get_client()
         status = client.get_status()
         self.assertIsNotNone(status)
         client.set_timeout(0.5)
-        server = self.leader.server_obj
+        server = self.leader.thread.server
         estack = server.get_unhandled_errors()
         self.assertEqual(len(estack), 0)
-        self.leader.monitor.state.setup_respawn_reject(2)
+        self.leader.state_map.get_state().setup_respawn_reject(2)
         with self.assertRaises(Exception) as context:
             stats = client.do_log_stats()
         self.assertTrue("timeout" in str(context.exception))

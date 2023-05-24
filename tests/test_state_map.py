@@ -76,6 +76,9 @@ class TestMap(unittest.TestCase):
                 return new_state
             async def new_substate(self, state_map, state, substate):
                 self.substate = substate
+            def finish_state_change(self, new_state: str) -> None:
+                return
+
 
         class BadMonitor(StateChangeMonitor):
             state = None
@@ -84,6 +87,8 @@ class TestMap(unittest.TestCase):
                 raise Exception("testing error capture in state map")
             async def new_substate(self, state_map, state, substate):
                 raise Exception("testing error capture in state map")
+            def finish_state_change(self, new_state: str) -> None:
+                return
 
         fake_mon = FakeMonitor()
         bad_mon = BadMonitor()
