@@ -8,7 +8,6 @@ from pathlib import Path
 
 from tests.common_tcase import TestCaseCommon
 
-from dev_tools.pausing_app import InterceptorMode
 from raftframe.messages.heartbeat import HeartbeatMessage
 from raftframe.messages.heartbeat import HeartbeatResponseMessage
 from raftframe.messages.append_entries import AppendEntriesMessage
