@@ -91,6 +91,7 @@ class RejectingMonitor(PauseSupportMonitor):
         if new_state.code == StateCode.leader:
             self.state = RejectingLeader(new_state.server,
                                          new_state.heartbeat_timeout)
+            self.state_map.state = self.state
             return self.state
         return new_state
     

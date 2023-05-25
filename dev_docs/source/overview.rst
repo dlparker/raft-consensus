@@ -143,7 +143,7 @@ in separate processes.
 
 The other type is the "pausing app" flavor of cluster, with all servers run in different
 threads in a single process, using a number of wrapper components including an in-memory
-implementation of the CommsAP. 
+implementation of the CommsAPI. 
 
 
 ------------

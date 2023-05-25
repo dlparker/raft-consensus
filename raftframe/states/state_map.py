@@ -175,77 +175,99 @@ class StandardStateMap(StateMap):
         if not self.server:
             raise Exception('must call activate before this method!')
         self.start_state_change(self.state, 'follower')
-        if old_state:
+        if not old_state:
+            old_state = self.state
+        if old_state: # could be None at startup
             os_name = str(old_state)
         else:
             os_name = None
         self.logger.info("switching state from %s to follower", self.state)
-        follower =  Follower(server=self.server,
-                             timeout=self.follower_leaderless_timeout)
+
+        # Note, this section of code is carefully written so that
+        # a development support version of this class can modify the
+        # value of self.state during a monitor call and have things
+        # still work. This lets test code modify the behavior of the
+        # standard state classes through interitance. Don't do anything
+        # here to break that
+        self.state = Follower(server=self.server,
+                              timeout=self.follower_leaderless_timeout)
         for monitor in self.monitors:
             try:
-                follower = await monitor.new_state(self, self.state, follower)
+                await monitor.new_state(self, old_state, self.state)
             except GeneratorExit: # pragma: no cover error
                 raise
             except:
                 self.logger.error("Monitor new_state call got exception \n\t%s",
                                   traceback.format_exc())
-        self.state = follower
-        follower.start()
+        self.state.start()
         await asyncio.sleep(0)
-        self.finish_state_change(os_name, 'follower')
-        return follower
+        self.finish_state_change(os_name, str(self.state))
+        return self.state
     
     async def switch_to_candidate(self, old_state: Optional[State] = None) -> Candidate:
         if not self.server:
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to candidate", self.state)
         self.start_state_change(self.state, 'candidate')
-        if old_state:
+        if not old_state:
+            old_state = self.state
+        if old_state: # could be None at startup
             os_name = str(old_state)
         else:
             os_name = None
-        candidate =  Candidate(server=self.server,
-                               timeout=self.candidate_voting_timeout)
+        # Note, this section of code is carefully written so that
+        # a development support version of this class can modify the
+        # value of self.state during a monitor call and have things
+        # still work. This lets test code modify the behavior of the
+        # standard state classes through interitance. Don't do anything
+        # here to break that
+        self.state =  Candidate(server=self.server,
+                                timeout=self.candidate_voting_timeout)
         for monitor in self.monitors:
             try:
-                candidate = await monitor.new_state(self, self.state, candidate)
+                await monitor.new_state(self, old_state, self.state)
             except GeneratorExit: # pragma: no cover error
                 pass
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
-        self.state = candidate
-        candidate.start()
+        self.state.start()
         await asyncio.sleep(0)
-        self.finish_state_change(os_name, 'candidate')
-        return candidate
+        self.finish_state_change(os_name, str(self.state))
+        return self.state
 
     async def switch_to_leader(self, old_state: Optional[State] = None) -> Leader:
         if not self.server:
             raise Exception('must call activate before this method!')
         self.logger.info("switching state from %s to leader", self.state)
         self.start_state_change(self.state, 'leader')
-        if old_state:
+        if not old_state:
+            old_state = self.state
+        if old_state: # could be None at startup
             os_name = str(old_state)
         else:
             os_name = None
-        leader =  Leader(server=self.server,
-                         heartbeat_timeout=self.leader_heartbeat_timeout)
+        # Note, this section of code is carefully written so that
+        # a development support version of this class can modify the
+        # value of self.state during a monitor call and have things
+        # still work. This lets test code modify the behavior of the
+        # standard state classes through interitance. Don't do anything
+        # here to break that
+        self.state = Leader(server=self.server,
+                            heartbeat_timeout=self.leader_heartbeat_timeout)
 
         for monitor in self.monitors:
             try:
-                leader = await monitor.new_state(self, self.state, leader)
+                await monitor.new_state(self, old_state, self.state)
             except GeneratorExit: # pragma: no cover error
                 pass
             except:
                 self.logger.error("Monitor new_state call got exception \n%s",
                                   traceback.format_exc())
-        self.state = leader
-        leader.start()
+        self.state.start()
         await asyncio.sleep(0)
-        self.finish_state_change(os_name, 'leader')
-        return leader
+        self.finish_state_change(os_name, str(self.state))
+        return self.state
 
     
     

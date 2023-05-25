@@ -134,6 +134,7 @@ class ModMonitor(PauseSupportMonitor):
             self.state.set_send_higher_term_on_hb(self.send_higher_term_on_hb)
             self.state.set_send_higher_term_on_ae(self.send_higher_term_on_ae)
             self.state.set_never_beat(self.never_beat)
+            self.state_map.state = self.state
             return self.state
         return new_state
 

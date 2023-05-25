@@ -18,6 +18,10 @@ from dev_tools.log_control import (servers_as_procs_log_setup,
                                              stop_logging_server,
                                              have_logging_server)
 
+LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
+if LOGGING_TYPE != "silent":
+    LOGGING_TYPE = "devel_mp"
+
     
 @dataclass
 class ServerSpec:

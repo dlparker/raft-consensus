@@ -450,6 +450,7 @@ class ServerThread(threading.Thread):
         if self.running:
             raise Exception("Server did not stop")
 
+    
 class PauseSupportMonitor(StateChangeMonitor):
 
     def __init__(self, pserver):
@@ -458,6 +459,7 @@ class PauseSupportMonitor(StateChangeMonitor):
     async def new_state(self, state_map: StateMap,
                         old_state: Union[State, None],
                         new_state: Substate) -> State:
+        
         return await self.pserver.new_state(state_map,
                                             old_state,
                                             new_state)
