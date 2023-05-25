@@ -188,13 +188,16 @@ The startup process happens when the Server object calls the StateMap
 object's activate method. This instantiates a Follower object and
 starts it. When a State class decides to switch to another state, it
 does some cleanup operations and then calls the StateMap switch_to_XXX where
-XXX is the target state. The StateMap handles instiating the new state
-object and starrts it.
+XXX is the target state. The StateMap handles instantiating the new state
+object and starts it.
 
-
-There are some hooks in these functions that allow
-monitoring of the state transitions.
-
+The :class:`raftframe.states.state_map.StateMap` included the concept
+of a StateChangeMonitor, the API of which is defined at
+:class:`raftframe.app_api.app.StateChangeMonitor`. This offers the
+App developer a method of hooking code into the flow of state changes.
+Whatever the App code wants to do at these state changes, it must not
+block or long delay the state change, as this may cause timing issues
+and force an election to happen.
 
 - :class:`raftframe.states.state_map.StateMap`
 - :class:`raftframe.states.follower.Follower`

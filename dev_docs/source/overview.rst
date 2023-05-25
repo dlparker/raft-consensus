@@ -9,13 +9,25 @@ dealing with systems of independent server process. The other is the
 fact that the Raft algorithm is timeout based, such that the failure
 of certain messages to arrive within a specified time window is
 treated as the an actual failure of the sending server or the network
-connection and triggers a new leader election.
+connection and may trigger a new leader election.
 
-Much energy has been expended to build tools to address these problems
+Much energy has been expended to build tools to address these problems.
 
-************************
-Single process execution
-************************
+***************
+Test Server App
+***************
+
+All the Test and development servers use the
+:class:`dev_tools.bank_app.BankingApp` as the App API implementation. This
+implements a trivial bank teller interaction simulation that supports
+query, credit and debit operations on a single account, using the
+RaftFrame logic to accept updates only in the Leader server. It is
+based on the code in the original project that was forked to start
+this one.
+
+***************************************
+Main Strategy: Single process execution
+***************************************
 
 A major element of the strategy to limit the pain of development and test
 execution is to opt for running servers in a single process in mutliple
@@ -45,15 +57,27 @@ You can then alter some part of the state, stop the Leader server,
 or something like that to cause some specific sequence of the algrorithm
 to play out under test control.
 
-The primary means of building in support for these extra control mechanism is to wrap
-standard components (by inheritance) to add hooks and callbacks.
 
-A secondary means is to replace standard components, as is done with the CommsAPI
-implementation. 
 
-***************
+Non-pausing Servers
+===================
+
+The :class:`dev_tools.bt_server.UDPBankTellerServer` uses the in
+memory log implementation :class:`dev_tools.memory_log.MemoryLog`. It
+also uses a special StateMap implementation that records current state
+and substate information in a shared dictionary via a python
+multiprocessing manager instance, thus allowing test code to check the
+state and substate values for subprocesses. The class has a class
+method that provides the multiprocess process startup sequence.
+
+This server is not (currently, May 25, 2023) used in any tests, but
+it is used in a demo program in raftframe/dev_tools/udp_cluster_examples.
+More uses are anticipated in the future
+as more developer support tools are created.
+
+
 Pausing Servers
-***************
+===============
 
 The customer servers used for the threaded, single process cluster
 implement a "pause" by entering an async wait loop waiting until a
@@ -75,11 +99,13 @@ In order to suspend servers at some desired state, these async events need
 to be prevented, or delayed more likely. The timers need to be paused any
 time that the server pauses, for whatever reason. Depending on the state
 of the servers when the pause begins, it may also be necessary to interrupt
-message processing to prevent state changes.
+message processing to prevent state changes. This is normally the case, though
+sometimes a test might want to allow messages without allowing timers.
 
---------------
+
 Pausing timers
 --------------
+
 
 The three state classes, Follower, Candidate and Leader all schedule callbacks
 from timers in order to detect and respond to changes in cluster state. These
@@ -98,11 +124,10 @@ get_timer or get_timer_class method on the :class:`raftframe.servers.server.Serv
 class. This makes it simple to substitute the ControlledTimer for the whole
 server without complicating the initialization of the state classes.
 
--------------
 Pausing Comms
 -------------
 
-The :class:dev_tools.memory_comms.MemoryComms class implements
+The :class:`dev_tools.memory_comms.MemoryComms` class implements
 the CommsAPI, but adds an "interceptor" feature, such that it can be dynamically
 configured to pause just before or just after sending or just before or just after
 receiving (processing, actually) a message of a particular type.
@@ -120,30 +145,98 @@ telling the MemoryComms code not to send or process the targeted message.
 This interceptor based pausing can be used in conjunction with other pausing techniques
 to ensure that a paused server does not process an incoming message while in the paused state.
 
-===============
-The Banking App
-===============
-
-An extremely simple banking app is used as the test and development support app,
-:class:`dev_tools.bt_server.MemoryBankTellerServer`. It is
-based on the banking logic that was part of the original project forked to start this one.
-It supports query, credit and debit operations on a single account, using the RaftFrame
-logic to accept updates only in the Leader server.
-
-
+Pausing App Server
 ==================
+
+The Pausing App implemented as :class:`dev_tools.pserver.PServer` is based on the class
+:class:`dev_tools.bt_server.MemoryBankTellerServer`. This class sets
+up the components and configuration needed to run a server. The MemoryBankTellerServer
+already uses :class:`dev_tools.memory_comms.MemoryComms` so the pausing support
+provided by that class is available. It also uses the in memory log implementation in
+:class:`dev_tools.memory_log.MemoryLog` so it is easy to manipulate log records in test code.
+
+The PServer code implements the thread management code that allows multiple server instances
+in the same process. There are some complexities to this, as some things need to run in the
+server thread, but test code will be running in the main thread. Several methods on the
+PServer set or read flags or other state that are in turn acted upon by the thread code
+in :class:`dev_tools.pserver.ServerThread`
+
+Pausing techniques
+------------------
+
+The PServer code has some helper classes that implement APIs that tie regular code paths to
+pausing mechanisms. Described in this section, these allow test developers to construct a
+model of the state at which the server should pause, then allow the server to run until that
+happens. The test can detect this condition by examining the state of the PServer (particlarly
+the paused field), or by setting the pause_callback field of the PServer object.
+
+Direct access to these features is heresy to Object Oriented encapsulation, but I don't care.
+Developers can deal with it.
+
+Interceptor
+^^^^^^^^^^^
+
+The MemoryComms code defines a class for connecting message operations to code that
+might want to modify the behavior of the server before proceeding. The
+:class:`dev_tools.memory_comms.MessageInterceptor` class defines an API
+for classes that can be installed into the MemoryComms instance. Whenever
+a message is being sent or received the callbacks defined on that class
+will be called. There are before and after callbacks for both sending
+and receiving.
+
+The PServer code instantiates the API in the :class:`dev_tools.pserver.Interceptor`
+class, which is just a shim that calls the identical methods on the PServer class
+it self (multiple inheritance is ugly, and not better in this case).
+
+The PServer interceptor methods examine pre-configured control data to see if
+the current state transision should cause a pause. If so, then it calls
+the PServer pause method to pause everything else and then does an asyncio.sleep
+loop until the pause condition is cleared by a call the PServer resume. 
+
+States and Substates
+^^^^^^^^^^^^^^^^^^^^
+
+The State and Substate change callbacks defined in
+:class:`raftframe.app_api.app.StateChangeMonitor` are implemented in
+:class:`dev_tools.pserver.PauseSupportMonitor`, which is just a shim
+that calls identical methods on the PServer itself (because multiple
+inheritance is still ugly, and not better in this case either).
+
+The PServer monitor methods examine pre-configured control data to see if
+the current message flow position should cause a pause. If so, then it calls
+the PServer pause method to pause everything else and then does an asyncio.sleep
+loop until the pause condition is cleared by a call the PServer resume. 
+
+******************
 Cluster Management
-==================
+******************
 
 There are common tools for managing clusters for test and development. There are two types of
-clusters. One is based on python multiprocessing and uses the UDP comms module. The clusters
+clusters.
+
+UDP Cluster
+---------------
+
+One is based on python multiprocessing and uses the UDP comms module. The clusters
 in a server of this type do not support any of the features that suspend operation, so it has
 limited usefulness, largely just proving that normal flows work correctly when using UDP comms
-in separate processes.
+in separate processes. It is used in a demo program in dev_tools/udp_cluster_examples.
 
 The other type is the "pausing app" flavor of cluster, with all servers run in different
 threads in a single process, using a number of wrapper components including an in-memory
-implementation of the CommsAPI. 
+implementation of the CommsAPI. It is used in examples in dev_tools/pcluster_examples,
+and in many of the unit test programs such as tests/test_rare_msgs.py
+
+
+Pausing Cluster
+---------------
+
+The :class:`dev_tools.pcluster.PausingCluster` class simplifies the process of setting up
+clusters for tests and other development tasks. It handles server specific things
+such as address assignment, overall cluster config, python logging configuration. It also
+handles start, stop, pause and resume for all servers in a single call. It also does the
+"regen_server" operation where the same runtime parameters of a previously run but now stopped
+server thread are to be reused, since the old PServer instance cannot simply be restarted.
 
 
 ------------
@@ -154,27 +247,18 @@ There are two test server base classes that are intended to run in the two types
 multiprocessing/UDP and threaded/Memory. Both use the :class:`bank_app.BankingApp`
 as the App API implementation.
 
-The :class:`dev_tools.bt_server.UDPBankTellerServer` the in memory log implementation
-:class:`dev_tools.memory_log.MemoryLog`. It also uses a special StateMap implementation
-that records current state and substate information via a python multiprocessing
-manager instance, thus allowing test code to check the state and substate values for
-subprocesses. The class has a class method that provides the multiprocess process startup
-sequence.
+The :class:`dev_tools.bt_server.UDPBankTellerServer` uses the in
+memory log implementation :class:`dev_tools.memory_log.MemoryLog`. It
+also uses a special StateMap implementation that records current state
+and substate information in a shared dictionary via a python
+multiprocessing manager instance, thus allowing test code to check the
+state and substate values for subprocesses. The class has a class
+method that provides the multiprocess process startup sequence.
 
 -----------
 Pausing App
 -----------
 
-The Pausing App is based on the class
-:class:`dev_tools.bt_server.MemoryBankTellerServer`. This class sets
-up the components and configuration needed to run a server, using the
-:class:`raftframe.states.state_map.StandardStateMap`, which is the
-default StateMap component intended for production use, but uses
-special development implementations for the Log and Comms APIs, both
-using memory structures to emulate storage and transport
-operations. It uses the :class:`bank_app.BankingApp`
-for the app, and it responds to calls to the start method by
-starting a thread to run the server.
 
 
 

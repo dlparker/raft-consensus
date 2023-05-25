@@ -26,12 +26,12 @@ class StateChangeMonitor(metaclass=abc.ABCMeta):
                         old_state: Union[State, None],
                         new_state: Substate) -> State:
         """
-        This is called when the StateMap is switching to a new state, before
-        the StateMap reference changes, and before the new state start method
-        is called, and the returned state object will be installed as the 
-        new state. You should return "new_state" in almost all circumstances,
-        and if not then the object you return should be a child class of the
-        new_state object. Anything else will break things.
+        This is called when the StateMap is switching to a new state, after
+        the StateMap reference changes but before the new state start method
+        is called.
+
+        Be carefull to ensure that your implementation does not delay for very
+        long since that mess up an election and force a retry.
         """
         raise NotImplementedError
 
@@ -41,7 +41,10 @@ class StateChangeMonitor(metaclass=abc.ABCMeta):
                             substate: Substate) -> None:
         """
         This is called when the StateMap is switching to a new substate, after
-        the StateMap reference changes, so the new substate is already "active"
+        the StateMap reference changes, so the new substate is already "active".
+
+        Be carefull to ensure that your implementation does not delay for very
+        long since that mess up an election and force a retry.
         """
         raise NotImplementedError
 
@@ -51,6 +54,8 @@ class StateChangeMonitor(metaclass=abc.ABCMeta):
         This is called when the StateMap is switching to a new state, after 
         the StateMap reference has changed, and after the new state start method
         is called. 
+        Be carefull to ensure that your implementation does not delay for very
+        long since that mess up an election and force a retry.
         """
         raise NotImplementedError
 

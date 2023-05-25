@@ -6,10 +6,11 @@ Welcome to RaftFrame Developer documentation!
    :maxdepth: 4
    :caption: Contents:
 
+   Overview: <overview.rst>
+
    _autodoc/modules
    _autodoc_bt/modules
 
-   Overview: <overview.rst>
 	  
 Modules
 =======
