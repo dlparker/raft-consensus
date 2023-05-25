@@ -338,14 +338,12 @@ class Leader(State):
         start_index = message.data['last_index'] + 1
         await self.send_append_entries(message.sender, start_index)
         
-    async def send_heartbeat(self, first=False):
+    async def send_heartbeat(self):
         data = {
             "leaderId": self.server.name,
             "leaderPort": self.server.endpoint,
             "entries": [],
             }
-        if first:
-            data["first_in_term"] = True
 
         message = HeartbeatMessage(self.server.endpoint, None,
                                    self.log.get_term(), data,
@@ -353,24 +351,14 @@ class Leader(State):
                                    self.log.get_last_index(),
                                    self.log.get_commit_index())
                                    
-        if first:
-            self.logger.debug("sending heartbeat to all term = %s" \
-                              " prev_index = %s" \
-                              " prev_term = %s" \
-                              " commit = %s",
-                              message.term,
-                              message.prevLogIndex,
-                              message.prevLogTerm,
-                              message.leaderCommit)
-        else:
-            self.heartbeat_logger.debug("sending heartbeat to all term = %s" \
-                                        " prev_index = %s" \
-                                        " prev_term = %s" \
-                                        " commit = %s",
-                                        message.term,
-                                        message.prevLogIndex,
-                                        message.prevLogTerm,
-                                        message.leaderCommit)
+        self.heartbeat_logger.debug("sending heartbeat to all term = %s" \
+                                    " prev_index = %s" \
+                                    " prev_term = %s" \
+                                    " commit = %s",
+                                    message.term,
+                                    message.prevLogIndex,
+                                    message.prevLogTerm,
+                                    message.leaderCommit)
         await self.server.broadcast(message)
         self.heartbeat_logger.debug("sent heartbeat to all commit = %s",
                                     message.leaderCommit)
