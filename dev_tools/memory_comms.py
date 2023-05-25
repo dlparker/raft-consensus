@@ -9,7 +9,7 @@ from typing import Union
 from dataclasses import dataclass, field, asdict
 
 from raftframe.utils import task_logger
-from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
+#from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
 from raftframe.comms.comms_api import CommsAPI
 
 # this is for test support only
@@ -72,6 +72,7 @@ class MemoryComms(CommsAPI):
         self.channels = {}
         self.endpoint = None
         self.server = None
+        self.serializer = None
         self.queue = asyncio.Queue()
         self.task = None
         self.keep_running = False
@@ -92,6 +93,7 @@ class MemoryComms(CommsAPI):
     async def start(self, server, endpoint):
         self.endpoint = endpoint
         self.server = server
+        self.serializer = self.server.get_serializer()
         global channels
         channels[endpoint] = self
         self.logger.debug("starting %s full set is %s",
@@ -161,7 +163,7 @@ class MemoryComms(CommsAPI):
                                           self.partition, message.code)
                         skip = True
                 if not skip:
-                    data = Serializer.serialize_message(message)
+                    data = self.serializer.serialize_message(message)
                     w = Wrapper(data, self.endpoint)
                     self.logger.debug("%s posted %s to %s",
                                       self.endpoint, message.code, target)
@@ -199,7 +201,7 @@ class MemoryComms(CommsAPI):
                 addr = w.addr
                 data = w.data
                 try:
-                    message = Serializer.deserialize_message(data)
+                    message = self.serializer.deserialize_message(data)
                     if self.interceptor:
                         # let test code decide to pause things before
                         # delivering

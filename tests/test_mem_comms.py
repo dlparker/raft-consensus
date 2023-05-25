@@ -8,6 +8,7 @@ from enum import Enum
 from dataclasses import dataclass
 
 from raftframe.messages.status import StatusQueryMessage, StatusQueryResponseMessage
+from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor
 from dev_tools.memory_comms import reset_channels
 
@@ -36,6 +37,9 @@ class FakeServer:
         
     async def on_message(self, message):
         await self.in_queue.put(message)
+
+    def get_serializer(self):
+        return Serializer
         
 class TestBasic(unittest.TestCase):
         

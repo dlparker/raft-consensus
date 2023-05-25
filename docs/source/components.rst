@@ -63,7 +63,7 @@ base clases for each of these. Developer support code and testing makes extensiv
 use of this technique.
 
 It also requires that the constructor be supplied with an
-implememtaion of the App API, which is effectively the part of the
+implementation of the App API, which is effectively the part of the
 system that does the work that is coordinated by the raft
 algorithm. For example, a banking app might operate on an account,
 crediting and debiting the funds in the account. The raft algorithm
@@ -158,7 +158,7 @@ Serializer
 **********
 
 The Serializer API class :class:`raftframe.serializers.api.SerializerAPI` may
-be used by Log implementations and Comms implementations. In one server, the
+be used by nd Comms implementations. In one server, the
 same serializer may be used for both, or two different serializers may be used
 for each. There are methods for serializing and deserializing messages, log records
 and dictionaries. The primary implementation currently used is msgpack, which has

@@ -16,6 +16,7 @@ from raftframe.log.log_api import LogRec
 from raftframe.states.base_state import Substate
 from raftframe.states.leader import Leader
 from raftframe.states.leader import FollowerCursor
+from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
 from dev_tools.memory_comms import MemoryComms
 from dev_tools.pcluster import PausingCluster
 
@@ -256,7 +257,10 @@ class TestOddPaths(unittest.TestCase):
                 
             async def on_message(self, message):
                 await self.in_queue.put(message)
-        
+
+            def get_serializer(self):
+                return Serializer
+            
         server_1 = FakeServer()
         comms = MemoryComms()
         # set back to follower so shutdown will work
@@ -322,6 +326,9 @@ class TestOddPaths(unittest.TestCase):
             async def on_message(self, message):
                 await self.in_queue.put(message)
         
+            def get_serializer(self):
+                return Serializer
+            
         server_1 = FakeServer()
         comms = MemoryComms()
         async def do_vote():

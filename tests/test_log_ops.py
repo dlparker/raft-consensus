@@ -193,4 +193,33 @@ class TestSqliteLog(unittest.TestCase):
         # and make sure we get None if we read past end
         bad = records.read_entry(10000)
         self.assertIsNone(bad)
+
+    def test_sqlite_auto_opens(self):
+        p = Path('/tmp/log.sqlite')
+        if p.exists():
+            p.unlink()
+        sql_log = SqliteLog("/tmp")
+        sql_log.incr_term()
+        limit1 = 100
+        for i in range(limit1):
+            rec = LogRec(term=1, user_data=dict(index=i))
+            sql_log.append([rec,])
+        for i in range(1, limit1 - 1 ):
+            sql_log.commit(i)
+        sql_log.close()
+        sql_log = SqliteLog("/tmp")
+        sql_log.close()
+
+        sql_log.commit(limit1 -1)
+        x = sql_log.read(limit1-1)
+        self.assertTrue(x.committed)
         
+        sql_log.close()
+        sql_log.incr_term()
+        self.assertEqual(sql_log.get_term(), 2)
+        
+        sql_log.close()
+        rec = LogRec(term=2, user_data=dict(index=limit1))
+        sql_log.append([rec,])
+        x = sql_log.read(limit1)
+        self.assertEqual(x.index,limit1)

@@ -6,7 +6,7 @@ from raftframe.log.log_api import LogRec
 from raftframe.messages.regy import get_message_registry
 from raftframe.serializers.api import SerializerAPI
 
-class MsgpackSerializer:
+class MsgpackSerializer(SerializerAPI):
 
     @staticmethod
     def serialize_message(message: BaseMessage) -> Union[bytes, str]:

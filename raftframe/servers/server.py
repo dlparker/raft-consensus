@@ -55,9 +55,6 @@ class Server:
             await self.state_map.state.stop()
         self.running = False
         
-    def get_live_config(self):
-        return self.live_config
-
     def get_serializer(self):
         return self.serializer
     
@@ -109,14 +106,6 @@ class Server:
                  details=details)
         self.unhandled_errors.append(e)
         
-    def record_failed_state_operation(self, state, desc, 
-                                      error_data):
-        details = f"State {state} failed {desc} \n"
-        details += error_data
-        e = dict(code="state_operation_failed",
-                 details=details)
-        self.unhandled_errors.append(e)
-
     def record_illegal_message_state(self, sender, desc,
                                       error_data):
         details = f"Got illegal message state from {sender}, \n{desc} \n"

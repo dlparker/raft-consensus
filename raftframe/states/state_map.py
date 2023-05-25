@@ -139,7 +139,7 @@ class StandardStateMap(StateMap):
                 monitor.finish_state_change(new_state)
             except GeneratorExit: # pragma: no cover error
                 raise
-            except:
+            except:  # pragma: no cover error
                 self.logger.error("Monitor finish_state_change call got exception \n\t%s",
                                   traceback.format_exc())
     
@@ -211,10 +211,7 @@ class StandardStateMap(StateMap):
         self.start_state_change(self.state, 'candidate')
         if not old_state:
             old_state = self.state
-        if old_state: # could be None at startup
-            os_name = str(old_state)
-        else:
-            os_name = None
+        os_name = str(old_state)
         # Note, this section of code is carefully written so that
         # a development support version of this class can modify the
         # value of self.state during a monitor call and have things
@@ -243,10 +240,7 @@ class StandardStateMap(StateMap):
         self.start_state_change(self.state, 'leader')
         if not old_state:
             old_state = self.state
-        if old_state: # could be None at startup
-            os_name = str(old_state)
-        else:
-            os_name = None
+        os_name = str(old_state)
         # Note, this section of code is carefully written so that
         # a development support version of this class can modify the
         # value of self.state during a monitor call and have things

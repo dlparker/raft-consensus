@@ -37,5 +37,10 @@ class TestCommands(TestCaseCommon):
         self.assertIsNotNone(self.result)
         self.assertEqual(self.result['balance'], 10)
         first_log = first.thread.server.get_log()
+        start_time = time.time()
+        while time.time() - start_time < 1:
+            if first_log.get_last_index() == self.log_record_count:
+                break
+            time.sleep(0.01)
         self.assertEqual(first_log.get_last_index(), self.log_record_count)
         self.postamble()
