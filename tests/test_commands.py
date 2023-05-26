@@ -35,7 +35,7 @@ class TestCommands(TestCaseCommon):
                 break
             time.sleep(0.01)
         self.assertIsNotNone(self.result)
-        self.assertEqual(self.result['balance'], 10)
+        self.assertEqual(self.result.response['balance'], 10)
         first_log = first.thread.server.get_log()
         start_time = time.time()
         while time.time() - start_time < 1:

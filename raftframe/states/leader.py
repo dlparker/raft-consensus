@@ -39,7 +39,13 @@ class Leader(State):
         self.heartbeat_timer = None
         self.last_hb_time = time.time()
         self.election_time = time.time()
-        self.task = None
+        self.start_task = None
+
+        self.command_task = None
+        self.command_result = None
+        self.command_start_time = None
+        
+        # remove when command task changes done        
         self.command_in_progress = False
         self.callback_by_index = {}
 
@@ -61,27 +67,27 @@ class Leader(State):
                                                      self.log.get_term(),
                                                      self.heartbeat_timeout,
                                                      self.send_heartbeat)
-        self.task = task_logger.create_task(self.on_start(),
+        self.start_task = task_logger.create_task(self.on_start(),
                                             logger=self.logger,
                                             message="leader start method")
     async def stop(self):
         self.terminated = True
         if not self.heartbeat_timer.terminated:
             await self.heartbeat_timer.terminate()
-        if self.task:
-            self.task.cancel()
+        if self.start_task:
+            self.start_task.cancel()
             await asyncio.sleep(0)
             
     async def on_start(self):
         if self.terminated:
-            self.task = None
+            self.start_task = None
             return
         self.logger.debug("in on_start")
         self.heartbeat_timer.start()
         await self.insert_term_start()
         self.logger.debug("changing substate to became_leader")
         await self.set_substate(Substate.became_leader)
-        self.task = None
+        self.start_task = None
         
     def get_leader_addr(self):
         return self.server.endpoint
@@ -557,4 +563,113 @@ class Leader(State):
         self.logger.warning("Bogus leadership claim \n\t%s", message)
         return True
 
+    async def on_internal_command(self, command, callback):
+        # we need to make sure we don't starve heartbeat
+        # if there is a big recovery in progress
+        if (time.time() - self.last_hb_time
+            >= self.heartbeat_timeout): # pragma: no cover overload
+            await self.send_heartbeat()
 
+        while self.command_task is not None:
+            # whoever requested the command run should do the
+            # timeout watch and clear it up
+            await asyncio.sleep(0.001)
+
+        self.command_task = task_logger.create_task(self.command_runner(command),
+                                                    logger=self.logger,
+                                                    message="command_runner")
+
+        start_time = time.time()
+        while self.command_result is None:
+            await asyncio.sleep(0.001)
+            if (time.time() - self.last_hb_time
+                >= self.heartbeat_timeout): # pragma: no cover overload
+                await self.send_heartbeat()
+            if time.time() - start_time > 1:
+                self.command_task.cancel()
+                self.logger.error("Timeout after one second running command %s", command)
+            if time.time() - start_time > 1.1:
+                self.logger.error("Cancel of command task did not produce a result value")
+                self.command_task = None
+                return None
+        result = self.command_result
+        self.command_task = None
+        if callback is not None:
+            await callback(result)
+        if not result.log_response:
+            return result
+        # Before appending, get the index and term of the previous record,
+        # this will tell the follower to check their log to make sure they
+        # are up to date except for the new record(s)
+
+        last_index = self.log.get_last_index()
+        last_term = self.log.get_last_term()
+        listeners = [('callback', 'by_index'),]
+        new_rec = LogRec(term=self.log.get_term(),
+                         user_data=result.response,
+                         listeners=listeners)
+        self.log.append([new_rec,])
+        self.callback_by_index[self.log.get_last_index()] = callback
+        new_rec = self.log.read()
+        update_message = AppendEntriesMessage(
+            self.server.endpoint,
+            None,
+            self.log.get_term(),
+            {
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
+                "entries": [asdict(new_rec),],
+            },
+            last_term, last_index, self.log.get_commit_index()
+        )
+        self.logger.debug("(term %d) sending log update to all followers: %s",
+                          self.log.get_term(), update_message.data)
+        await self.server.broadcast(update_message)
+        await self.set_substate(Substate.sent_new_entries)
+        return True
+
+    async def command_runner(self, command, requestor=None):
+
+        try:
+            result = self.server.get_app().execute_command(command)
+        except asyncio.exceptions.CancelledError:  # pragma: no cover error
+            msg = f"Command runner task cancelled, command was '{command}'"
+            result = CommandResult(command, None, error=msg)
+            self.logger.exception(msg)
+        except Exception:  # pragma: no cover error
+            msg = f"Command runner task got exception on command `{command}`\n"
+            msg += f"{traceback.format_exc()}"
+            result = CommandResult(command, None, error=msg)
+            self.logger.exception(msg)
+        self.command_result = result
+
+        # Before appending, get the index and term of the previous record,
+        # this will tell the follower to check their log to make sure they
+        # are up to date except for the new record(s)
+        last_index = self.log.get_last_index()
+        last_term = self.log.get_last_term()
+        listeners = [('callback', 'by_index'),]
+        new_rec = LogRec(term=self.log.get_term(),
+                         user_data=result.response,
+                         listeners=listeners)
+        self.log.append([new_rec,])
+        self.callback_by_index[self.log.get_last_index()] = callback
+        new_rec = self.log.read()
+        update_message = AppendEntriesMessage(
+            self.server.endpoint,
+            None,
+            self.log.get_term(),
+            {
+                "leaderId": self.server.name,
+                "leaderPort": self.server.endpoint,
+                "entries": [asdict(new_rec),],
+            },
+            last_term, last_index, self.log.get_commit_index()
+        )
+        self.logger.debug("(term %d) sending log update to all followers: %s",
+                          self.log.get_term(), update_message.data)
+        await self.server.broadcast(update_message)
+        await self.set_substate(Substate.sent_new_entries)
+        return True
+    
+    
