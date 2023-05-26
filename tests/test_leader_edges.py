@@ -189,7 +189,7 @@ class TestOddPaths(unittest.TestCase):
             leader.start()
         self.loop.run_until_complete(do_start())
         time.sleep(0.001)
-        self.assertIsNone(leader.task)
+        self.assertIsNone(leader.start_task)
         self.assertEqual(leader.substate, Substate.starting)
         self.assertFalse(leader.heartbeat_timer.keep_running)
 

@@ -372,111 +372,79 @@ class Leader(State):
         self.last_hb_time = time.time()
 
     async def on_client_command(self, message):
-        # we need to make sure we don't starve heartbeat
-        # if there is a big recovery in progress
-        if (time.time() - self.last_hb_time
-            >= self.heartbeat_timeout): # pragma: no cover overload
-            await self.send_heartbeat()
         target = message.sender
         if message.original_sender:
             # client sent request to some other server, which forwarded it
             # here.
             target = message.original_sender
+        command = message.data
+        return await self.process_command(command, client=target)
 
-        wait_start = time.time()
-        while self.command_in_progress:
-            await asyncio.sleep(0.001)
-            if time.time() - wait_start > 5:
-                emsg = "Timeout waiting for in progress client command"
-                self.logger.error(emsg)
-                result = CommandResult(message.data, None, False, None, emsg)
-                self.logger.debug("preparing error reply for %s",
-                                  target)
-                reply = ClientCommandResultMessage(self.server.endpoint,
-                                                   target,
-                                                   self.log.get_term(),
-                                                   result.response)
-                self.logger.debug("sending error reply message %s", reply)
-                await self.server.post_message(reply)
-                return True
-        self.command_in_progress = True # will stay true until result sent
-        # call the user app
-        try:
-            result = self.server.get_app().execute_command(message.data)
-        except:
-            self.logger.error("Client command error on message\n%s %s\n%s",
-                              message, message.data,
-                              traceback.format_exc())
-            result = CommandResult(message.data, None, False, None,
-                                   traceback.format_exc())
-        if not result.log_response:
-            # user app does not want to log response
-            self.logger.debug("preparing no-log reply for %s",
-                              target)
-            reply = ClientCommandResultMessage(self.server.endpoint,
-                                               target,
-                                               self.log.get_term(),
-                                               result.response)
-            self.logger.debug("sending no-log reply message %s", reply)
-            await self.server.post_message(reply)
-            return True
-        self.logger.debug("saving address for reply %s", target)
-        # Before appending, get the index and term of the previous record,
-        # this will tell the follower to check their log to make sure they
-        # are up to date except for the new record(s)
-        last_index = self.log.get_last_index()
-        last_term = self.log.get_last_term()
-        listeners = [('client', target),]
-        new_rec = LogRec(term=self.log.get_term(),
-                         user_data=result.response,
-                         listeners=listeners)
-        self.log.append([new_rec,])
-        new_rec = self.log.read()
-        update_message = AppendEntriesMessage(
-            self.server.endpoint,
-            None,
-            self.log.get_term(),
-            {
-                "leaderId": self.server.name,
-                "leaderPort": self.server.endpoint,
-                "entries": [asdict(new_rec),],
-            },
-            last_term, last_index, self.log.get_commit_index()
-        )
-        self.logger.debug("(term %d) sending log update to all followers: %s",
-                          self.log.get_term(), update_message.data)
-        await self.server.broadcast(update_message)
-        await self.set_substate(Substate.sent_new_entries)
-        return True
-
-    async def on_internal_command(self, command, callback):
+    async def process_command(self, command, callback=None, client=None):
         # we need to make sure we don't starve heartbeat
         # if there is a big recovery in progress
         if (time.time() - self.last_hb_time
             >= self.heartbeat_timeout): # pragma: no cover overload
             await self.send_heartbeat()
 
-        while self.command_in_progress:
+        while self.command_task is not None:
+            # whoever requested the command run should do the
+            # timeout watch and clear it up
             await asyncio.sleep(0.001)
-            
-        self.command_in_progress = True # will stay true until result sent
-        # call the user app 
-        result = self.server.get_app().execute_command(command)
-        if not result.log_response:
-            await callback(result)
-            return
 
+        self.command_task = task_logger.create_task(self.command_runner(command),
+                                                    logger=self.logger,
+                                                    message="command_runner")
+
+        start_time = time.time()
+        while self.command_result is None:
+            await asyncio.sleep(0.001)
+            if (time.time() - self.last_hb_time
+                >= self.heartbeat_timeout): # pragma: no cover overload
+                await self.send_heartbeat()
+            if time.time() - start_time > 1:
+                self.command_task.cancel()
+                self.logger.error("Timeout after one second running command %s", command)
+            if time.time() - start_time > 1.1:
+                self.logger.error("Cancel of command task did not produce a result value")
+                self.command_task = None
+                raise Exception("Cancel of command task did not produce a result value")
+        result = self.command_result
+        self.command_task = None
+        if not result.log_response:
+            if client:
+                self.logger.debug("preparing no-log reply for %s",
+                                  client)
+                reply = ClientCommandResultMessage(self.server.endpoint,
+                                                   client,
+                                                   self.log.get_term(),
+                                                   result.response)
+                self.logger.debug("sending no-log reply message %s", reply)
+                await self.server.post_message(reply)
+            elif callback is not None:
+                await callback(result.response)
+            return True
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
         last_index = self.log.get_last_index()
         last_term = self.log.get_last_term()
-        listeners = [('callback', 'by_index'),]
+        # When the transaction is complete, meaning we receive acknowledge
+        # from a quorum, we want to notify whatever code is waiting, locally
+        # or at the client if this was a remove command call. So we
+        # save enough info in the log record to be able to find the
+        # notification target.
+        listeners = []
+        if client:
+            listeners.append(('client', client))
+        if callback:
+            listeners.append(('callback', 'by_index'))
         new_rec = LogRec(term=self.log.get_term(),
                          user_data=result.response,
                          listeners=listeners)
         self.log.append([new_rec,])
-        self.callback_by_index[self.log.get_last_index()] = callback
+        if callback:
+            self.callback_by_index[self.log.get_last_index()] = callback
         new_rec = self.log.read()
         update_message = AppendEntriesMessage(
             self.server.endpoint,
@@ -494,6 +462,22 @@ class Leader(State):
         await self.server.broadcast(update_message)
         await self.set_substate(Substate.sent_new_entries)
         return True
+
+    async def command_runner(self, command, requestor=None):
+
+        try:
+            result = self.server.get_app().execute_command(command)
+        except asyncio.exceptions.CancelledError:  # pragma: no cover error
+            msg = f"Command runner task cancelled, command was '{command}'"
+            result = CommandResult(command, None, error=msg)
+            self.logger.exception(msg)
+        except Exception:  # pragma: no cover error
+            msg = f"Command runner task got exception on command `{command}`\n"
+            msg += f"{traceback.format_exc()}"
+            result = CommandResult(command, None, error=msg)
+            self.logger.exception(msg)
+        self.command_result = result
+
     
     async def resign(self):
         if self.terminated:
@@ -563,113 +547,4 @@ class Leader(State):
         self.logger.warning("Bogus leadership claim \n\t%s", message)
         return True
 
-    async def on_internal_command(self, command, callback):
-        # we need to make sure we don't starve heartbeat
-        # if there is a big recovery in progress
-        if (time.time() - self.last_hb_time
-            >= self.heartbeat_timeout): # pragma: no cover overload
-            await self.send_heartbeat()
-
-        while self.command_task is not None:
-            # whoever requested the command run should do the
-            # timeout watch and clear it up
-            await asyncio.sleep(0.001)
-
-        self.command_task = task_logger.create_task(self.command_runner(command),
-                                                    logger=self.logger,
-                                                    message="command_runner")
-
-        start_time = time.time()
-        while self.command_result is None:
-            await asyncio.sleep(0.001)
-            if (time.time() - self.last_hb_time
-                >= self.heartbeat_timeout): # pragma: no cover overload
-                await self.send_heartbeat()
-            if time.time() - start_time > 1:
-                self.command_task.cancel()
-                self.logger.error("Timeout after one second running command %s", command)
-            if time.time() - start_time > 1.1:
-                self.logger.error("Cancel of command task did not produce a result value")
-                self.command_task = None
-                return None
-        result = self.command_result
-        self.command_task = None
-        if callback is not None:
-            await callback(result)
-        if not result.log_response:
-            return result
-        # Before appending, get the index and term of the previous record,
-        # this will tell the follower to check their log to make sure they
-        # are up to date except for the new record(s)
-
-        last_index = self.log.get_last_index()
-        last_term = self.log.get_last_term()
-        listeners = [('callback', 'by_index'),]
-        new_rec = LogRec(term=self.log.get_term(),
-                         user_data=result.response,
-                         listeners=listeners)
-        self.log.append([new_rec,])
-        self.callback_by_index[self.log.get_last_index()] = callback
-        new_rec = self.log.read()
-        update_message = AppendEntriesMessage(
-            self.server.endpoint,
-            None,
-            self.log.get_term(),
-            {
-                "leaderId": self.server.name,
-                "leaderPort": self.server.endpoint,
-                "entries": [asdict(new_rec),],
-            },
-            last_term, last_index, self.log.get_commit_index()
-        )
-        self.logger.debug("(term %d) sending log update to all followers: %s",
-                          self.log.get_term(), update_message.data)
-        await self.server.broadcast(update_message)
-        await self.set_substate(Substate.sent_new_entries)
-        return True
-
-    async def command_runner(self, command, requestor=None):
-
-        try:
-            result = self.server.get_app().execute_command(command)
-        except asyncio.exceptions.CancelledError:  # pragma: no cover error
-            msg = f"Command runner task cancelled, command was '{command}'"
-            result = CommandResult(command, None, error=msg)
-            self.logger.exception(msg)
-        except Exception:  # pragma: no cover error
-            msg = f"Command runner task got exception on command `{command}`\n"
-            msg += f"{traceback.format_exc()}"
-            result = CommandResult(command, None, error=msg)
-            self.logger.exception(msg)
-        self.command_result = result
-
-        # Before appending, get the index and term of the previous record,
-        # this will tell the follower to check their log to make sure they
-        # are up to date except for the new record(s)
-        last_index = self.log.get_last_index()
-        last_term = self.log.get_last_term()
-        listeners = [('callback', 'by_index'),]
-        new_rec = LogRec(term=self.log.get_term(),
-                         user_data=result.response,
-                         listeners=listeners)
-        self.log.append([new_rec,])
-        self.callback_by_index[self.log.get_last_index()] = callback
-        new_rec = self.log.read()
-        update_message = AppendEntriesMessage(
-            self.server.endpoint,
-            None,
-            self.log.get_term(),
-            {
-                "leaderId": self.server.name,
-                "leaderPort": self.server.endpoint,
-                "entries": [asdict(new_rec),],
-            },
-            last_term, last_index, self.log.get_commit_index()
-        )
-        self.logger.debug("(term %d) sending log update to all followers: %s",
-                          self.log.get_term(), update_message.data)
-        await self.server.broadcast(update_message)
-        await self.set_substate(Substate.sent_new_entries)
-        return True
-    
     
