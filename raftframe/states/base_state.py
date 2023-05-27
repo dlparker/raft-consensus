@@ -159,7 +159,7 @@ class State(metaclass=abc.ABCMeta):
     async def dispose_client_command(self, message, server):
         # only the leader can execute, other states should
         # call this on receipt of a client command message
-        message._original_sender = message.sender
+        message.original_sender = message.sender
         leader_addr = self.get_leader_addr()
         if leader_addr:
             self.logger.info("%s redirecting client command %s, to leader",

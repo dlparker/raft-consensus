@@ -171,6 +171,8 @@ class MemoryBankTellerClient:
         data = w.data
         result = Serializer.deserialize_message(data)
         if result.is_type("command_result"):
+            if result.error is not None:
+                raise Exception(result.error)
             return result.data
         return result
 

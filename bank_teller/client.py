@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import sys
 from pathlib import Path
 sdir = Path(__file__).parent.resolve()

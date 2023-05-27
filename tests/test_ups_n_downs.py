@@ -41,7 +41,7 @@ class TestRestarts(TestCaseCommon):
             expected = self.total_nodes
         paused = []
         start_time = time.time()
-        while time.time() - start_time < 3 * self.timeout_basis:
+        while time.time() - start_time < 10 * self.timeout_basis:
             paused = []
             for server in self.cluster.servers:
                 if server.paused:

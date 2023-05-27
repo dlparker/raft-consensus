@@ -10,11 +10,12 @@ logging_set_once = False
 
 def set_levels(handler_names):
     log_loggers = dict()
+    err_log = dict(handlers=handler_names, level="ERROR", propagate=False)
+    warn_log = dict(handlers=handler_names, level="WARNING", propagate=False)
     root_log = dict(handlers=handler_names, level="INFO", propagate=True)
     log_loggers[''] = root_log
     info_log = dict(handlers=handler_names, level="INFO", propagate=False)
     log_loggers['raftframe'] = info_log
-    warn_log = dict(handlers=handler_names, level="WARNING", propagate=False)
     debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
     log_loggers['raftframe.servers.server'] = debug_log
     log_loggers['raftframe.states.state_map'] = debug_log
@@ -29,7 +30,7 @@ def set_levels(handler_names):
     #log_loggers['dev_tools.pausing_app'] = debug_log
     log_loggers['dev_tools.pserver'] = debug_log
     #log_loggers['raftframe.states.timer'] = debug_log
-    #log_loggers['dev_tools.memory_comms'] = debug_log
+    log_loggers['dev_tools.memory_comms'] = err_log
     return log_loggers
     
 def config_server_logging(main_config, filepath):

@@ -40,14 +40,10 @@ class Leader(State):
         self.last_hb_time = time.time()
         self.election_time = time.time()
         self.start_task = None
-
         self.command_task = None
         self.command_result = None
-        self.command_start_time = None
-        
-        # remove when command task changes done        
-        self.command_in_progress = False
-        self.callback_by_index = {}
+        self.command_committed = False
+        self.command_timeout_limit = 1.0
 
     def __str__(self):
         return "leader"
@@ -236,45 +232,11 @@ class Leader(State):
         # we have enough to commit, so do it
         self.log.commit(last_saved_index)
         commit_rec = self.log.read(last_saved_index)
-        self.logger.debug("after commit, commit_index = %s",
-                          last_saved_index)
+        self.command_committed = True
+        self.logger.debug("after commit, commit_index = %s, self.command_committed = %s",
+                          last_saved_index, self.command_committed)
         # now broadcast a commit AppendEntries message
         await self.broadcast_commit(commit_rec)
-
-        # Now see if there is a client to send the reply to
-        # for the completed record. Since we committed it
-        # we can now respond to client
-        client_addr = None
-        for listener in commit_rec.listeners:
-            if listener[0] == "client":
-                client_addr = listener[1]
-                break
-            if listener[0] == "callback":
-                callback = self.callback_by_index.get(commit_rec.index, None)
-                self.logger.info("Callback to %s", callback)
-                if callback:
-                    try:
-                        self.logger.info("Callback to %s", callback)
-                        await callback(commit_rec.user_data)
-                        del self.callback_by_index[commit_rec.index]
-                    except:
-                        self.logger.error("Callback on command commit got \n" \
-                                          " %s", traceback.format_exc())
-                return
-        if client_addr is None:
-            return True
-        # This log record was for data submitted by client,
-        # not an internal record such as term change.
-        # Send as reply to client
-        self.logger.debug("preparing reply for %s",
-                          client_addr)
-        reply = ClientCommandResultMessage(self.server.endpoint,
-                                           client_addr,
-                                           self.log.get_term(),
-                                           commit_rec.user_data)
-        self.logger.debug("sending reply message %s", reply)
-        await self.server.post_message(reply)
-        self.command_in_progress = False
         return True
 
     async def broadcast_commit(self, commit_rec):
@@ -378,7 +340,12 @@ class Leader(State):
             # here.
             target = message.original_sender
         command = message.data
-        return await self.process_command(command, client=target)
+        
+        loop = asyncio.get_running_loop()
+        # if you don't do this, the wait loop in the command task blocks
+        # any comms ops, don't know why. 
+        loop.create_task(self.process_command(command, client=target))
+        return True
 
     async def process_command(self, command, callback=None, client=None):
         # we need to make sure we don't starve heartbeat
@@ -387,14 +354,20 @@ class Leader(State):
             >= self.heartbeat_timeout): # pragma: no cover overload
             await self.send_heartbeat()
 
-        while self.command_task is not None:
-            # whoever requested the command run should do the
-            # timeout watch and clear it up
-            await asyncio.sleep(0.001)
+        if self.command_task is not None:
+            self.logger.info("Waiting for current command to finish")
+            start_time = time.time()
+            while self.command_task is not None:
+                # whoever requested the command run should do the
+                # timeout watch and clear it up, but just in case
+                # that logic fails . . .
+                if time.time() - start_time > self.command_timeout_limit * 1.1: # pragma: no cover error
+                    raise Exception("timeout waiting for previous command to complete or timeout")
+                await asyncio.sleep(0.001)
+            self.logger.info("Finished waiting for command, starting new task")
 
-        self.command_task = task_logger.create_task(self.command_runner(command),
-                                                    logger=self.logger,
-                                                    message="command_runner")
+        loop = asyncio.get_running_loop()
+        self.command_task = loop.create_task(self.command_runner_wrapper(command, client, callback))
 
         start_time = time.time()
         while self.command_result is None:
@@ -402,15 +375,60 @@ class Leader(State):
             if (time.time() - self.last_hb_time
                 >= self.heartbeat_timeout): # pragma: no cover overload
                 await self.send_heartbeat()
-            if time.time() - start_time > 1:
-                self.command_task.cancel()
+            if time.time() - start_time > self.command_timeout_limit:
                 self.logger.error("Timeout after one second running command %s", command)
-            if time.time() - start_time > 1.1:
-                self.logger.error("Cancel of command task did not produce a result value")
+                self.command_task.cancel()
+                await self.command_task
                 self.command_task = None
-                raise Exception("Cancel of command task did not produce a result value")
-        result = self.command_result
+                if callback is not None:
+                    result = CommandResult(command, None,
+                                           error="Command cancelled because it took too long")
+                    await callback(result)
+                return False
+        self.command_result = None
         self.command_task = None
+        return True
+
+    async def command_runner_wrapper(self, command, client=None, callback=None):
+        try:
+            await self.command_runner(command, client, callback)
+        except asyncio.exceptions.CancelledError:  # pragma: no cover error
+            msg = f"Command runner task cancelled, command was '{command}'"
+            self.command_result = CommandResult(command, None, error=msg)
+            self.logger.debug("Finished command runner, setting self.result to %s",
+                              self.command_result)
+            return
+        except Exception:
+            msg = f"Command runner task raised exception on command `{command}`\n"
+            msg += f"{traceback.format_exc()}"
+            self.command_result = CommandResult(command, None, error=msg)
+            self.logger.debug("Finished command runner, setting self.result to %s",
+                              self.command_result)
+            if client:
+                self.logger.debug("preparing error reply for %s",
+                                  client)
+                try:
+                    reply = ClientCommandResultMessage(self.server.endpoint,
+                                                       client,
+                                                       self.log.get_term(),
+                                                       data = None,
+                                                       error=msg)
+                    self.logger.debug("sending error reply message %s", reply)
+                    await self.server.post_message(reply)
+                except Exception: # pragma: no cover error
+                    self.logger.error("could not send command failed reply to client")
+            elif callback is not None:
+                try:
+                    await callback(self.command_result)
+                except Exception: # pragma: no cover error
+                    self.logger.error("callback on error got exception %s",
+                                      traceback.format_exc())
+            return
+            
+    async def command_runner(self, command, client=None, callback=None):
+        self.command_committed = False
+        self.command_result = None
+        result = await self.server.get_app().execute_command(command)
         if not result.log_response:
             if client:
                 self.logger.debug("preparing no-log reply for %s",
@@ -422,8 +440,11 @@ class Leader(State):
                 self.logger.debug("sending no-log reply message %s", reply)
                 await self.server.post_message(reply)
             elif callback is not None:
-                await callback(result.response)
+                await callback(result)
+            self.command_result = result
+            self.logger.debug("Finished command runner, setting self.result to %s", result)
             return True
+        
         # Before appending, get the index and term of the previous record,
         # this will tell the follower to check their log to make sure they
         # are up to date except for the new record(s)
@@ -434,17 +455,9 @@ class Leader(State):
         # or at the client if this was a remove command call. So we
         # save enough info in the log record to be able to find the
         # notification target.
-        listeners = []
-        if client:
-            listeners.append(('client', client))
-        if callback:
-            listeners.append(('callback', 'by_index'))
         new_rec = LogRec(term=self.log.get_term(),
-                         user_data=result.response,
-                         listeners=listeners)
+                         user_data=result.response)
         self.log.append([new_rec,])
-        if callback:
-            self.callback_by_index[self.log.get_last_index()] = callback
         new_rec = self.log.read()
         update_message = AppendEntriesMessage(
             self.server.endpoint,
@@ -461,23 +474,32 @@ class Leader(State):
                           self.log.get_term(), update_message.data)
         await self.server.broadcast(update_message)
         await self.set_substate(Substate.sent_new_entries)
-        return True
+        self.logger.debug("(term %d) waiting for commit on record %d, committed = %s",
+                          self.log.get_term(), new_rec.index, self.command_committed)
+        while not self.command_committed:
+            await asyncio.sleep(0.01)
+        self.command_committed = False
+        self.logger.debug("\n\n\t(term %d) got commit on record %d\n\n",
+                          self.log.get_term(), new_rec.index)
 
-    async def command_runner(self, command, requestor=None):
-
-        try:
-            result = self.server.get_app().execute_command(command)
-        except asyncio.exceptions.CancelledError:  # pragma: no cover error
-            msg = f"Command runner task cancelled, command was '{command}'"
-            result = CommandResult(command, None, error=msg)
-            self.logger.exception(msg)
-        except Exception:  # pragma: no cover error
-            msg = f"Command runner task got exception on command `{command}`\n"
-            msg += f"{traceback.format_exc()}"
-            result = CommandResult(command, None, error=msg)
-            self.logger.exception(msg)
+        # If we have a callback call it with the result
+        if callback:
+            await callback(result)
+        # If there is a client to send the reply to
+        # for the completed record. Since we committed it
+        # we can now respond to client
+        if client:
+            self.logger.debug("preparing reply for %s",
+                              client)
+            reply = ClientCommandResultMessage(self.server.endpoint,
+                                               client,
+                                               self.log.get_term(),
+                                               result.response)
+            self.logger.debug("sending reply message %s", reply)
+            await self.server.post_message(reply)
+        self.logger.debug("Finished command runner, setting self.result to %s", result)
         self.command_result = result
-
+        return True
     
     async def resign(self):
         if self.terminated:

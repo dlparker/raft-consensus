@@ -102,6 +102,10 @@ class TestMap(unittest.TestCase):
             await asyncio.sleep(0.0001)
         self.assertIsNotNone(smap.state)
         follower = smap.state
+        # make sure it is started
+        start_time = time.time()
+        while time.time() - start_time < 0.5 and follower.leaderless_timer is None:
+            await asyncio.sleep(0.0001)
         # now terminate the timer so that we can test things
         # without them changing
         await follower.leaderless_timer.terminate()

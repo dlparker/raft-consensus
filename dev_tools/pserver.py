@@ -51,7 +51,7 @@ class PServer:
         self.pause_context = None
         self.resume_callback = None
         self.resume_noted = False
-        self.run_once_in_thread = None
+        self.run_once_in_thread = []
         self.do_log_stats = False
         self.log_stats = None
         self.do_dump_state = False
@@ -76,7 +76,10 @@ class PServer:
 
     def get_raftframe_server(self):
         return self.thread.server
-    
+
+    def add_run_in_thread_func(self, func):
+        self.run_once_in_thread.append(func)
+        
     async def pause_timers(self):
         self.logger.debug("%s, %s pausing timers", self.name, self.thread_ident)
         await self.thread.pause_timers()
@@ -103,9 +106,11 @@ class PServer:
         self.logger.debug("%s, %s pause signaled to server thread", self.name, self.thread_ident)
 
     def resume(self):
+        if not self.paused:
+            return
         self.do_resume = True
         self.logger.debug("%s, %s resume signaled to server thread", self.name, self.thread_ident)
-    
+
     def pause_on_state(self, state):
         self.logger.debug("%s, %s setting pause on state %s", self.name, self.thread_ident, state)
         self.pausing_states[str(state)] = self.state_pause_method
@@ -116,6 +121,8 @@ class PServer:
             del self.pausing_states[str(state)]
          
     def clear_state_pauses(self):
+        if self.pausing_states == {}:
+            return
         self.logger.debug("%s, %s setting pause on all states", self.name, self.thread_ident)
         self.pausing_states = {}
 
@@ -148,6 +155,8 @@ class PServer:
             del self.pausing_substates[str(substate)]
 
     def clear_substate_pauses(self):
+        if self.pausing_substates == {}:
+            return
         self.logger.debug("%s, %s setting pause on all substates", self.name, self.thread_ident)
         self.pausing_substates = {}
 
@@ -210,11 +219,15 @@ class PServer:
         self.in_afters[code] = intercept_method
 
     def clear_message_triggers(self):
-        self.logger.debug("%s, %s clearing all message triggers", self.name, self.thread_ident)
-        self.in_befores = {}
-        self.in_afters = {}
-        self.out_befores = {}
-        self.out_afters = {}
+        if (self.in_befores != {} 
+            or self.in_afters != {}
+            or self.out_befores != {} 
+            or self.out_afters != {}):
+            self.logger.debug("%s, %s clearing all message triggers", self.name, self.thread_ident)
+            self.in_befores = {}
+            self.in_afters = {}
+            self.out_befores = {}
+            self.out_afters = {}
 
     async def before_in_msg(self, message) -> bool:
         if message.code in self.in_befores:
@@ -332,13 +345,13 @@ class PServer:
                 self.resume_noted = True
                 if self.resume_callback:
                     await self.resume_callback(self)
-        
-        if self.run_once_in_thread:
+
+        while len(self.run_once_in_thread) > 0:
+            func = self.run_once_in_thread.pop(0)
             self.logger.debug("%s server thread calling run_once_in_thread %s", self.name,
-                              self.run_once_in_thread)
-            func = self.run_once_in_thread
-            self.run_once_in_thread = None
-            func(self)
+                              func)
+            loop = asyncio.get_running_loop()
+            loop.create_task(func)
 
     def get_client(self):
         if not self.client:

@@ -318,6 +318,8 @@ class TestRareMessages(TestCaseCommon):
             time.sleep(0.01)
         self.assertIsNotNone(new_leader)
         self.logger.debug(f' old leader {old_leader.name} new leader {new_leader.name}')
+        for server in self.cluster.servers:
+            server.clear_substate_pauses()
         self.cluster.resume_all()
         self.logger.debug("\n\n\tAwaiting log update at %s\n",
                           second.name)

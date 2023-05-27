@@ -14,7 +14,7 @@ class CommandResult:
 class App(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
-    def execute_command(self, command) -> CommandResult:
+    async def execute_command(self, command) -> CommandResult:
         raise NotImplementedError
 
 

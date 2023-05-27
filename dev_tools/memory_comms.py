@@ -144,7 +144,7 @@ class MemoryComms(CommsAPI):
                                   message.code)
                 deliver = await self.interceptor.before_out_msg(message)
                 if not deliver:
-                    self.logger.debug("not delivering posted message "\
+                    self.logger.info("not delivering posted message "\
                                       "because interceptor said so")
                     return
             if target in channels or target in clients:
@@ -156,7 +156,7 @@ class MemoryComms(CommsAPI):
                 else:
                     queue = channel.queue
                     if channel.partition != self.partition:
-                        self.logger.debug("%s is in partition %d, we are %d" \
+                        self.logger.info("%s is in partition %d, we are %d" \
                                           " not sending %s so as to look like"
                                           " network partition",
                                           target, channel.partition,
@@ -165,14 +165,14 @@ class MemoryComms(CommsAPI):
                 if not skip:
                     data = self.serializer.serialize_message(message)
                     w = Wrapper(data, self.endpoint)
-                    self.logger.debug("%s posted %s to %s",
+                    self.logger.info("%s posted %s to %s",
                                       self.endpoint, message.code, target)
                     await queue.put(w)
             else:
                 if target[1] < 5000:
                     self.logger.info("\n\n\t%s not in %s\n\n",
                                      target, list(clients.keys()))
-                self.logger.debug("%s not connected to %s," \
+                self.logger.info("%s not connected to %s," \
                                  " not sending %s", self.endpoint,
                                  target, message.code)
             if self.interceptor:
@@ -216,7 +216,7 @@ class MemoryComms(CommsAPI):
                     self.logger.error("cannot deserialze incoming data '%s...'",
                                       data[:30])
                     continue
-                self.logger.debug("%s got %s from %s",
+                self.logger.info("%s got %s from %s",
                                   self.endpoint, message.code, addr)
                 # ensure addresses are tuples
                 message._receiver = message.receiver[0], message.receiver[1]

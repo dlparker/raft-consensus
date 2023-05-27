@@ -134,10 +134,12 @@ class TestCaseCommon(unittest.TestCase):
     
         for server in self.cluster.servers:
             server.clear_message_triggers()
+            server.clear_state_pauses()
+            server.clear_substate_pauses()
 
         self.cluster.resume_all()
         
-    def test_check_setup(self):
+    def a_test_check_setup(self):
         # rename this to remove the a_ in order to
         # check the basic control flow if you think
         # it might be brokens

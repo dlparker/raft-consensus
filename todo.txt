@@ -21,3 +21,7 @@ DONE: 2. Move Banking Teller App to dev_tools, consider dev_tools and tests to s
 Simplify plan:
 
 
+
+
+
+Remove listeners from log? Make App API async?

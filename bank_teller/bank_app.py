@@ -12,7 +12,7 @@ class BankingApp(App):
     def set_server(self, server):
         self.server = server
         
-    def execute_command(self, command) -> CommandResult:
+    async def execute_command(self, command) -> CommandResult:
         parsed = command.split()
         log_response = True
         extra_dict = None
