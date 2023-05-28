@@ -19,7 +19,7 @@ class AppAPI(metaclass=abc.ABCMeta):
 
 
 # abstract class for all states
-class StateChangeMonitor(metaclass=abc.ABCMeta):
+class StateChangeMonitorAPI(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     async def new_state(self, state_map: StateMap,
@@ -31,7 +31,7 @@ class StateChangeMonitor(metaclass=abc.ABCMeta):
         is called.
 
         Be carefull to ensure that your implementation does not delay for very
-        long since that mess up an election and force a retry.
+        long since that can mess up an election and force a retry.
         """
         raise NotImplementedError
 
@@ -44,7 +44,7 @@ class StateChangeMonitor(metaclass=abc.ABCMeta):
         the StateMap reference changes, so the new substate is already "active".
 
         Be carefull to ensure that your implementation does not delay for very
-        long since that mess up an election and force a retry.
+        long since that can mess up an election and force a retry.
         """
         raise NotImplementedError
 

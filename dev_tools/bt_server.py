@@ -14,7 +14,7 @@ from raftframe.servers.server_config import LiveConfig, ClusterConfig, LocalConf
 from raftframe.servers.server import Server
 from raftframe.comms.udp import UDPComms
 from raftframe.states.state_map import StandardStateMap
-from raftframe.app_api.app import StateChangeMonitor
+from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.follower import Follower
 from raftframe.serializers.msgpack import MsgpackSerializer
 from raftframe.serializers.json import JsonSerializer

@@ -89,7 +89,7 @@ Class Documentation
 - :class:`raftframe.servers.server_config.ClusterConfig`
 - :class:`raftframe.servers.server_config.LiveConfig`
 - :class:`raftframe.comms.commms_api.CommsAPI`
-- :class:`raftframe.log.log_api.Log`
+- :class:`raftframe.log.log_api.LogAPI`
 - :class:`raftframe.serializers.api.SerializerAPI`
 - :class:`raftframe.states.state_map.StateMap`
 - :class:`raftframe.app_api.app.AppAPI`
@@ -103,7 +103,7 @@ persistent storage mechanism of the append only log style that is the
 resource that gets transactional control. The RaftFrame library
 includes a Sqlite implementation (:class:`raftframe.log.sqlite_log.SqliteLog`)
 and an API definition via an abstract base class:
-:class:`raftframe.log.log_api.Log` so that other log implementations
+:class:`raftframe.log.log_api.LogAPI` so that other log implementations
 can be provided.
 
 The log implementation is used to store data for the application, but
@@ -134,7 +134,7 @@ of message delivery to implement the API.
 
 The built in UDP based implementation is, at time of writing (May 18,
 2023), not suitable for production use. There is a ticket active to fix that:
-`<https://github.com/dlparker/raftframe/issues/3`>_.
+`<https://github.com/dlparker/raftframe/issues/3>`_.
 
 ***
 App
@@ -193,7 +193,7 @@ object and starts it.
 
 The :class:`raftframe.states.state_map.StateMap` included the concept
 of a StateChangeMonitor, the API of which is defined at
-:class:`raftframe.app_api.app.StateChangeMonitor`. This offers the
+:class:`raftframe.app_api.app.StateChangeMonitorAPI`. This offers the
 App developer a method of hooking code into the flow of state changes.
 Whatever the App code wants to do at these state changes, it must not
 block or long delay the state change, as this may cause timing issues

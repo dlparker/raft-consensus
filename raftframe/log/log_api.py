@@ -39,7 +39,7 @@ class LogRec:
         return rec
     
 # abstract class for all states
-class Log(metaclass=abc.ABCMeta):
+class LogAPI(metaclass=abc.ABCMeta):
     """
     Abstract base class that functions as an interface definition for 
     implmentations of Log storage that can be used by the raftframe state classes

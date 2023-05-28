@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Union, List, Optional
 from copy import deepcopy
 import logging
-from raftframe.log.log_api import LogRec, Log
+from raftframe.log.log_api import LogRec, LogAPI
 
 class Records:
 
@@ -34,7 +34,7 @@ class Records:
         return self.insert_entry(rec)
 
     
-class MemoryLog(Log):
+class MemoryLog(LogAPI):
 
     def __init__(self):
         self.records = Records()

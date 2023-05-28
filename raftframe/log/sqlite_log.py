@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Union, List, Optional
 from copy import deepcopy
 import logging
-from raftframe.log.log_api import LogRec, Log, RecordCode
+from raftframe.log.log_api import LogRec, LogAPI, RecordCode
 
 class Records:
 
@@ -154,7 +154,7 @@ class Records:
         return rec
 
     
-class SqliteLog(Log):
+class SqliteLog(LogAPI):
 
     def __init__(self, storage_dir: os.PathLike):
         self.records = Records(storage_dir)

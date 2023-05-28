@@ -17,7 +17,7 @@ from raftframe.servers.server_config import LiveConfig, ClusterConfig, LocalConf
 from raftframe.servers.server import Server
 from raftframe.states.state_map import StandardStateMap, StateMap
 from raftframe.states.base_state import State, Substate
-from raftframe.app_api.app import StateChangeMonitor
+from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.follower import Follower
 from raftframe.serializers.msgpack import MsgpackSerializer
 from dev_tools.bt_client import MemoryBankTellerClient
@@ -464,7 +464,7 @@ class ServerThread(threading.Thread):
             raise Exception("Server did not stop")
 
     
-class PauseSupportMonitor(StateChangeMonitor):
+class PauseSupportMonitor(StateChangeMonitorAPI):
 
     def __init__(self, pserver):
         self.pserver = pserver

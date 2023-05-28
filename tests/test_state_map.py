@@ -10,7 +10,7 @@ from pathlib import Path
 from dev_tools.bt_server import MemoryBankTellerServer
 from dev_tools.bt_client import MemoryBankTellerClient
 from raftframe.states.state_map import StandardStateMap
-from raftframe.app_api.app import StateChangeMonitor
+from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.base_state import Substate
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
@@ -68,7 +68,7 @@ class TestMap(unittest.TestCase):
 
         # make sure add_state_change_monitor works even
         # if no activate call yet
-        class FakeMonitor(StateChangeMonitor):
+        class FakeMonitor(StateChangeMonitorAPI):
             state = None
             substate = None
             async def new_state(self, state_map, old_state, new_state):
@@ -80,7 +80,7 @@ class TestMap(unittest.TestCase):
                 return
 
 
-        class BadMonitor(StateChangeMonitor):
+        class BadMonitor(StateChangeMonitorAPI):
             state = None
             substate = None
             async def new_state(self, state_map, old_state, new_state):

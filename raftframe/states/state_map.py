@@ -5,7 +5,7 @@ import asyncio
 import logging
 import traceback
 
-from raftframe.app_api.app import StateChangeMonitor
+from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.base_state import State, Substate
 from raftframe.states.candidate import Candidate
 from raftframe.states.follower import Follower
@@ -44,11 +44,11 @@ class StateMap(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def add_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
+    def add_state_change_monitor(self, monitor: StateChangeMonitorAPI) -> None:
         raise NotImplementedError
         
     @abc.abstractmethod
-    def remove_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
+    def remove_state_change_monitor(self, monitor: StateChangeMonitorAPI) -> None:
         raise NotImplementedError
         
     @abc.abstractmethod
@@ -100,13 +100,13 @@ class StandardStateMap(StateMap):
         self.logger.info("activating state map for server %s", server)
         return await self.switch_to_follower()
 
-    def add_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
+    def add_state_change_monitor(self, monitor: StateChangeMonitorAPI) -> None:
         if not self.monitors:
             self.monitors = []
         if monitor not in self.monitors:
             self.monitors.append(monitor)
             
-    def remove_state_change_monitor(self, monitor: StateChangeMonitor) -> None:
+    def remove_state_change_monitor(self, monitor: StateChangeMonitorAPI) -> None:
         if monitor in self.monitors:
             self.monitors.remove(monitor)
             

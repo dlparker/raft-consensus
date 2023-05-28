@@ -4,7 +4,7 @@ Configuration classes for setting up an instance of the class::`Server` class.
 from dataclasses import dataclass
 from typing import Any, Type
 import os
-from raftframe.log.log_api import Log
+from raftframe.log.log_api import LogAPI
 from raftframe.app_api.app import AppAPI
 from raftframe.comms.comms_api import CommsAPI
 from raftframe.states.state_map import StateMap
@@ -59,7 +59,7 @@ class LiveConfig:
             An instance of a class that implemenents :class:`raftframe.app_api.app.AppAPI`
             and provides an interface between the 'user' code and the RaftFrame code.
         log:
-            An instance of a class that implments :class:`raftframe.log.log_api.Log` and
+            An instance of a class that implments :class:`raftframe.log.log_api.LogAPI` and
             provides log record storage and access using some underlying storage 
             technique. The default implementation for this is :class:`raftframe.log.sqlite_log.SqliteLog`.
         comms:
@@ -77,7 +77,7 @@ class LiveConfig:
     cluster: ClusterConfig
     local: LocalConfig
     app: AppAPI # actual, live object
-    log: Log # actual, live object
+    log: LogAPI # actual, live object
     comms: CommsAPI # actual, live object
     state_map: StateMap # actual, live object
     serializer: SerializerAPI # actual, live object

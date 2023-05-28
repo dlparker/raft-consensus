@@ -197,7 +197,7 @@ States and Substates
 ^^^^^^^^^^^^^^^^^^^^
 
 The State and Substate change callbacks defined in
-:class:`raftframe.app_api.app.StateChangeMonitor` are implemented in
+:class:`raftframe.app_api.app.StateChangeMonitorAPI` are implemented in
 :class:`dev_tools.pserver.PauseSupportMonitor`, which is just a shim
 that calls identical methods on the PServer itself (because multiple
 inheritance is still ugly, and not better in this case either).
