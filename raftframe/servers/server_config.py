@@ -67,8 +67,7 @@ class LiveConfig:
             provides a message transport mechanism. The default implementation for this is 
             :class:`raftframe.comms.udp.UDPComms`.
         state_map:
-            An instance of a class that implments :class:`raftframe.states.state_map.StateMap`.
-            The default implementation for this is :class:`raftframe.states.state_map.StandardStateMap`.
+            An instance of :class:`raftframe.states.state_map.StateMap`.
         serializer:
             An instance of a class that implments :class:`raftframe.serializers.api.SerializerAPI`.
             The default implementation for this is :class:`raftframe.serializers.msgpack.MsgpackSerializer`.

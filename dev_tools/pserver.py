@@ -15,7 +15,7 @@ from enum import Enum
 import raftframe
 from raftframe.servers.server_config import LiveConfig, ClusterConfig, LocalConfig
 from raftframe.servers.server import Server
-from raftframe.states.state_map import StandardStateMap, StateMap
+from raftframe.states.state_map import StateMap, StateMap
 from raftframe.states.base_state import State, Substate
 from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.follower import Follower
@@ -63,7 +63,7 @@ class PServer:
         self.pausing_substates = {}
         self.pausing_states = {}
         self.logger = logging.getLogger(__name__)
-        self.state_map = StandardStateMap(timeout_basis=timeout_basis)
+        self.state_map = StateMap(timeout_basis=timeout_basis)
         self.data_log = MemoryLog()
         self.comms = MemoryComms()
         self.app = BankingApp()

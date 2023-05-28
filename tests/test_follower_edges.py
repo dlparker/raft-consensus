@@ -13,7 +13,7 @@ from raftframe.messages.command import ClientCommandMessage
 from raftframe.log.log_api import LogRec
 from raftframe.states.base_state import Substate
 from raftframe.states.follower import Follower
-from raftframe.states.state_map import StandardStateMap
+from raftframe.states.state_map import StateMap
 from dev_tools.memory_comms import MemoryComms
 from dev_tools.pcluster import PausingCluster
 

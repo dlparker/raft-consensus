@@ -13,7 +13,7 @@ import raftframe
 from raftframe.servers.server_config import LiveConfig, ClusterConfig, LocalConfig
 from raftframe.servers.server import Server
 from raftframe.comms.udp import UDPComms
-from raftframe.states.state_map import StandardStateMap
+from raftframe.states.state_map import StateMap
 from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.follower import Follower
 from raftframe.serializers.msgpack import MsgpackSerializer
@@ -34,7 +34,7 @@ def get_bt_server_cs_dict(name):
 def clear_bt_server_cs_dict(name):
     csns.status[name] = manager.dict()
     
-class MPStandardStateMap(StandardStateMap):
+class MPStateMap(StateMap):
 
     def __init__(self, *args, **kwargs):
         self.bt_server_name = kwargs.pop('bt_server_name')
@@ -92,7 +92,7 @@ class UDPBankTellerServer:
         try:
             logger = logging.getLogger(__name__)
             logger.info("bank teller server starting")
-            state_map = MPStandardStateMap(bt_server_name=self.name,
+            state_map = MPStateMap(bt_server_name=self.name,
                                            timeout_basis=self.timeout_basis)
             data_log = MemoryLog()
             loop = asyncio.get_running_loop()
@@ -148,7 +148,7 @@ class MemoryBankTellerServer:
         self.name = name
         self.timeout_basis = timeout_basis
         self.endpoint = (self.host, self.port)
-        self.state_map = StandardStateMap(timeout_basis=timeout_basis)
+        self.state_map = StateMap(timeout_basis=timeout_basis)
         self.data_log = MemoryLog()
         self.comms = MemoryComms()
         self.app = BankingApp()

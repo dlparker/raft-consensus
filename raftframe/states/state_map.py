@@ -13,7 +13,7 @@ from raftframe.states.leader import Leader
 
 
 # abstract class for all states
-class StateMap(metaclass=abc.ABCMeta):
+class OStateMap(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     async def activate(self, server) -> State:
@@ -29,10 +29,8 @@ class StateMap(metaclass=abc.ABCMeta):
         raise NotImplementedError
     
     def get_server(self):
-        """ Returns the reference to the server object. 
-        TODO: should create a base class for Servers 
-        to be used in type hints.
-        """
+        """ Returns the reference to the server object. """
+
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -73,7 +71,7 @@ class StateMap(metaclass=abc.ABCMeta):
         raise NotImplementedError
     
     
-class StandardStateMap(StateMap):
+class StateMap:
 
     def __init__(self, timeout_basis=1.0):
         self.server = None
@@ -92,6 +90,16 @@ class StandardStateMap(StateMap):
     # can't be done with init because instance
     # of this class required for server class init
     async def activate(self, server) -> State:
+        """ Stores a reference to the server object. This must
+        be called before any of the other methods.
+        Assumes there is no current state and switches to 
+        the first state, telling it and the server about each other.
+        In the standard state map, the "first" state is Follower.
+        StateMap implementors can choose to have some additional
+        state happen prior to the switch to Follower by making
+        this method switch to that one. 
+
+        """
         if not self.monitors:
             self.monitors = []
         self.server = server
@@ -111,6 +119,7 @@ class StandardStateMap(StateMap):
             self.monitors.remove(monitor)
             
     def get_server(self):
+        """ Returns the reference to the server object. """
         return self.server
     
     def get_state(self) -> Optional[State]:

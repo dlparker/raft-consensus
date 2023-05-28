@@ -9,7 +9,7 @@ from pathlib import Path
 
 from dev_tools.bt_server import MemoryBankTellerServer
 from dev_tools.bt_client import MemoryBankTellerClient
-from raftframe.states.state_map import StandardStateMap
+from raftframe.states.state_map import StateMap
 from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.base_state import Substate
 
@@ -44,7 +44,7 @@ class TestMap(unittest.TestCase):
     async def inner_test_methods(self):
         bt_server = MemoryBankTellerServer(0, Path('.'), "foo",
                                            (('l',1),('l',2)), None)
-        smap = bt_server.state_map = StandardStateMap()
+        smap = bt_server.state_map = StateMap()
         # make sure all errors raise when calls made
         # before activate call
         with self.assertRaises(Exception) as context:

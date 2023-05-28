@@ -15,7 +15,7 @@ from raftframe.messages.request_vote import RequestVoteMessage
 from raftframe.messages.request_vote import RequestVoteResponseMessage
 from raftframe.messages.status import StatusQueryResponseMessage
 from raftframe.states.base_state import Substate, StateCode
-from raftframe.states.state_map import StandardStateMap
+from raftframe.states.state_map import StateMap
 from dev_tools.bt_client import MemoryBankTellerClient
 from dev_tools.pcluster import PausingCluster
 
@@ -25,7 +25,7 @@ if LOGGING_TYPE != "silent":
 
 timeout_basis = 0.1
 
-class ExplodingStateMap(StandardStateMap):
+class ExplodingStateMap(StateMap):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
