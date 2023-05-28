@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Type
 import os
 from raftframe.log.log_api import Log
-from raftframe.app_api.app import App
+from raftframe.app_api.app import AppAPI
 from raftframe.comms.comms_api import CommsAPI
 from raftframe.states.state_map import StateMap
 from raftframe.serializers.api import SerializerAPI
@@ -56,7 +56,7 @@ class LiveConfig:
         local:
             A :class:`LocalConfig` instance that defines the local machine configuration
         app:
-            An instance of a class that implemenents :class:`raftframe.app_api.app.App`
+            An instance of a class that implemenents :class:`raftframe.app_api.app.AppAPI`
             and provides an interface between the 'user' code and the RaftFrame code.
         log:
             An instance of a class that implments :class:`raftframe.log.log_api.Log` and
@@ -76,7 +76,7 @@ class LiveConfig:
     
     cluster: ClusterConfig
     local: LocalConfig
-    app: App # actual, live object
+    app: AppAPI # actual, live object
     log: Log # actual, live object
     comms: CommsAPI # actual, live object
     state_map: StateMap # actual, live object

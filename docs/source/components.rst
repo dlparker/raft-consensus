@@ -92,7 +92,7 @@ Class Documentation
 - :class:`raftframe.log.log_api.Log`
 - :class:`raftframe.serializers.api.SerializerAPI`
 - :class:`raftframe.states.state_map.StateMap`
-- :class:`raftframe.app_api.app.App`
+- :class:`raftframe.app_api.app.AppAPI`
 
 ***************
 Transaction Log
@@ -140,7 +140,7 @@ The built in UDP based implementation is, at time of writing (May 18,
 App
 ***
 
-The App API :class:`raftframe.app_api.App` provides, from the point of
+The App API :class:`raftframe.app_api.AppAPI` provides, from the point of
 view of the RaftFrame library, the operations that change distributed
 state, resulting in log entries and synchronizing messages to non
 leader servers. Note that this means that the App code in non-leader

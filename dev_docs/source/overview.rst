@@ -215,7 +215,7 @@ There are common tools for managing clusters for test and development. There are
 clusters.
 
 UDP Cluster
----------------
+===========
 
 One is based on python multiprocessing and uses the UDP comms module. The clusters
 in a server of this type do not support any of the features that suspend operation, so it has
@@ -229,7 +229,7 @@ and in many of the unit test programs such as tests/test_rare_msgs.py
 
 
 Pausing Cluster
----------------
+===============
 
 The :class:`dev_tools.pcluster.PausingCluster` class simplifies the process of setting up
 clusters for tests and other development tasks. It handles server specific things
@@ -239,9 +239,8 @@ handles start, stop, pause and resume for all servers in a single call. It also 
 server thread are to be reused, since the old PServer instance cannot simply be restarted.
 
 
-------------
 Test Servers
-------------
+============
 
 There are two test server base classes that are intended to run in the two types of cluster setups,
 multiprocessing/UDP and threaded/Memory. Both use the :class:`bank_app.BankingApp`
@@ -255,9 +254,8 @@ multiprocessing manager instance, thus allowing test code to check the
 state and substate values for subprocesses. The class has a class
 method that provides the multiprocess process startup sequence.
 
------------
 Pausing App
------------
+===========
 
 
 

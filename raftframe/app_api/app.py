@@ -11,7 +11,7 @@ class CommandResult:
     error: str = field(default=None)
 
 # abstract class for logged interaction app code
-class App(metaclass=abc.ABCMeta):
+class AppAPI(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     async def execute_command(self, command) -> CommandResult:

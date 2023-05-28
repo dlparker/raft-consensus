@@ -5,10 +5,10 @@
 """
 from typing import Union
 import logging
-from raftframe.app_api.app import App, CommandResult
+from raftframe.app_api.app import AppAPI, CommandResult
 from raftframe.log.log_api import RecordCode
 
-class BankingApp(App):
+class BankingApp(AppAPI):
 
     def __init__(self, server=None):
         self.server = server
