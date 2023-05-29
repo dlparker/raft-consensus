@@ -119,14 +119,6 @@ class Server:
                  details=details)
         self.handled_errors.append(e)
 
-    def record_unrecoverable_error(self, error_data):
-        details = f"Unrecoverable error \n"
-        details += str(error_data)
-        e = dict(code="unspecified",
-                 details=details)
-        self.error_file.save_error(json.dumps(e))
-        self.app.exit_on_unrecoverable_error(json.dumps(e))
-
     async def on_message(self, message, recursed=False):
         try:
             pre_state = self.state_map.state
