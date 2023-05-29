@@ -1,6 +1,5 @@
 import abc
 import os
-import json
 import sqlite3
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
@@ -8,14 +7,16 @@ from typing import Union, List, Optional
 from copy import deepcopy
 import logging
 from raftframe.log.log_api import LogRec, LogAPI, RecordCode
+from raftframe.serializers.api import SerializerAPI
 
 class Records:
 
-    def __init__(self, storage_dir: os.PathLike):
+    def __init__(self, storage_dir: os.PathLike, serializer: SerializerAPI):
         # log record indexes start at 1, per raftframe spec
+        self.filepath = Path(storage_dir, "log.sqlite").resolve()
+        self.serializer = serializer
         self.index = 0
         self.entries = []
-        self.filepath = Path(storage_dir, "log.sqlite").resolve()
         self.db = None
         self.term = -1
         self.max_commit = -1
@@ -60,7 +61,7 @@ class Records:
         schema = f"CREATE TABLE if not exists records " \
             "(rec_index INTEGER primary key, code TEXT," \
             "term INTEGER, committed bool, " \
-            "user_data TEXT, listeners TEXT) " 
+            "user_data TEXT) " 
         cursor.execute(schema)
         schema = f"CREATE TABLE if not exists stats " \
             "(dummy INTERGER primary key, max_index INTEGER," \
@@ -82,14 +83,14 @@ class Records:
         else:
             sql = f"insert into records ("
 
-        sql += "code, term, committed, user_data, listeners) values "
-        values += "?, ?,?,?,?)"
+        sql += "code, term, committed, user_data) values "
+        values += "?, ?,?,?)"
         sql += values
         params.append(str(entry.code.value))
         params.append(entry.term)
         params.append(entry.committed)
-        params.append(json.dumps(entry.user_data))
-        params.append(json.dumps(entry.listeners))
+        user_data = self.serializer.serialize_dict(entry.user_data)
+        params.append(user_data)
         cursor.execute(sql, params)
         entry.index = cursor.lastrowid
         if cursor.lastrowid > self.max_index:
@@ -118,12 +119,12 @@ class Records:
         if rec_data is None:
             cursor.close()
             return None
+        user_data = self.serializer.deserialize_dict(rec_data['user_data'])
         log_rec = LogRec(code=RecordCode(rec_data['code']),
-                        index=rec_data['rec_index'],
-                        term=rec_data['term'],
-                        committed=rec_data['committed'],
-                        user_data=json.loads(rec_data['user_data']),
-                        listeners=json.loads(rec_data['listeners']))
+                         index=rec_data['rec_index'],
+                         term=rec_data['term'],
+                         committed=rec_data['committed'],
+                         user_data=user_data)
         cursor.close()
         return log_rec
     
@@ -156,10 +157,18 @@ class Records:
     
 class SqliteLog(LogAPI):
 
-    def __init__(self, storage_dir: os.PathLike):
-        self.records = Records(storage_dir)
+    def __init__(self):
+        self.records = None
+        self.server = None
+        self.working_directory = None
         self.logger = logging.getLogger(__name__)
 
+    def start(self, server, working_directory):
+        self.server = server
+        self.working_directory = working_directory
+        self.serializer = server.get_log_serializer()
+        self.records = Records(self.working_directory, self.serializer)
+        
     def close(self):
         self.records.close()
         
@@ -193,8 +202,7 @@ class SqliteLog(LogAPI):
                               index=None,
                               term=entry.term,
                               committed=entry.committed,
-                              user_data=entry.user_data,
-                              listeners=entry.listeners[::])
+                              user_data=entry.user_data)
             self.records.add_entry(save_rec)
         self.logger.debug("new log record %s", save_rec.index)
 
@@ -209,8 +217,7 @@ class SqliteLog(LogAPI):
                           index=entry.index,
                           term=entry.term,
                           committed=entry.committed,
-                          user_data=entry.user_data,
-                          listeners=entry.listeners[::])
+                          user_data=entry.user_data)
         # Normal case is that the leader will end one new record when
         # trying to get consensus, and the new record index will be
         # exactly what the next sequential record number would be.

@@ -20,7 +20,8 @@ class Server:
         self.log = live_config.log
         self.comms = live_config.comms
         self.state_map = live_config.state_map
-        self.serializer = live_config.serializer
+        self.comms_serializer = live_config.comms_serializer
+        self.log_serializer = live_config.log_serializer
         self.timer_class = Timer
         self.total_nodes = len(self.other_nodes) + 1
         self.logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class Server:
     async def _start(self):
         self.app.set_server(self)
         self.logger.info('Server on %s activating state map', self.endpoint)
+        self.log.start(self, self.working_dir)
         await self.state_map.activate(self)
         self.comms_task = task_logger.create_task(
             self.comms.start(self, self.endpoint),
@@ -55,8 +57,11 @@ class Server:
             await self.state_map.state.stop()
         self.running = False
         
-    def get_serializer(self):
-        return self.serializer
+    def get_comms_serializer(self):
+        return self.comms_serializer
+
+    def get_log_serializer(self):
+        return self.log_serializer
     
     def get_log(self):
         return self.log

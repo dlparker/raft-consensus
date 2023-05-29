@@ -258,7 +258,10 @@ class TestOddPaths(unittest.TestCase):
             async def on_message(self, message):
                 await self.in_queue.put(message)
 
-            def get_serializer(self):
+            def get_comms_serializer(self):
+                return Serializer
+            
+            def get_log_serializer(self):
                 return Serializer
             
         server_1 = FakeServer()
@@ -325,8 +328,11 @@ class TestOddPaths(unittest.TestCase):
                 
             async def on_message(self, message):
                 await self.in_queue.put(message)
-        
-            def get_serializer(self):
+
+            def get_comms_serializer(self):
+                return Serializer
+            
+            def get_log_serializer(self):
                 return Serializer
             
         server_1 = FakeServer()

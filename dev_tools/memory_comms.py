@@ -93,7 +93,7 @@ class MemoryComms(CommsAPI):
     async def start(self, server, endpoint):
         self.endpoint = endpoint
         self.server = server
-        self.serializer = self.server.get_serializer()
+        self.serializer = self.server.get_comms_serializer()
         global channels
         channels[endpoint] = self
         self.logger.debug("starting %s full set is %s",

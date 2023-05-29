@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 
 from raftframe.comms.udp import UDPComms
+from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
 from raftframe.messages.status import StatusQueryMessage, StatusQueryResponseMessage
 
 #LOGGING_TYPE = "silent" for no log at all
@@ -38,6 +39,12 @@ class FakeServer:
 
     async def on_message(self, message):
         await self.in_queue.put(message)
+
+    def get_comms_serializer(self):
+        return Serializer
+    
+    def get_log_serializer(self):
+        return Serializer
         
 class TestBasic(unittest.TestCase):
         

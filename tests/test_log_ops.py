@@ -11,6 +11,22 @@ import pytest
 from raftframe.log.log_api import LogRec
 from dev_tools.memory_log import MemoryLog
 from raftframe.log.sqlite_log import SqliteLog
+from raftframe.serializers.json import JsonSerializer
+
+class FakeServer:
+
+    def __init__(self):
+        self.in_queue = asyncio.Queue()
+        
+    async def on_message(self, message):
+        await self.in_queue.put(message)
+
+    def get_comms_serializer(self):
+        return JsonSerializer
+    
+    def get_log_serializer(self):
+        return JsonSerializer
+    
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
 if LOGGING_TYPE != "silent":
@@ -95,7 +111,8 @@ class TestSqliteLog(unittest.TestCase):
         p = Path('/tmp/log.sqlite')
         if p.exists():
             p.unlink()
-        sql_log = SqliteLog("/tmp")
+        sql_log = SqliteLog()
+        sql_log.start(FakeServer(), "/tmp")
         rec = sql_log.read()
         self.assertIsNone(rec)
         bad = sql_log.records.read_entry(None)
@@ -198,7 +215,8 @@ class TestSqliteLog(unittest.TestCase):
         p = Path('/tmp/log.sqlite')
         if p.exists():
             p.unlink()
-        sql_log = SqliteLog("/tmp")
+        sql_log = SqliteLog()
+        sql_log.start(FakeServer(), "/tmp")
         sql_log.incr_term()
         limit1 = 100
         for i in range(limit1):
@@ -207,7 +225,8 @@ class TestSqliteLog(unittest.TestCase):
         for i in range(1, limit1 - 1 ):
             sql_log.commit(i)
         sql_log.close()
-        sql_log = SqliteLog("/tmp")
+        sql_log = SqliteLog()
+        sql_log.start(FakeServer(), "/tmp")
         sql_log.close()
 
         sql_log.commit(limit1 -1)

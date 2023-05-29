@@ -9,6 +9,14 @@ from raftframe.serializers.api import SerializerAPI
 class JsonSerializer:
 
     @staticmethod
+    def serialize_dict(user_dict: dict) -> Union[bytes, str]:
+        return json.dumps(user_dict).encode('utf-8')
+
+    @staticmethod
+    def deserialize_dict(data: Union[bytes, str]) -> dict:
+        return json.loads(data.decode('utf-8'))
+
+    @staticmethod
     def serialize_message(message: BaseMessage) -> Union[bytes, str]:
         data = {
             'code': message.code,
@@ -37,21 +45,17 @@ class JsonSerializer:
             
         res = cls(*args)
         return res
-    
 
+    @staticmethod
     def serialize_logrec(rec: LogRec) -> Union[bytes, str]:
         data = asdict(rec)
         return json.dumps(data).encode('utf-8')
         
+    @staticmethod
     def deserialize_logrec(data: Union[bytes, str]) -> LogRec:
         rec_data = json.loads(data.decode('utf-8'))
         return LogRec.from_dict(rec_data)
     
-    def serialize_dict(user_dict: dict) -> Union[bytes, str]:
-        return json.dumps(user_dict).encode('utf-8')
-
-    def deserialize_dict(data: Union[bytes, str]) -> dict:
-        return json.loads(data.decode('utf-8'))
 
     
     

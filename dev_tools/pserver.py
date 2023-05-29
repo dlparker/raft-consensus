@@ -20,6 +20,7 @@ from raftframe.states.base_state import State, Substate
 from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.follower import Follower
 from raftframe.serializers.msgpack import MsgpackSerializer
+from raftframe.serializers.json import JsonSerializer
 from dev_tools.bt_client import MemoryBankTellerClient
 from dev_tools.bank_app import BankingApp
 from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
@@ -407,7 +408,7 @@ class ServerThread(threading.Thread):
     def go(self):
         self.ready = True
         
-    def configure(self, serializer_class=MsgpackSerializer):
+    def configure(self):
         if self.server:
             return
         
@@ -422,7 +423,8 @@ class ServerThread(threading.Thread):
                                       log=self.pserver.data_log,
                                       comms=self.pserver.comms,
                                       state_map=self.pserver.state_map,
-                                      serializer=serializer_class())
+                                      comms_serializer=MsgpackSerializer,
+                                      log_serializer=JsonSerializer)
         self.server = Server(live_config=self.live_config)
         self.server.set_timer_class(ControlledTimer)
         self.server.get_endpoint()

@@ -9,6 +9,7 @@ from raftframe.app_api.app import AppAPI
 from raftframe.comms.comms_api import CommsAPI
 from raftframe.states.state_map import StateMap
 from raftframe.serializers.api import SerializerAPI
+
 @dataclass
 class LocalConfig:
     """
@@ -68,7 +69,14 @@ class LiveConfig:
             :class:`raftframe.comms.udp.UDPComms`.
         state_map:
             An instance of :class:`raftframe.states.state_map.StateMap`.
-        serializer:
+        comms_serializer:
+            Serializer to be used by CommsAPI implementation, in case custom object support is 
+            needed.
+            An instance of a class that implments :class:`raftframe.serializers.api.SerializerAPI`.
+            The default implementation for this is :class:`raftframe.serializers.msgpack.MsgpackSerializer`.
+        log_serializer:
+            Serializer to be used by LogAPI implementation, in case custom object support is 
+            needed.
             An instance of a class that implments :class:`raftframe.serializers.api.SerializerAPI`.
             The default implementation for this is :class:`raftframe.serializers.msgpack.MsgpackSerializer`.
     """
@@ -79,6 +87,7 @@ class LiveConfig:
     log: LogAPI # actual, live object
     comms: CommsAPI # actual, live object
     state_map: StateMap # actual, live object
-    serializer: SerializerAPI # actual, live object
+    comms_serializer: SerializerAPI # actual, live object
+    log_serializer: SerializerAPI # actual, live object
 
     

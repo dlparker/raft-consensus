@@ -108,7 +108,8 @@ class UDPBankTellerServer:
                                           app=app, log=data_log,
                                           comms=UDPComms(),
                                           state_map=state_map,
-                                          serializer=MsgpackSerializer())
+                                          comms_serializer=MsgpackSerializer(),
+                                          log_serializer=JsonSerializer())
             server = Server(live_config=self.live_config)
             server.start()
             logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
@@ -249,7 +250,7 @@ class ServerThread(threading.Thread):
     def go(self):
         self.ready = True
         
-    def configure(self, serializer_class=MsgpackSerializer):
+    def configure(self):
         if self.server:
             return
         
@@ -264,7 +265,8 @@ class ServerThread(threading.Thread):
                                       log=self.bt_server.data_log,
                                       comms=self.bt_server.comms,
                                       state_map=self.bt_server.state_map,
-                                      serializer=serializer_class())
+                                      comms_serializer=MsgpackSerializer,
+                                      log_serializer=JsonSerializer)
         self.server = Server(live_config=self.live_config)
         self.server.set_timer_class(ControlledTimer)
         self.server.get_endpoint()

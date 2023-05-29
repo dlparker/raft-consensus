@@ -9,6 +9,14 @@ from raftframe.serializers.api import SerializerAPI
 class MsgpackSerializer(SerializerAPI):
 
     @staticmethod
+    def serialize_dict(user_dict: dict) -> Union[bytes, str]:
+        return msgpack.packb(user_dict, use_bin_type=True)
+
+    @staticmethod
+    def deserialize_dict(data: Union[bytes, str]) -> dict:
+        return msgpack.unpackb(data, use_list=True, encoding='utf-8')
+
+    @staticmethod
     def serialize_message(message: BaseMessage) -> Union[bytes, str]:
         data = {
             'code': message.code,
@@ -38,18 +46,14 @@ class MsgpackSerializer(SerializerAPI):
         res = cls(*args)
         return res
 
+    @staticmethod
     def serialize_logrec(rec: LogRec) -> Union[bytes, str]:
         data = asdict(rec)
         return msgpack.packb(data, use_bin_type=True)
         
+    @staticmethod
     def deserialize_logrec(data: Union[bytes, str]) -> LogRec:
         rec_data = msgpack.unpackb(data, use_list=True, encoding='utf-8')
         return LogRec.from_dict(rec_data)
     
-    def serialize_dict(user_dict: dict) -> Union[bytes, str]:
-        return msgpack.packb(user_dict, use_bin_type=True)
-
-    def deserialize_dict(data: Union[bytes, str]) -> dict:
-        return msgpack.unpackb(data, use_list=True, encoding='utf-8')
-
     

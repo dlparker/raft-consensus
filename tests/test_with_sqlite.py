@@ -167,7 +167,8 @@ class TestRestarts(TestCaseCommon):
             filepath = Path(path, "log.sqlite")
             if filepath.exists() and reset:
                 filepath.unlink()
-            pserver.data_log = SqliteLog(path)
+            pserver.working_dir = path
+            pserver.data_log = SqliteLog()
             
     # All the tests in the case use a cluster of three servers
     # as configured by the TestCaseCommon setUp method.

@@ -14,6 +14,7 @@ from dev_tools.memory_log import MemoryLog
 from raftframe.utils.timer import Timer
 from raftframe.states.follower import Follower
 from raftframe.messages.regy import get_message_registry
+from raftframe.serializers.api import SerializerAPI
 from raftframe.serializers.json import JsonSerializer
 from raftframe.serializers.msgpack import MsgpackSerializer
 from raftframe.messages.heartbeat import HeartbeatMessage
@@ -114,41 +115,31 @@ class TestUtils(unittest.TestCase):
         with self.assertRaises(Exception) as context:
             new_msg = Serializer.deserialize_message(bad_data)
 
-    def test_serializers(self):
+    def inner_test_serializers(self, serializer: SerializerAPI):
         hb1 = HeartbeatMessage('1', '2', 0, "{'x':1}", 0, 0, 0)
-        data = MsgpackSerializer.serialize_message(hb1)
-        hb2 = MsgpackSerializer.deserialize_message(data)
+        data = serializer.serialize_message(hb1)
+        hb2 = serializer.deserialize_message(data)
         self.assertEqual(hb2.__dict__, hb1.__dict__)
-        data = JsonSerializer.serialize_message(hb1)
-        hb2 = JsonSerializer.deserialize_message(data)
-        self.assertEqual(hb2.__dict__, hb1.__dict__)
-        # Note that serialize deserialize might conver tuple
-        # to list, so we make sure listeners value goes in
-        # as list just so round trip results will compare.
-        # Real code that uses these results would have to sanitize
-        # if tuples are needed, as does happen in udp and memory
-        # comms modules.
         lrec1 = LogRec(code=RecordCode.no_op,
                        index=None,
                        term=1,
                        committed=True,
-                       user_data={"a": 1, "b": 2},
-                       listeners = [['client', ['localhost', 1]],])
-        data = JsonSerializer.serialize_logrec(lrec1)
-        lrec2 = JsonSerializer.deserialize_logrec(data)
-        self.assertEqual(lrec1.__dict__, lrec2.__dict__)
-        data = MsgpackSerializer.serialize_logrec(lrec1)
-        lrec2 = MsgpackSerializer.deserialize_logrec(data)
+                       user_data={"a": 1, "b": 2})
+        data = serializer.serialize_logrec(lrec1)
+        lrec2 = serializer.deserialize_logrec(data)
         self.assertEqual(lrec1.__dict__, lrec2.__dict__)
 
         # this is trivial but it needs testing all the same
         in1 = dict(a=1,b=2)
-        data = JsonSerializer.serialize_dict(in1)
-        out1 = JsonSerializer.deserialize_dict(data)
+        data = serializer.serialize_dict(in1)
+        out1 = serializer.deserialize_dict(data)
         self.assertEqual(in1, out1)
-        data = MsgpackSerializer.serialize_dict(in1)
-        out1 = MsgpackSerializer.deserialize_dict(data)
         
+    def test_msgpack_serializer(self):
+        self.inner_test_serializers(MsgpackSerializer)
+
+    def test_json_serializer(self):
+        self.inner_test_serializers(JsonSerializer)
         
 class TestTimer(unittest.TestCase):
 

@@ -40,8 +40,14 @@ class MemoryLog(LogAPI):
         self.records = Records()
         self.term = 0
         self.commit_index = 0
+        self.server = None
+        self.working_directory = None
         self.logger = logging.getLogger(__name__)
         
+    def start(self, server, working_directory):
+        self.server = server
+        self.working_directory = working_directory
+    
     def get_term(self) -> Union[int, None]:
         return self.term
     
@@ -62,8 +68,7 @@ class MemoryLog(LogAPI):
                               index=None,
                               term=entry.term,
                               committed=entry.committed,
-                              user_data=entry.user_data,
-                              listeners=entry.listeners[::])
+                              user_data=entry.user_data)
             self.records.add_entry(save_rec)
         self.logger.debug("new log record %s", save_rec.index)
 
@@ -76,8 +81,7 @@ class MemoryLog(LogAPI):
                           index=entry.index,
                           term=entry.term,
                           committed=entry.committed,
-                          user_data=entry.user_data,
-                          listeners=entry.listeners[::])
+                          user_data=entry.user_data)
         # Normal case is that the leader will end one new record when
         # trying to get consensus, and the new record index will be
         # exactly what the next sequential record number would be.
