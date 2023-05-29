@@ -85,6 +85,9 @@ class BankingApp(AppAPI):
                                log_response=log_response)
         return result
         
+    def exit_on_unrecoverable_error(self, error_data) -> None:
+        print(error_data)
+        raise SystemExit
 
 
 

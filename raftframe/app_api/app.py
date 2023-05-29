@@ -18,6 +18,11 @@ class AppAPI(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
+    @abc.abstractmethod
+    def exit_on_unrecoverable_error(self, error_data) -> None:
+        raise NotImplementedError
+
+
 # abstract class for all states
 class StateChangeMonitorAPI(metaclass=abc.ABCMeta):
 

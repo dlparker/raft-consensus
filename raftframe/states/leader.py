@@ -510,7 +510,8 @@ class Leader(State):
             sm = self.server.get_state_map()
             sm.start_state_change("leader", "follower")
             self.terminated = True
-            await self.heartbeat_timer.terminate() # never run again
+            if self.heartbeat_timer:
+                await self.heartbeat_timer.terminate() # never run again
             follower = await sm.switch_to_follower(self)
             self.logger.info("leader resigned")
             await self.stop()

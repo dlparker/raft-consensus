@@ -44,8 +44,12 @@ class PausingCluster:
             if ot == addr:
                 continue
             others.append(ot)
-        server = PServer(port=addr[1], working_dir=self.working_dir,
-                         name=f"server_{addr[1]}", others=others,
+        server_name = f"server_{addr[1]}"
+        wdir = Path(self.working_dir, server_name)
+        if not wdir.exists():
+            wdir.mkdir(parents=True)
+        server = PServer(port=addr[1], working_dir=wdir,
+                         name=server_name, others=others,
                          log_config=self.log_config,
                          timeout_basis=self.timeout_basis)
         return server

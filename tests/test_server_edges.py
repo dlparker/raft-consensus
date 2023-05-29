@@ -46,7 +46,6 @@ class RejectingLeader(Leader):
                 # states but supplying a replacement
                 new_state = RejectingLeader(self.server,
                                             self.heartbeat_timeout)
-                
                 self.server.state_map.state = new_state
                 if self.orig:
                     new_state.orig = self.orig
@@ -149,8 +148,7 @@ class TestEdges(TestCaseCommon):
         self.assertIsNotNone(status)
         self.leader.state_map.get_state().set_rejecting(False)
         server = self.leader.thread.server
-        estack = server.get_unhandled_errors()
-        self.assertEqual(len(estack), 0)
+        self.assertEqual(len(server.handled_errors), 0)
         stats = client.do_log_stats()
         self.assertIsNotNone(stats)
         client.set_timeout(0.5)
@@ -163,8 +161,8 @@ class TestEdges(TestCaseCommon):
         self.assertTrue("timeout" in str(context.exception))
         # should save an error in the
         # "i don't know what to do with it" stack
-        estack = server.get_unhandled_errors(clear=True)
-        self.assertTrue(len(estack) > 0)
+        self.assertTrue(len(server.handled_errors) > 0)
+        server.handled_errors = []
 
     def test_reject_messages_after_changing_state(self):
         # The servers.server.py Server class has
@@ -198,14 +196,13 @@ class TestEdges(TestCaseCommon):
         self.assertIsNotNone(status)
         client.set_timeout(0.5)
         server = self.leader.thread.server
-        estack = server.get_unhandled_errors()
-        self.assertEqual(len(estack), 0)
+        self.assertEqual(len(server.handled_errors), 0)
         self.leader.state_map.get_state().setup_respawn_reject(2)
         with self.assertRaises(Exception) as context:
             stats = client.do_log_stats()
         self.assertTrue("timeout" in str(context.exception))
-        estack = server.get_unhandled_errors(clear=True)
-        self.assertTrue(len(estack) > 0)
+        self.assertTrue(len(server.handled_errors) > 0)
+        server.handled_errors = []
         
 
 

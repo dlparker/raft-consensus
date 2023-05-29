@@ -1,3 +1,7 @@
+import os
+import datetime
+from pathlib import Path
+import json
 import copy
 import asyncio
 import errno
@@ -27,7 +31,6 @@ class Server:
         self.logger = logging.getLogger(__name__)
         self.comms_task = None
         self.running = False
-        self.unhandled_errors = []
         self.handled_errors = []
 
     def start(self):
@@ -38,6 +41,7 @@ class Server:
                                 message="server start task")
         
     async def _start(self):
+        self.error_file = ErrorFile(self, self.working_dir)
         self.app.set_server(self)
         self.logger.info('Server on %s activating state map', self.endpoint)
         self.log.start(self, self.working_dir)
@@ -85,12 +89,6 @@ class Server:
     def get_state(self):
         return self.state_map.state 
 
-    def get_unhandled_errors(self, clear=False):
-        result = self.unhandled_errors
-        if clear:
-            self.unhandled_errors = []
-        return result
-
     def get_handled_errors(self, clear=False):
         result = self.handled_errors
         if clear:
@@ -102,6 +100,7 @@ class Server:
         e = dict(code="state_operation_unexpected",
                  details=details)
         self.handled_errors.append(e)
+        self.error_file.save_error(json.dumps(e))
 
     def record_failed_state_change(self, old_state, target_state,
                                    error_data):
@@ -109,7 +108,8 @@ class Server:
         details += error_data
         e = dict(code="state_change_failed",
                  details=details)
-        self.unhandled_errors.append(e)
+        self.error_file.save_error(json.dumps(e))
+        self.app.exit_on_unrecoverable_error(json.dumps(e))
         
     def record_illegal_message_state(self, sender, desc,
                                       error_data):
@@ -117,7 +117,15 @@ class Server:
         details += str(error_data)
         e = dict(code="illegal_message_state",
                  details=details)
-        self.unhandled_errors.append(e)
+        self.handled_errors.append(e)
+
+    def record_unrecoverable_error(self, error_data):
+        details = f"Unrecoverable error \n"
+        details += str(error_data)
+        e = dict(code="unspecified",
+                 details=details)
+        self.error_file.save_error(json.dumps(e))
+        self.app.exit_on_unrecoverable_error(json.dumps(e))
 
     async def on_message(self, message, recursed=False):
         try:
@@ -140,7 +148,7 @@ class Server:
                         e = dict(code="message_rejected",
                                  message=message,
                                  details="state changing timeout")
-                        self.unhandled_errors.append(e)
+                        self.handled_errors.append(e)
                         return
                 if pre_state != self.state_map.state:
                     self.logger.info("changed state from %s to %s, recursing",
@@ -150,14 +158,14 @@ class Server:
                         e = dict(code="message_rejected",
                                  message=message,
                                  details=details)
-                        self.unhandled_errors.append(e)
+                        self.handled_errors.append(e)
                         return
                     await self.on_message(message, recursed=True)
                 else:
                     e = dict(code="message_rejected",
                              message=message,
                              details="available handlers rejected message")
-                    self.unhandled_errors.append(e)
+                    self.handled_errors.append(e)
         except Exception as e:  # pragma: no cover error
             self.logger.error(traceback.format_exc())
             self.logger.error("State %s got exception %s on message %s",
@@ -180,3 +188,31 @@ class Server:
                               self.state_map.state,
                               send_message, n)
             await self.comms.post_message(send_message)
+
+class ErrorFile:
+
+    def __init__(self, server, directory: os.PathLike):
+        self.server = server
+        self.directory = directory
+        self.path = Path(directory, "errors.txt")
+        # this is for testing support only, allowing test code to
+        # ensure error was detected
+        self.unhandled_errors = []
+
+    def get_unhandled_errors(self, clear=False):
+        # this is for testing support only, allowing test code to
+        # ensure error was detected
+        result = self.unhandled_errors
+        if clear:
+            self.unhandled_errors = []
+        return result
+    
+    def save_error(self, error_data):
+        self.unhandled_errors.append(error_data)
+        with open(self.path, 'a+') as f:
+            time_string = datetime.datetime.utcnow().isoformat()
+            f.write(f"\n{time_string}")
+            f.write("\n" + "-"* 20 + " START " + "-"* 20 + "\n")
+            f.write(error_data)
+            f.write("\n" + "-"* 20 + "  END  " + "-"* 20)
+            

@@ -172,7 +172,7 @@ class TestOddMsgs(unittest.TestCase):
         self.logger.info("Sending request vote message" \
                          " expecting no error ignore")
         client.direct_message(tsm)
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         tsm = AppendResponseMessage(("localhost", 5001),
                                     ("localhost", 5000),
                                     0,
@@ -180,7 +180,7 @@ class TestOddMsgs(unittest.TestCase):
         self.logger.info("Sending AppendEntries response message" \
                          " expecting no error ignore")
         client.direct_message(tsm)
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         tsm = HeartbeatResponseMessage(("localhost", 5001),
                                            ("localhost", 5000),
                                            0,
@@ -188,7 +188,7 @@ class TestOddMsgs(unittest.TestCase):
         self.logger.info("Sending heartbeat response message" \
                          " expecting no error ignore")
         client.direct_message(tsm)
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
 
     def test_b_msg_rejects(self):
         pserver = self.preamble()
@@ -214,15 +214,15 @@ class TestOddMsgs(unittest.TestCase):
                                {},0,0,0)
         self.logger.info("Sending heartbeat message expecting reject")
         client.direct_message(hbm)
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.handled_errors), 0)
         start_time = time.time()
         while time.time() - start_time < 3:
             time.sleep(0.05)
-            if len(r_server.unhandled_errors) > 0:
+            if len(r_server.handled_errors) > 0:
                 break
-        self.assertEqual(len(r_server.get_unhandled_errors()), 1)
+        self.assertEqual(len(r_server.handled_errors), 1)
         self.logger.info("Reject resulted in r_server saving error\n%s",
-                         r_server.get_unhandled_errors()[0])
+                         r_server.handled_errors[0])
         self.logger.info("clearing terminated flag")
         candidate.terminated = False
         # Now send a message that has no handler.
@@ -238,11 +238,11 @@ class TestOddMsgs(unittest.TestCase):
         start_time = time.time()
         while time.time() - start_time < 3:
             time.sleep(0.05)
-            if len(r_server.unhandled_errors) > 1:
+            if len(r_server.handled_errors) > 1:
                 break
-        self.assertEqual(len(r_server.get_unhandled_errors()), 2)
+        self.assertEqual(len(r_server.handled_errors), 2)
         self.logger.info("Reject resulted in server saving error\n%s",
-                         r_server.get_unhandled_errors()[1])
+                         r_server.handled_errors[1])
         
         self.logger.info("starting other two servers and waiting for election")
         pserver.clear_substate_pauses()
@@ -399,21 +399,22 @@ class TestOddMsgs(unittest.TestCase):
         r_server = pserver.thread.server
         pserver.state_map.explode_state_change = True
         candidate = pserver.state_map.get_state()
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         async def try_resign():
             await candidate.resign()
             await asyncio.sleep(0.01)
-        self.loop.run_until_complete(try_resign())
+        with self.assertRaises(SystemExit):
+            self.loop.run_until_complete(try_resign())
         # state change should have failed
         self.assertEqual(pserver.state_map.get_state(), candidate)
-        self.assertEqual(len(r_server.get_unhandled_errors(clear=True)), 1)
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors(clear=True)), 1)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         candidate.terminated = False
         candidate.candidate_timer.terminated = False
         pserver.state_map.explode_state_change = False
         pserver.resume()
         self.loop.run_until_complete(try_resign())
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         self.assertNotEqual(pserver.state_map.get_state(), candidate)
 
     def test_c_promote_fail(self):
@@ -422,7 +423,7 @@ class TestOddMsgs(unittest.TestCase):
         r_server = pserver.thread.server
         pserver.state_map.explode_state_change = True
         candidate = pserver.state_map.get_state()
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         pserver.pause_on_substate(Substate.voting)
         async def try_vote_response():
             vrm = RequestVoteResponseMessage(("localhost", 5001),
@@ -433,18 +434,19 @@ class TestOddMsgs(unittest.TestCase):
                                              })
             await candidate.on_vote_received(vrm)
             await asyncio.sleep(0.01)
-        self.loop.run_until_complete(try_vote_response())
+        with self.assertRaises(SystemExit):
+            self.loop.run_until_complete(try_vote_response())
         # state change should have failed
         self.assertEqual(pserver.state_map.get_state(), candidate)
-        self.assertEqual(len(r_server.get_unhandled_errors(clear=True)), 1)
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors(clear=True)), 1)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         pserver.state_map.explode_state_change = False
         candidate.candidate_timer.terminated = False
         candidate.all_votes = {}
         pserver.clear_pause_on_substate(Substate.voting)
         pserver.resume()
         self.loop.run_until_complete(try_vote_response())
-        self.assertEqual(len(r_server.get_unhandled_errors()), 0)
+        self.assertEqual(len(r_server.error_file.get_unhandled_errors()), 0)
         self.assertNotEqual(pserver.state_map.get_state(), candidate)
         self.loop.run_until_complete(asyncio.sleep(0.05))
         # let it do stop without errors
