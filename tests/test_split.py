@@ -33,7 +33,7 @@ class TestSplit(TestCaseCommon):
                 pserver.clear_state_pauses()
                 pserver.clear_substate_pauses()
             pserver.pause_on_substate(Substate.sent_heartbeat)
-            pserver.pause_before_in_message(HeartbeatMessage._code)
+            pserver.pause_before_in_message(HeartbeatMessage.get_code())
             
     def test_leader_stays_split(self):
         # Preamble starts 5 servers (self.total_nodes) and

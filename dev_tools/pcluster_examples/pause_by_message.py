@@ -62,7 +62,7 @@ if __name__=="__main__":
         server.pause_callback = pause_callback
         server.resume_callback = resume_callback
         # pause followers when they get first heartbeat
-        server.pause_before_in_message(HeartbeatMessage._code)
+        server.pause_before_in_message(HeartbeatMessage.get_code())
         # pause leader after all heartbeats sent
         server.pause_on_substate(Substate.sent_heartbeat)
     pc.start_all()

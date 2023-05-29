@@ -322,19 +322,19 @@ class TestDebugControls(unittest.TestCase):
         pauser = Pauser()
         inter1 = MyInterceptor(self.logger, pauser.pause_method)
         inter1.add_trigger(InterceptorMode.out_before,
-                           StatusQueryMessage._code,
+                           StatusQueryMessage.get_code(),
                            pauser.pause_method)
         inter1.add_trigger(InterceptorMode.out_after,
-                           StatusQueryMessage._code,
+                           StatusQueryMessage.get_code(),
                            pauser.pause_method)
         end_1.set_interceptor(inter1)
         self.assertEqual(end_1.get_interceptor(), inter1)
         inter2 = MyInterceptor(self.logger, pauser.pause_method)
         inter2.add_trigger(InterceptorMode.in_before,
-                           StatusQueryMessage._code,
+                           StatusQueryMessage.get_code(),
                            pauser.pause_method)
         inter2.add_trigger(InterceptorMode.in_after,
-                           StatusQueryMessage._code,
+                           StatusQueryMessage.get_code(),
                            pauser.pause_method)
         end_2.set_interceptor(inter2)
         

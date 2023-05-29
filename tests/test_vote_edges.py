@@ -162,7 +162,7 @@ class TestElectionStartPaused(TestCaseCommon):
         follower = self.non_leaders[1]
         self.clear_pause_triggers()
         # pause the expected follower at the next heartbeat
-        follower.pause_before_in_message(HeartbeatMessage._code)
+        follower.pause_before_in_message(HeartbeatMessage.get_code())
         self.logger.info(f"\n\nSetting follower {follower.name} pause on heartbeat\n\n")
         self.cluster.resume_all()
         start_time = time.time()

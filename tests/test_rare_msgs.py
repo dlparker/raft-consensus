@@ -613,7 +613,7 @@ class TestRareMessages(TestCaseCommon):
         # since it is in memory and cannot be recovered on restart.
         old_leader = self.leader
         old_leader_state = self.leader.state_map.get_state()
-        old_leader.pause_before_out_message(AppendEntriesMessage._code)
+        old_leader.pause_before_out_message(AppendEntriesMessage.get_code())
 
         client.set_timeout(0.1)
         with self.assertRaises(Exception) as context:
@@ -647,7 +647,7 @@ class TestRareMessages(TestCaseCommon):
         # that it does not accept hearbeat. Pause it before
         # processing appendEntries, to check test conditions
         self.clear_pause_triggers()
-        old_leader.pause_before_in_message(AppendEntriesMessage._code)
+        old_leader.pause_before_in_message(AppendEntriesMessage.get_code())
         old_leader.monitor = ModMonitor(old_leader.monitor)
         old_leader.monitor.set_never_beat(False)
         old_leader.resume()

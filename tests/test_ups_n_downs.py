@@ -34,6 +34,7 @@ class TestRestarts(TestCaseCommon):
             if not pserver.name in self.log_paths:
                 self.log_paths[pserver.name] = filepath
             pserver.data_log = SqliteLog()
+            pserver.working_dir = path
                       
     def wait_till_paused(self, expected=None):
         if expected is None:
