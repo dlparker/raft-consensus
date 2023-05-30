@@ -26,7 +26,7 @@ from dev_tools.bank_app import BankingApp
 from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor
-
+from dev_tools.monrpc import MonRpcThread
     
 class PServer:
 
@@ -74,6 +74,7 @@ class PServer:
         self.state_map.add_state_change_monitor(self.monitor)
         self.interceptor = Interceptor(self)
         self.comms.set_interceptor(self.interceptor)
+        self.mon_rpc_thread = MonRpcThread(self.port+5000)
 
     def get_raftframe_server(self):
         return self.thread.server
@@ -272,6 +273,8 @@ class PServer:
             self.thread_started = True
         self.logger.debug("%s, %s calling server thread go", self.name, self.thread_ident)
         self.thread.go()
+        self.logger.debug("%s, %s starting monitor rpc thread", self.name, self.thread_ident)
+        self.mon_rpc_thread.start()
 
     def configure(self):
         self.thread.configure()
@@ -279,6 +282,7 @@ class PServer:
         
     def stop(self):
         self.thread.stop()
+        self.mon_rpc_thread.stop()
         self.thread.keep_running = False
         self.logger.debug("%s, %s stopped", self.name, self.thread_ident)
 

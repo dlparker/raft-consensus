@@ -25,13 +25,16 @@ from dev_tools.pserver import PServer
 from dev_tools.pcluster import PausingCluster
 from dev_tools.log_control import one_proc_log_setup
 
+
 if __name__=="__main__":
 
     wdir = Path(f"/tmp/raft_tests")
     if wdir.exists():
         shutil.rmtree(wdir)
     wdir.mkdir(parents=True)
-    one_proc_log_setup(f"{wdir.as_posix()}/server.log")
+    LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
+    if LOGGING_TYPE != "silent":
+        one_proc_log_setup(f"{wdir.as_posix()}/server.log")
 
     pc = PausingCluster(3)
     go_flag = False

@@ -13,11 +13,17 @@ class MonRpcThread(threading.Thread):
     def __init__(self, port=8000):
         threading.Thread.__init__(self)
         self.port = port
+        self.server = None
 
+    def stop(self):
+        if self.server:
+            self.server.shutdown()
+        
     def run(self):
         # Create server
         with SimpleXMLRPCServer(('localhost', self.port),
                                 requestHandler=RequestHandler) as server:
+            self.server = server
             server.register_introspection_functions()
 
             @server.register_function(name="ping")
@@ -27,6 +33,7 @@ class MonRpcThread(threading.Thread):
                 return "pong"
             # Run the server's main loop
             server.serve_forever()
+        self.server = None
 
 class MainThread:
 

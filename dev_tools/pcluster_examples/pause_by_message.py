@@ -32,7 +32,10 @@ if __name__=="__main__":
     if wdir.exists():
         shutil.rmtree(wdir)
     wdir.mkdir(parents=True)
-    one_proc_log_setup(f"{wdir.as_posix()}/server.log")
+    LOGGING_TYPE=os.environ.get("TEST_LOGGING", "silent")
+    if LOGGING_TYPE != "silent":
+        one_proc_log_setup(f"{wdir.as_posix()}/server.log")
+
 
     pc = PausingCluster(3)
     go_flag = False
