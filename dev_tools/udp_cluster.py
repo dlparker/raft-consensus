@@ -126,8 +126,8 @@ class UDPServerCluster:
             self.base_dir.mkdir()
         result = {}
         for i in range(self.server_count):
-            name = f"server_{i}"
             port = self.base_port + i
+            name = f"server_{port}"
             addr = ('localhost', port)
             wdir = self.setup_server_dir(name)
             result[name] = dict(name=name, working_dir=wdir,

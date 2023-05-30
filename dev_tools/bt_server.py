@@ -1,5 +1,3 @@
-#
-
 import asyncio
 from pathlib import Path
 import traceback
@@ -22,6 +20,7 @@ from dev_tools.bank_app import BankingApp
 from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor
+from dev_tools.monrpc import MonRpcThread
 
 manager = multiprocessing.Manager()
 csns = manager.Namespace()
@@ -87,6 +86,7 @@ class UDPBankTellerServer:
         self.others = others
         self.timeout_basis = timeout_basis
         self.running = False
+        self.mon_rpc_thread = MonRpcThread(port+5000)
         
     async def _run(self):
         try:
@@ -112,6 +112,7 @@ class UDPBankTellerServer:
                                           log_serializer=JsonSerializer())
             server = Server(live_config=self.live_config)
             server.start()
+            self.mon_rpc_thread.start()
             logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
         except :
             logger.error(traceback.format_exc())
