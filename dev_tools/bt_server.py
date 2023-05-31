@@ -53,7 +53,8 @@ class UDPBankTellerServer:
                        log_config, timeout_basis=0.1):
         from pytest_cov.embed import cleanup_on_sigterm
         cleanup_on_sigterm()
-        import sys
+        import sys, os
+        print(f'Port {port} process is {os.getpid()}', flush=True)
         output_path = Path(working_dir, "server.out")
         sys.stdout = open(output_path, 'w')
         sys.stderr = sys.stdout

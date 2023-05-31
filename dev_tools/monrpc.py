@@ -1,3 +1,4 @@
+import time
 import threading
 import asyncio
 from xmlrpc.server import SimpleXMLRPCServer
@@ -17,22 +18,40 @@ class StateChangeMonitor(StateChangeMonitorAPI):
         raftframe_server.state_map.add_state_change_monitor(self)
         self.state = None
         self.substate = None
-        self.listeners = []
+        self.listeners = {}
 
-    def add_listener(self, listener):
-        self.listeners.append(listener)
+    def add_listener(self, port, listener):
+        self.listeners[port] = listener
         
     async def new_state(self, state_map, old_state, new_state):
         self.state = new_state
-        for listener in self.listeners:
-            listener.new_state(self.raftframe_server.endpoint[1] + PORT_OFFSET, str(old_state), str(new_state))
-
+        broken = []
+        for lport, listener in self.listeners.items():
+            try:
+                listener.new_state(self.raftframe_server.endpoint[1] + PORT_OFFSET,
+                                   str(old_state),
+                                   str(new_state))
+            except Exception as e:
+                print(f"exception on listener for port {lport}, closing")
+                broken.append(lport)
+        for lport in broken:
+            del self.listeners[lport]
+                
     async def new_substate(self, state_map, state, substate):
         if substate == self.substate:
             return
         self.substate = substate
-        for listener in self.listeners:
-            listener.new_substate(self.raftframe_server.endpoint[1] + PORT_OFFSET, str(state), str(substate))
+        broken = []
+        for lport, listener in self.listeners.items():
+            try:
+                listener.new_substate(self.raftframe_server.endpoint[1] + PORT_OFFSET,
+                                      str(state),
+                                      str(substate))
+            except Exception as e:
+                print(f"exception on listener for port {lport}, closing")
+                broken.append(lport)
+        for lport in broken:
+            del self.listeners[lport]
 
     def finish_state_change(self, new_state):
         pass
@@ -73,7 +92,7 @@ class MonRpcThread(threading.Thread):
             @server.register_function(name="add_listener")
             def add_listener(port):
                 client = xmlrpc.client.ServerProxy(f'http://localhost:{port}')
-                self.monitor.add_listener(client)
+                self.monitor.add_listener(port, client)
                 return "ok"
             
             # Run the server's main loop
@@ -91,7 +110,73 @@ class RPCMonitor:
     def stop(self):
         self.thread.stop()
 
+
+class TrackerThread(threading.Thread):
+
+    def __init__(self, port, server_host, server_port):
+        threading.Thread.__init__(self)
+        self.port = port
+        self.server_host = server_host
+        self.server_port = server_port
+        self.server = None
+        self.state = None
+        self.substate = None
+
+    def stop(self):
+        if self.server:
+            self.server.shutdown()
+        
+    def run(self):
+        
+        # Create server
+        with SimpleXMLRPCServer(('localhost', self.port), logRequests=False,
+                                requestHandler=RequestHandler) as server:
+            self.server = server
+            server.register_introspection_functions()
+
+            @server.register_function(name="ping")
+            def ping():
+                print("got ping", flush=True)
+                return "pong"
+
+            @server.register_function(name="new_state")
+            def new_state(server_port, old_state, new_state):
+                self.state = new_state
+                print(f"State of {server_port} changed to {new_state}")
+                return "ok"
+            
+            @server.register_function(name="new_substate")
+            def new_substate(server_port, state, substate):
+                self.substate = substate
+                print(f"Subtate of {server_port} ({state}) changed to {substate}")
+                return "ok"
+            
+            # Run the server's main loop
+            server.serve_forever()
+        self.server = None
+
+
+class ServerTracker:
+
+    def __init__(self, port, server_host='localhost', server_port=5000):
+        self.port = port
+        self.server_host = server_host
+        self.server_port = server_port
+        self.server_rpc_port = server_port + PORT_OFFSET
+        self.thread = TrackerThread(port, server_host, server_port)
+        self.clients = None
+        
+    def start(self):
+        self.thread.start()
+        
+        self.client =  xmlrpc.client.ServerProxy(f'http://{self.server_host}:{self.server_rpc_port}')
+        self.client.add_listener(self.port)
+        
+    def stop(self):
+        self.thread.stop()
+
     
+        
 class ClusterThread(threading.Thread):
 
     def __init__(self, port=8000):
@@ -107,7 +192,7 @@ class ClusterThread(threading.Thread):
     def run(self):
         
         # Create server
-        with SimpleXMLRPCServer(('localhost', self.port),
+        with SimpleXMLRPCServer(('localhost', self.port), logRequests=False,
                                 requestHandler=RequestHandler) as server:
             self.server = server
             server.register_introspection_functions()
@@ -169,20 +254,41 @@ class ClusterMonitor:
     def stop(self):
         self.thread.stop()
 
+
     
 if __name__=="__main__":
-    import time
-    cm = ClusterMonitor(8000)
-    cm.start()
-    print('entering loop')
-    try:
-        while True:
-            time.sleep(1)
-            good_count = cm.ping_all()
-            if good_count == 0:
-                print("no good clients, quitting")
-                break
-    except KeyboardInterrupt:
-        pass
-    finally:
-        cm.stop()
+    def cluster_op():
+        cm = ClusterMonitor(8000)
+        cm.start()
+        print('entering cluster loop')
+        try:
+            while True:
+                time.sleep(1)
+                good_count = cm.ping_all()
+                if good_count == 0:
+                    print("no good clients, quitting")
+                    break
+        except KeyboardInterrupt:
+            pass
+        finally:
+            cm.stop()
+    
+    def server_op(port):
+        print(f'starting tracker for {port}')
+        st = ServerTracker(8010, 'localhost', port)
+        st.start()
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            st.stop()
+            
+    import sys
+    if len(sys.argv) > 1:
+        target = int(sys.argv[1])
+        server_op(target)
+    else:
+        cluster_op()
+        
