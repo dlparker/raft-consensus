@@ -1,6 +1,6 @@
 #
-
 import asyncio
+import os
 from pathlib import Path
 import traceback
 import logging
@@ -26,7 +26,7 @@ from dev_tools.bank_app import BankingApp
 from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor
-from dev_tools.monrpc import MonRpcThread
+from dev_tools.monrpc import RPCMonitor
     
 class PServer:
 
@@ -68,13 +68,13 @@ class PServer:
         self.data_log = MemoryLog()
         self.comms = MemoryComms()
         self.app = BankingApp()
-        self.thread = ServerThread(self)
+        self.start_monitor = start_monitor = os.environ.get("RPC_MONITOR", False)
+        self.thread = ServerThread(self, self.start_monitor)
         self.thread.name = f"{self.port}"
         self.monitor = PauseSupportMonitor(self)
         self.state_map.add_state_change_monitor(self.monitor)
         self.interceptor = Interceptor(self)
         self.comms.set_interceptor(self.interceptor)
-        self.mon_rpc_thread = MonRpcThread(self.port+5000)
 
     def get_raftframe_server(self):
         return self.thread.server
@@ -274,7 +274,6 @@ class PServer:
         self.logger.debug("%s, %s calling server thread go", self.name, self.thread_ident)
         self.thread.go()
         self.logger.debug("%s, %s starting monitor rpc thread", self.name, self.thread_ident)
-        self.mon_rpc_thread.start()
 
     def configure(self):
         self.thread.configure()
@@ -282,7 +281,6 @@ class PServer:
         
     def stop(self):
         self.thread.stop()
-        self.mon_rpc_thread.stop()
         self.thread.keep_running = False
         self.logger.debug("%s, %s stopped", self.name, self.thread_ident)
 
@@ -365,7 +363,7 @@ class PServer:
             
 class ServerThread(threading.Thread):
 
-    def __init__(self, pserver):
+    def __init__(self, pserver, start_monitor=False):
         threading.Thread.__init__(self)
         self.pserver = pserver
         self.host = "localhost"
@@ -374,6 +372,7 @@ class ServerThread(threading.Thread):
         self.running = False
         self.server = None
         self.logger = logging.getLogger(__name__)
+        self.rpc_monitor = start_monitor
 
     async def pause_timers(self):
         await get_timer_set().pause_all()
@@ -390,6 +389,9 @@ class ServerThread(threading.Thread):
                 time.sleep(0.001)
         if self.server is None:
             self.configure()
+        if self.rpc_monitor:
+            self.rpc_monitor = RPCMonitor(self.server, self.pserver.port+5000)
+            self.rpc_monitor.start()
         self.logger.info("memory comms bank teller server starting")
         try:
             loop = asyncio.get_running_loop()
@@ -463,6 +465,8 @@ class ServerThread(threading.Thread):
 
     def stop(self):
         self.keep_running = False
+        if self.rpc_monitor:
+            self.rpc_monitor.stop()
         start_time = time.time()
         while self.running and time.time() - start_time < 1000:
             time.sleep(0.001)

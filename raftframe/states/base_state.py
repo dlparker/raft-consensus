@@ -43,8 +43,11 @@ class Substate(str, Enum):
     """ Follower, leader log is different than ours """
     out_of_sync = "OUT_OF_SYNC"
 
+    """ Last call from leader synced new records """
+    synced_prepare = "SYNCED_PREPARE"
+
     """ Last call from leader synced commit, no new records """
-    syncing_commit = "SYNCING_COMMIT"
+    synced_commit = "SYNCED_COMMIT"
 
     """ Candidate starting election """
     start_election = "start_election"

@@ -20,7 +20,7 @@ from dev_tools.bank_app import BankingApp
 from dev_tools.timer_wrapper import ControlledTimer, get_timer_set
 from dev_tools.memory_log import MemoryLog
 from dev_tools.memory_comms import MemoryComms, MessageInterceptor
-from dev_tools.monrpc import MonRpcThread
+from dev_tools.monrpc import RPCMonitor
 
 manager = multiprocessing.Manager()
 csns = manager.Namespace()
@@ -60,6 +60,7 @@ class UDPBankTellerServer:
         import os
         os.chdir(working_dir)
         logging.getLogger().handlers = []
+        start_monitor = os.environ.get("RPC_MONITOR", False)
         if log_config:
             from pprint import pprint
             try:
@@ -70,7 +71,7 @@ class UDPBankTellerServer:
                 raise
         try:
             instance = cls(port, working_dir, name, others,
-                           timeout_basis)
+                           timeout_basis, start_monitor)
             instance.start()
         except Exception as e:
             traceback.print_exc()
@@ -78,7 +79,7 @@ class UDPBankTellerServer:
         return instance
 
     def __init__(self, port, working_dir, name, others,
-                 timeout_basis):
+                 timeout_basis, start_monitor=False):
         self.host = "localhost"
         self.port = port
         self.name = name
@@ -86,7 +87,7 @@ class UDPBankTellerServer:
         self.others = others
         self.timeout_basis = timeout_basis
         self.running = False
-        self.mon_rpc_thread = MonRpcThread(port+5000)
+        self.rpc_monitor = start_monitor
         
     async def _run(self):
         try:
@@ -112,7 +113,9 @@ class UDPBankTellerServer:
                                           log_serializer=JsonSerializer())
             server = Server(live_config=self.live_config)
             server.start()
-            self.mon_rpc_thread.start()
+            if self.rpc_monitor:
+                self.rpc_monitor = RPCMonitor(server, self.port+5000)
+                self.rpc_monitor.start()
             logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
         except :
             logger.error(traceback.format_exc())

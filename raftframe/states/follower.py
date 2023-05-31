@@ -292,6 +292,7 @@ class Follower(State):
 
         await self.server.post_message(reply)
         self.logger.debug("Sent log commit ack\nresponse %s", data)
+        await self.set_substate(Substate.synced_commit)
         return True
     
     async def do_good_append(self, message):
@@ -331,6 +332,7 @@ class Follower(State):
         self.logger.debug("Sent log update ack, local last rec = %d," \
                           " commit = %d \nresponse %s",
                           last_entry_index, last_commit, data)
+        await self.set_substate(Substate.synced_prepare)
         return True
     
     async def on_vote_request(self, message):

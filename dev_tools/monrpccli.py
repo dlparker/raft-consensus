@@ -6,4 +6,6 @@ with xmlrpc.client.ServerProxy(f'http://localhost:{port}') as s:
     # Print list of available methods
     print(s.system.listMethods())
     print(s.ping())  
+    print(s.get_state())  
+    print(s.get_substate())  
 
