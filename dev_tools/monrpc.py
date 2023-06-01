@@ -113,7 +113,8 @@ class RPCMonitor:
 
 class TrackerThread(threading.Thread):
 
-    def __init__(self, port, server_host, server_port):
+    def __init__(self, tracker, port, server_host, server_port):
+        self.tracker = tracker
         threading.Thread.__init__(self)
         self.port = port
         self.server_host = server_host
@@ -125,7 +126,7 @@ class TrackerThread(threading.Thread):
     def stop(self):
         if self.server:
             self.server.shutdown()
-        
+
     def run(self):
         
         # Create server
@@ -136,21 +137,25 @@ class TrackerThread(threading.Thread):
 
             @server.register_function(name="ping")
             def ping():
-                print("got ping", flush=True)
+                if self.action_callback:
+                    self.tracker.event_callback("ping", {})
                 return "pong"
 
             @server.register_function(name="new_state")
             def new_state(server_port, old_state, new_state):
                 self.state = new_state
-                print(f"State of {server_port} changed to {new_state}")
+                self.tracker.event_callback("new_state", dict(server_port=server_port,
+                                                              old_state=old_state,
+                                                              new_state=new_state))
                 return "ok"
             
             @server.register_function(name="new_substate")
             def new_substate(server_port, state, substate):
                 self.substate = substate
-                print(f"Subtate of {server_port} ({state}) changed to {substate}")
+                self.tracker.event_callback("new_substate", dict(server_port=server_port,
+                                                                 state=state,
+                                                                 substate=substate))
                 return "ok"
-            
             # Run the server's main loop
             server.serve_forever()
         self.server = None
@@ -163,12 +168,21 @@ class ServerTracker:
         self.server_host = server_host
         self.server_port = server_port
         self.server_rpc_port = server_port + PORT_OFFSET
-        self.thread = TrackerThread(port, server_host, server_port)
+        self.thread = TrackerThread(self, port, server_host, server_port)
         self.clients = None
-        
+        self.events = []
+
+    def event_callback(self, event, data):
+        # called from non-main thread, so beware side effects
+        self.events.append(dict(event=event, data=data))
+
+    def pop_event(self):
+        if len(self.events) > 0:
+            return self.events.pop(0)
+        return None
+    
     def start(self):
         self.thread.start()
-        
         self.client =  xmlrpc.client.ServerProxy(f'http://{self.server_host}:{self.server_rpc_port}')
         self.client.add_listener(self.port)
         
@@ -277,9 +291,20 @@ if __name__=="__main__":
         print(f'starting tracker for {port}')
         st = ServerTracker(8010, 'localhost', port)
         st.start()
+        
         try:
             while True:
-                time.sleep(1)
+                event = st.pop_event()
+                if event is None:
+                    time.sleep(1)
+                elif event['event'] == "ping":
+                    print("got ping", flush=True)
+                elif event['event'] == "new_state":
+                    edata = event['data']
+                    print(f"State of {edata['server_port']} changed to {edata['new_state']}")
+                elif event['event'] == "new_substate":
+                    edata = event['data']
+                    print(f"Subtate of {edata['server_port']} ({edata['state']}) changed to {edata['substate']}")
         except KeyboardInterrupt:
             pass
         finally:
