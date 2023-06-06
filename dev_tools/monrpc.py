@@ -184,6 +184,7 @@ class ServerTracker:
     def start(self):
         self.thread.start()
         self.client =  xmlrpc.client.ServerProxy(f'http://{self.server_host}:{self.server_rpc_port}')
+        #print(f"connected from {self.port} to {self.server_rpc_port}")
         self.client.add_listener(self.port)
         
     def stop(self):
@@ -198,6 +199,7 @@ class ClusterThread(threading.Thread):
         self.port = port
         self.server = None
         self.servers = {}
+        self.start_time = time.time()
 
     def stop(self):
         if self.server:
@@ -223,7 +225,8 @@ class ClusterThread(threading.Thread):
                 else:
                     self.servers[str(server_port)]['state'] = new_state
 
-                print(f"State of {server_port} changed to {new_state}")
+                t = time.time() - self.start_time
+                print(f"{t():12.9f} State of {server_port} changed to {new_state}")
                 return "ok"
             
             @server.register_function(name="new_substate")
@@ -232,7 +235,8 @@ class ClusterThread(threading.Thread):
                     self.servers[str(server_port)] = dict(state=state, substate=substate)
                 else:
                     self.servers[str(server_port)]['substate'] = substate
-                print(f"Subtate of {server_port} ({state}) changed to {substate}")
+                t = time.time() - self.start_time
+                print(f"{t:12.9f} Subtate of {server_port} ({state}) changed to {substate}")
                 return "ok"
             
             # Run the server's main loop
@@ -261,6 +265,7 @@ class ClusterMonitor:
     def start(self):
         self.thread.start()
         for member in self.members:
+            print(member)
             client =  xmlrpc.client.ServerProxy(f'http://localhost:{member}')
             self.clients[member] = client
             client.add_listener(self.port)
