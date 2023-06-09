@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 
 from raftframe.comms.xmlrpc import XMLRPCComms
+#from raftframe.serializers.json import JsonSerializer as Serializer
 from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
 from raftframe.messages.status import StatusQueryMessage, StatusQueryResponseMessage
 

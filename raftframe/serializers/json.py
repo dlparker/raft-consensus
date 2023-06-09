@@ -14,7 +14,13 @@ class JsonSerializer:
 
     @staticmethod
     def deserialize_dict(data: Union[bytes, str]) -> dict:
-        return json.loads(data.decode('utf-8'))
+        if isinstance(data, bytes):
+            tmpdata = data.decode('utf-8')
+        elif isinstance(data, str):
+            tmpdata = data
+        else:
+            raise Exception(f'data is {type(data)}')
+        return json.loads(tmpdata)
 
     @staticmethod
     def serialize_message(message: BaseMessage) -> Union[bytes, str]:
@@ -31,7 +37,13 @@ class JsonSerializer:
 
     @staticmethod
     def deserialize_message(data: Union[bytes, str]) -> BaseMessage:
-        message = json.loads(data.decode('utf-8'))
+        if isinstance(data, bytes):
+            tmpdata = data.decode('utf-8')
+        elif isinstance(data, str):
+            tmpdata = data
+        else:
+            raise Exception(f'data is {type(data)}')
+        message = json.loads(tmpdata)
         mcode = message['code']
         regy = get_message_registry()
         cls =  regy.get_message_class(mcode)
@@ -53,7 +65,13 @@ class JsonSerializer:
         
     @staticmethod
     def deserialize_logrec(data: Union[bytes, str]) -> LogRec:
-        rec_data = json.loads(data.decode('utf-8'))
+        if isinstance(data, bytes):
+            tmpdata = data.decode('utf-8')
+        elif isinstance(data, str):
+            tmpdata = data
+        else:
+            raise Exception(f'data is {type(data)}')
+        rec_data = json.loads(tmpdata)
         return LogRec.from_dict(rec_data)
     
 

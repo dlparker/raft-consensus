@@ -97,7 +97,13 @@ class XMLRPCComms(CommsAPI):
                 self.logger.error("cannot get queue data")
                 continue
             try:
-                message = self.serializer.deserialize_message(data)
+                if isinstance(data, xmlrpc.client.Binary):
+                    tmpdata = data.data
+                elif isinstance(data, str):
+                    tmpdata = data
+                else:
+                    raise Exception(f'data is {type(data)}')
+                message = self.serializer.deserialize_message(tmpdata)
                 #self.logger.debug('reader task got message %s', message)
             except Exception as e:  # pragma: no cover error
                 self.logger.error(traceback.format_exc())
@@ -126,7 +132,7 @@ class ClientThread(threading.Thread):
         host, port = endpoint
         url = f'http://{host}:{port}'
         self.logger.debug("new client url %s", url)
-        client = xmlrpc.client.ServerProxy(url, use_builtin_types=True)
+        client = xmlrpc.client.ServerProxy(url)
         self.clients[endpoint] = client
         
     def stop(self):
@@ -189,8 +195,7 @@ class ServerThread(threading.Thread):
         
         # Create server
         try:
-            with SimpleXMLRPCServer((self.host, self.port), logRequests=False,
-                                    use_builtin_types=True) as server:
+            with SimpleXMLRPCServer((self.host, self.port), logRequests=False) as server:
                 self.server = server
                 self.logger.info('XMLRPC server on %s %s', self.host, self.port)
                 server.register_introspection_functions()
