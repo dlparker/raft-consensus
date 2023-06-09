@@ -11,6 +11,8 @@ class CommsAPI(metaclass=abc.ABCMeta):
         
         return (hasattr(subclass, 'start') and 
                 callable(subclass.start) and
+                hasattr(subclass, 'stop') and 
+                callable(subclass.stop) and
                 hasattr(subclass, 'post_message') and 
                 callable(subclass.post_message) or
                 NotImplemented)
@@ -20,9 +22,12 @@ class CommsAPI(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
+    async def stop(self): # pragma: no cover abstract
+        raise NotImplementedError
+    
+    @abc.abstractmethod
     async def post_message(self, message): # pragma: no cover abstract
         raise NotImplementedError
-
 
     @abc.abstractmethod
     def are_out_queues_empty(self):
