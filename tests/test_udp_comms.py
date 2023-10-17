@@ -72,8 +72,8 @@ class TestBasic(unittest.TestCase):
         server_2 = FakeServer()
 
         async def do_seq1():
-            await end_1.start(server_1, ("localhost", 5000))
-            await end_2.start(server_2, ("localhost", 5001))
+            await end_1.start(server_1.on_message, ("localhost", 5000))
+            await end_2.start(server_2.on_message, ("localhost", 5001))
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
             await end_1.post_message(msg1)

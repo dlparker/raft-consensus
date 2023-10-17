@@ -2,8 +2,14 @@ import abc
 import asyncio
 import logging
 import traceback
+from dataclasses import dataclass, field
 
+@dataclass
+class Endpoint:
+    protocol: str
+    details: dict = field(default={})
 
+    
 class CommsAPI(metaclass=abc.ABCMeta):
 
     @classmethod
@@ -18,15 +24,27 @@ class CommsAPI(metaclass=abc.ABCMeta):
                 NotImplemented)
 
     @abc.abstractmethod
-    async def start(self, server, endpoint): # pragma: no cover abstract
+    async def start(self, msg_callback, endpoint: Endpoint): # pragma: no cover abstract
         raise NotImplementedError
 
+    @abc.abstractmethod
+    async def get_endpoint(self) -> Endpoint:
+        raise NotImplementedError
+    
+    @abc.abstractmethod
+    async def get_endpoint_string(self) -> str:
+        raise NotImplementedError
+    
     @abc.abstractmethod
     async def stop(self): # pragma: no cover abstract
         raise NotImplementedError
     
     @abc.abstractmethod
     async def post_message(self, message): # pragma: no cover abstract
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    async def get_message(self): # pragma: no cover abstract
         raise NotImplementedError
 
     @abc.abstractmethod

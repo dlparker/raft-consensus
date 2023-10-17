@@ -109,6 +109,11 @@ class MemoryComms(CommsAPI):
             self.task.cancel()
             await asyncio.sleep(0)
 
+    async def msg_listener(self):
+        while self.transport:
+            msg = await self.get_message()
+            await self.msg_callback(msg)
+            
     def pause_new_messages(self):
         self.pause_new = True
 

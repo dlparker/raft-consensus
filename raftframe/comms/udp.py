@@ -22,14 +22,15 @@ class UDPComms(CommsAPI):
     
     started = False
 
-    async def start(self, server, endpoint):
+    async def start(self, msg_callback, endpoint):
         if self.started:   # pragma: no cover error
             raise Exception("can call start only once")
         self.logger = logging.getLogger(__name__)
-        self.server = server
+        self.msg_callback = msg_callback
         self.endpoint = endpoint
         self.transport = None
-        self.queue = asyncio.Queue()
+        self.out_queue = asyncio.Queue()
+        self.in_queue = asyncio.Queue()
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.sock.bind(self.endpoint)
         self.protocol = None
@@ -39,8 +40,9 @@ class UDPComms(CommsAPI):
 
     async def _start(self):
         self.protocol = UDP_Protocol(
-            queue=self.queue,
-            message_handler=self.on_message,
+            out_queue=self.out_queue,
+            in_queue=self.in_queue,
+            message_handler=self.on_udp_message,
             logger = self.logger,
             server=self
         )
@@ -53,10 +55,15 @@ class UDPComms(CommsAPI):
             self.logger.error(traceback.format_exc())
             raise
 
+    async def msg_listener(self):
+        while self.transport:
+            msg = await self.get_message()
+            await self.msg_callback(msg)
+            
     async def stop(self):
         if self.transport:
             self.transport.close()
-            await self.queue.put("diediedie!")
+            await self.out_queue.put("diediedie!")
             start_time = time.time()
             while self.protocol.running and time.time() - start_time < 1:
                 await asyncio.sleep(0.001)
@@ -66,7 +73,7 @@ class UDPComms(CommsAPI):
             self.protocol = None
             
     def are_out_queues_empty(self):
-        if self.queue.empty():
+        if self.out_queue.empty():
             return True
         return False
     
@@ -77,9 +84,12 @@ class UDPComms(CommsAPI):
         if not isinstance(message, dict):
             self.logger.debug("posting %s to %s",
                               message, message.receiver)
-        await self.queue.put(message)
+        await self.out_queue.put(message)
 
-    async def on_message(self, data, addr):
+    async def get_message(self):
+        return await self.in_queue.get()
+    
+    async def on_udp_message(self, data, addr):
         try:
             try:
                 message = Serializer.deserialize_message(data)
@@ -91,7 +101,8 @@ class UDPComms(CommsAPI):
             # ensure addresses are tuples
             message._receiver = message.receiver[0], message.receiver[1]
             message._sender = message.sender[0], message.sender[1]
-            await self.server.on_message(message)
+            #await self.server.on_message(message)
+            await self.in_queue.put(message)
         except Exception as e: # pragma: no cover error
             self.logger.error(traceback.format_exc())
             
@@ -99,11 +110,13 @@ class UDPComms(CommsAPI):
 # async class to send messages between server
 class UDP_Protocol(asyncio.DatagramProtocol):
 
-    def __init__(self, queue, message_handler, logger, server):
-        self.queue = queue
+    def __init__(self, out_queue, in_queue, message_handler, logger, server):
+        self.out_queue = out_queue
+        self.in_queue = in_queue
         self.message_handler = message_handler
         self.server = server
         self.logger = logger
+        self.listener_task  = None
         self.running = False
         self.logger.info('UDP_protocol created')
         self.out_of_order = defaultdict(dict)
@@ -115,11 +128,15 @@ class UDP_Protocol(asyncio.DatagramProtocol):
 
     async def start(self):
         self.running = True
+        self.listener_task = task_logger.create_task(self.server.msg_listener(),
+                                                     logger=self.logger,
+                                                     message="starting message listener")
         self.logger.info('UDP_protocol started')
         while not self.transport.is_closing():
             try:
-                message = await self.queue.get()
+                message = await self.out_queue.get()
                 if message == "diediedie!":
+                    self.listener_task.cancel()
                     break
             except RuntimeError: # pragma: no cover error
                 self.logger.info("Runtime error on queue get,"\

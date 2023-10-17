@@ -1,0 +1,17 @@
+
+Change CommsAPI to have a get_message async call, change server to call it as a task.
+Change COMMS init to happen in app init instead of server create.
+Change bank teller app to accept a comms in init
+Change dev_tools/bt_server.py to init comms and pass to app init.
+Change app:
+   1. Make our own log mechanism for account records
+   2. Add client comms call to do account op, make an API from commsAPI and get dev_tools version to implement
+   3. Call leader function to start a logged change, include our account log record id in raft log record
+   4. Leader returns an appendEntry message, app sends it along with actual log record in app specific message
+   5. App waits for leader to return status of appendEntry sequence
+   6. Accept follower function call to persist appendEntry data
+   7. App (leader) gets append entry result from raft leader code
+   8. Respond to client with result
+      a. new record report if good (raft log has a commit mark now, so you don't need an app specific one)
+      b. new leader id if leadership changed
+      c. error otherwise

@@ -70,8 +70,8 @@ class TestBasic(unittest.TestCase):
         server_2 = FakeServer()
 
         async def do_seq1():
-            await end_1.start(server_1, (0, 0))
-            await end_2.start(server_2, (0, 1))
+            await end_1.start(server_1.on_message, (0, 0))
+            await end_2.start(server_2.on_message, (0, 1))
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
             await end_1.post_message(msg1)
@@ -123,11 +123,11 @@ class TestBasic(unittest.TestCase):
 
         async def do_seq2():
             # post a message before starting end_2
-            await end_1.start(server_1, (0, 0))
+            await end_1.start(server_1.on_message, (0, 0))
             msg1 = StatusQueryMessage(end_1.endpoint, (0, 1),
                                       term=0, data=dict(foo="bar"))
             task = asyncio.create_task(end_1.post_message(msg1))
-            await end_2.start(server_2, (0, 1))
+            await end_2.start(server_2.on_message, (0, 1))
 
             start_time = time.time()
             while time.time() - start_time < 0.1:
@@ -339,8 +339,8 @@ class TestDebugControls(unittest.TestCase):
         end_2.set_interceptor(inter2)
         
         async def do_seq1():
-            await end_1.start(server_1, (0, 0))
-            await end_2.start(server_2, (0, 1))
+            await end_1.start(server_1.on_message, (0, 0))
+            await end_2.start(server_2.on_message, (0, 1))
             msg1 = StatusQueryMessage(end_1.endpoint, end_2.endpoint,
                                       term=0, data=dict(foo="bar"))
             asyncio.create_task(end_1.post_message(msg1))

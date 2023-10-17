@@ -17,7 +17,6 @@ class AppAPI(metaclass=abc.ABCMeta):
     async def execute_command(self, command) -> CommandResult:
         raise NotImplementedError
 
-
     @abc.abstractmethod
     def exit_on_unrecoverable_error(self, error_data) -> None:
         raise NotImplementedError
