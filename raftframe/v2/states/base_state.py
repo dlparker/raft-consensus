@@ -1,9 +1,8 @@
 import logging
+from enum import Enum
 from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 from raftframe.messages.request_vote import RequestVoteMessage, RequestVoteResponseMessage
-from raftframe.v2.states.context import RaftContext
 
-from enum import Enum
 class StateCode(str, Enum):
 
     """ A startup phase that allows app code to do things before 
@@ -65,11 +64,11 @@ class Substate(str, Enum):
 
 class BaseState:
     
-    def __init__(self, chute, state_code):
-        self.chute = chute
+    def __init__(self, hull, state_code):
+        self.hull = hull
         self.state_code = state_code
         self.substate = Substate.starting
-        self.log = chute.get_log()
+        self.log = hull.get_log()
         self.routes = dict()
         code = AppendEntriesMessage.get_code()
         route = self.append_entries
@@ -77,6 +76,10 @@ class BaseState:
         code = AppendResponseMessage.get_code()
         route = self.append_entries_response
         self.routes[code] = route
+        code = RequestVoteMessage.get_code()
+        route = self.request_vote
+        cod = RequestVoteResponseMessage.get_code()
+        route = self.request_vote_response
 
     async def on_message(self, message):
         logger = logging.getLogger(__name__)
@@ -85,11 +88,16 @@ class BaseState:
             return await route(message)
 
     async def append_entries(self, message):
-        print('in append_entries')
-        return RaftContext()
+        raise Exception(f'append_entries not implemented in the class "{self.__class__.__name__}"')
 
     async def append_entries_response(self, message):
-        print('in append_entries_respose')
+        raise Exception(f'append_entries_response not implemented in the class "{self.__class__.__name__}"')
 
+    async def request_vote(self, message):
+        raise Exception(f'request_vote not implemented in the class "{self.__class__.__name__}"')
+
+    async def request_vote_response(self, message):
+        raise Exception(f'request_vote_response not implemented in the class "{self.__class__.__name__}"')
+    
 
 
