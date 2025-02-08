@@ -28,6 +28,7 @@ class XMLRPCComms(CommsAPI):
         self.serializer = None
         self.out_queue = queue.Queue()
         self.in_queue = asyncio.Queue()
+        self.reply_queue = asyncio.Queue()
         self.thread = None
         self.reader_task = None
         self.keep_running = False
@@ -163,7 +164,7 @@ class ClientThread(threading.Thread):
                 #self.logger.debug('client thread serializing %s', msg)
                 data = self.serializer.serialize_message(msg)
                 #self.logger.debug('client thread serializing %s', data)
-                client.new_msg(data)
+                client.raft_msg(data)
             except Exception as e:
                 self.logger.error("broken client connection to endpoint %s", endpoint)
                 self.logger.error(traceback.format_exc())
@@ -200,8 +201,8 @@ class ServerThread(threading.Thread):
                 self.logger.info('XMLRPC server on %s %s', self.host, self.port)
                 server.register_introspection_functions()
                 
-                @server.register_function(name="new_msg")
-                def new_msg(data):
+                @server.register_function(name="raft_msg")
+                def raft_msg(data):
                     try:
                         loop = asyncio.get_running_loop()
                     except RuntimeError:

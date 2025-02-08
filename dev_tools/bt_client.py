@@ -2,6 +2,7 @@ import sys
 import socket
 import time
 import asyncio
+import xmlrpc.client
 from raftframe.messages.status import StatusQueryMessage
 from raftframe.messages.command import ClientCommandMessage
 from raftframe.serializers.msgpack import MsgpackSerializer as Serializer
@@ -25,6 +26,61 @@ class UDPBankTellerClient:
         self.addr = (self.host, self.port)
         self.server_addr = server_host, server_port
 
+    def __str__(self):
+        return f"client_for_{self.port}"
+    
+    def get_result(self):
+        try:
+            data = self.sock.recv(1024)
+        except OSError:
+            raise RuntimeError("message reply timeout")
+        result = Serializer.deserialize_message(data)
+        if result.is_type("command_result"):
+            return result.data
+        return result
+
+    def get_status(self):
+        sqm = StatusQueryMessage(self.addr, self.server_addr, None, None)
+        data = Serializer.serialize_message(sqm)
+        self.sock.sendto(data, self.server_addr)
+        return self.get_result()
+        
+    def do_query(self):
+        qm = ClientCommandMessage(self.addr, self.server_addr,
+                                  None, "query")
+        data = Serializer.serialize_message(qm)
+        self.sock.sendto(data, self.server_addr)
+        return self.get_result()
+
+    def do_log_stats(self):
+        qm = ClientCommandMessage(self.addr, self.server_addr,
+                                  None, "log_stats")
+        data = Serializer.serialize_message(qm)
+        self.sock.sendto(data, self.server_addr)
+        return self.get_result()
+
+    def do_credit(self, amount):
+        cm = ClientCommandMessage(self.addr, self.server_addr,
+                                  None, f"credit {amount}")
+        data = Serializer.serialize_message(cm)
+        self.sock.sendto(data, self.server_addr)
+        return self.get_result()
+
+    def do_debit(self, amount):
+        dm = ClientCommandMessage(self.addr, self.server_addr,
+                                  None, f"debit {amount}")
+        data = Serializer.serialize_message(dm)
+        self.sock.sendto(data, self.server_addr)
+        return self.get_result()
+        
+class XMLRPCBankTellerClient:
+    
+    def __init__(self, server_host, server_port):
+        self.proxy = xmlrpc.client.ServerProxy(f'http://{server_host}:{server_port}')
+        self.host = get_internal_ip()
+        self.addr = (self.host, self.port)
+        self.server_addr = server_host, server_port
+        
     def __str__(self):
         return f"client_for_{self.port}"
     

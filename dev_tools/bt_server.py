@@ -11,6 +11,7 @@ import raftframe
 from raftframe.servers.server_config import LiveConfig, ClusterConfig, LocalConfig
 from raftframe.servers.server import Server
 from raftframe.comms.udp import UDPComms
+from raftframe.comms.xmlrpc import XMLRPCComms
 from raftframe.states.state_map import StateMap
 from raftframe.app_api.app import StateChangeMonitorAPI
 from raftframe.states.follower import Follower
@@ -45,8 +46,116 @@ class MPStateMap(StateMap):
         csns.status[self.bt_server_name]['state_type'] = str(state)
         csns.status[self.bt_server_name]['substate'] = substate
     
+class MPBaseBankTellerServer:
+
+    @classmethod
+    def make_and_start(cls, port, working_dir, name, others,
+                       log_config, timeout_basis=0.1, comms_class=None):
+        from pytest_cov.embed import cleanup_on_sigterm
+        cleanup_on_sigterm()
+        import sys, os
+        print(f'Port {port} process is {os.getpid()}', flush=True)
+        output_path = Path(working_dir, "server.out")
+        sys.stdout = open(output_path, 'w')
+        sys.stderr = sys.stdout
+        import os
+        os.chdir(working_dir)
+        logging.getLogger().handlers = []
+        start_monitor = os.environ.get("RPC_MONITOR", False)
+        if log_config:
+            from pprint import pprint
+            try:
+                dictConfig(log_config)
+                #pprint(log_config)
+            except:
+                pprint(log_config)
+                raise
+        try:
+            instance = cls(port, working_dir, name, others,
+                           comms_class, timeout_basis, start_monitor)
+            instance.start()
+        except Exception as e:
+            traceback.print_exc()
+            raise
+        return instance
+
+    def __init__(self, port, working_dir, name, others,
+                 comms_class, timeout_basis, start_monitor=False):
+        self.host = "localhost"
+        self.port = port
+        self.name = name
+        self.working_dir = working_dir
+        self.others = others
+        self.timeout_basis = timeout_basis
+        self.running = False
+        self.rpc_monitor = start_monitor
+        self.comms_class = comms_class
+        
+    async def _run(self):
+        try:
+            logger = logging.getLogger(__name__)
+            logger.info("bank teller server starting")
+            state_map = MPStateMap(bt_server_name=self.name,
+                                   timeout_basis=self.timeout_basis)
+            data_log = MemoryLog()
+            loop = asyncio.get_running_loop()
+            logger.info('creating server')
+            endpoint = (self.host, self.port)
+            app = BankingApp()
+            cc = ClusterConfig(name=f"{endpoint}",
+                          endpoint=endpoint,
+                          other_nodes=self.others)
+            local_config = LocalConfig(working_dir=self.working_dir)
+            self.live_config = LiveConfig(cluster=cc,
+                                          local=local_config,
+                                          app=app, log=data_log,
+                                          comms=self.comms_class(),
+                                          state_map=state_map,
+                                          comms_serializer=MsgpackSerializer(),
+                                          log_serializer=JsonSerializer())
+            server = Server(live_config=self.live_config)
+            server.start()
+            if self.rpc_monitor:
+                self.rpc_monitor = RPCMonitor(server, self.port+5000)
+                self.rpc_monitor.start()
+            logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
+        except :
+            logger.error(traceback.format_exc())
+
+    def start(self):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.run_until_complete(self._run())
+        try:
+            # run_forever() returns after calling loop.stop()
+            loop.run_forever()
+            tasks = asyncio.all_tasks()
+            for t in [t for t in tasks if not (t.done() or t.cancelled())]:
+                # give canceled tasks the last chance to run
+                loop.run_until_complete(t)
+        finally:
+            loop.close()        
+            self.running = False
+
     
-class UDPBankTellerServer:
+class UDPBankTellerServer(MPBaseBankTellerServer):
+
+    @classmethod
+    def make_and_start(cls, *args, **kwargs):
+        kwargs['comms_class'] = UDPComms
+        super(UDPBankTellerServer, cls).make_and_start(*args, **kwargs)
+
+class XMLRPCBankTellerServer(MPBaseBankTellerServer):
+
+    @classmethod
+    def make_and_start(cls, *args, **kwargs):
+        kwargs['comms_class'] = XMLRPCComms
+        super(UDPBankTellerServer, cls).make_and_start(*args, **kwargs)
+
+class XMLRPCBankTellerServer(MPBaseBankTellerServer):
 
     @classmethod
     def make_and_start(cls, port, working_dir, name, others,
@@ -79,67 +188,11 @@ class UDPBankTellerServer:
             raise
         return instance
 
-    def __init__(self, port, working_dir, name, others,
-                 timeout_basis, start_monitor=False):
-        self.host = "localhost"
-        self.port = port
-        self.name = name
-        self.working_dir = working_dir
-        self.others = others
-        self.timeout_basis = timeout_basis
-        self.running = False
-        self.rpc_monitor = start_monitor
-        
-    async def _run(self):
-        try:
-            logger = logging.getLogger(__name__)
-            logger.info("bank teller server starting")
-            state_map = MPStateMap(bt_server_name=self.name,
-                                           timeout_basis=self.timeout_basis)
-            data_log = MemoryLog()
-            loop = asyncio.get_running_loop()
-            logger.info('creating server')
-            endpoint = (self.host, self.port)
-            app = BankingApp()
-            cc = ClusterConfig(name=f"{endpoint}",
-                          endpoint=endpoint,
-                          other_nodes=self.others)
-            local_config = LocalConfig(working_dir=self.working_dir)
-            self.live_config = LiveConfig(cluster=cc,
-                                          local=local_config,
-                                          app=app, log=data_log,
-                                          comms=UDPComms(),
-                                          state_map=state_map,
-                                          comms_serializer=MsgpackSerializer(),
-                                          log_serializer=JsonSerializer())
-            server = Server(live_config=self.live_config)
-            server.start()
-            if self.rpc_monitor:
-                self.rpc_monitor = RPCMonitor(server, self.port+5000)
-                self.rpc_monitor.start()
-            logger.info(f"{self.name} started server on endpoint {(self.host, self.port)} with others at {self.others}")
-        except :
-            logger.error(traceback.format_exc())
+    def __init__(self, *args, **kwargs):
+        kwargs['comms_class'] = XMLRPCComms
+        super().__init__(*args, **kwargs)
 
-    def start(self):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.run_until_complete(self._run())
-        try:
-            # run_forever() returns after calling loop.stop()
-            loop.run_forever()
-            tasks = asyncio.all_tasks()
-            for t in [t for t in tasks if not (t.done() or t.cancelled())]:
-                # give canceled tasks the last chance to run
-                loop.run_until_complete(t)
-        finally:
-            loop.close()        
-            self.running = False
 
-        
         
 class MemoryBankTellerServer:
 

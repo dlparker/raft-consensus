@@ -4,6 +4,7 @@
 import os
 import time
 from dev_tools.udp_cluster import UDPServerCluster
+from dev_tools.udp_cluster import UDPServerCluster
 
 LOGGING_TYPE=os.environ.get("TEST_LOGGING", None)
 if LOGGING_TYPE is not None:
