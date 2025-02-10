@@ -136,7 +136,6 @@ class Records:
         cursor.execute(sql, [1, self.max_index, self.term, self.max_commit])
         self.db.commit()
         cursor.close()
-        
     
     def get_entry_at(self, index):
         if index < 1:
@@ -151,7 +150,6 @@ class Records:
     def insert_entry(self, rec: LogRec) -> LogRec:
         rec = self.save_entry(rec)
         return rec
-
     
 class SqliteLog(LogAPI):
 
@@ -162,6 +160,8 @@ class SqliteLog(LogAPI):
 
     def start(self, working_directory):
         self.working_directory = working_directory
+        # this indirection helps deal with the need to restrict
+        # access to a single thread
         self.records = Records(self.working_directory)
         
     def close(self):

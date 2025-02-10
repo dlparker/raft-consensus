@@ -11,6 +11,7 @@ class Leader(BaseState):
         self.pending_commit = dict()
 
     async def start(self):
+        await super().start()
         await self.send_entries()
 
     async def send_entries(self):
@@ -30,7 +31,7 @@ class Leader(BaseState):
             await self.hull.send_message(message)
         self.pending_commit[self.log.get_commit_index()] = tracker
         
-    async def append_entries_response(self, message):
+    async def on_append_entries_response(self, message):
         tracker = self.pending_commit.get(message.prevLogIndex, None)
         if tracker is None:
             return
@@ -46,6 +47,11 @@ class Leader(BaseState):
                              message.prevLogIndex)
             del self.pending_commit[message.prevLogIndex]
         
+    async def term_expired(self, message):
+        self.log.set_term(message.term)
+        await self.hull.demote_and_handle(message)
+        # don't reprocess message
+        return None
 
 
 

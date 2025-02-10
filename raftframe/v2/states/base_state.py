@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from enum import Enum
 from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
@@ -62,6 +63,7 @@ class Substate(str, Enum):
     sent_commit = "SENT_COMMIT"
 
 
+
 class BaseState:
     
     def __init__(self, hull, state_code):
@@ -70,12 +72,18 @@ class BaseState:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.substate = Substate.starting
         self.log = hull.get_log()
+        self.stopped = False
+        self.async_handle = None
+        self.routes = None
+        self.build_routes()
+
+    def build_routes(self):
         self.routes = dict()
         code = AppendEntriesMessage.get_code()
-        route = self.append_entries
+        route = self.on_append_entries
         self.routes[code] = route
         code = AppendResponseMessage.get_code()
-        route = self.append_entries_response
+        route = self.on_append_entries_response
         self.routes[code] = route
         code = RequestVoteMessage.get_code()
         route = self.on_vote_request
@@ -83,21 +91,49 @@ class BaseState:
         code = RequestVoteResponseMessage.get_code()
         route = self.on_vote_response
         self.routes[code] = route
-
+        
     async def start(self):
-        pass
+        # child classes not required to have this method, but if they do,
+        # they should call this one (i.e. super().start())
+        self.stopped = False
 
+    async def stop(self):
+        # child classes not required to have this method, but if they do,
+        # they should call this one (i.e. super().stop())
+        self.stopped = True
+        if self.async_handle:
+            self.logger.info("%s canceling scheduled task", self.hull.get_my_uri())
+            self.async_handle.cancel()
+
+    async def after_runner(self, target):
+        if self.stopped:
+            return
+        await target()
+        
+    async def run_after(self, delay, target):
+        loop = asyncio.get_event_loop()
+        self.async_handle = loop.call_later(delay,
+                                            lambda target=target:
+                                            asyncio.create_task(self.after_runner(target)))
+        
     async def on_message(self, message):
+        if message.term > self.log.get_term():
+            self.logger.debug('received message from higher term, calling self.term_expired')
+            res = await self.term_expired(message)
+            if not res:
+                self.logger.debug('self.term_expired said no further processing required')
+                # no additional handling of message needed
+                return None
         route = self.routes.get(message.get_code(), None)
         if route:
             return await route(message)
 
-    async def append_entries(self, message):
+    async def on_append_entries(self, message):
         self.logger.warning('append_entries not implemented in the class "%s", sending rejection',
                          self.__class__.__name__)
         await self.send_reject_append_response(message)
 
-    async def append_entries_response(self, message):
+    async def on_append_entries_response(self, message):
         self.logger.warning('append_entries_response not implemented in the class "%s", ignoring',
                          self.__class__.__name__)
 

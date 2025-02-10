@@ -31,6 +31,8 @@ async def cluster_of_three():
     await cluster.start()
     yield cluster
     await cluster.cleanup()
+    loop = asyncio.get_event_loop()
+    await tear_down(loop)
     
 @pytest.fixture
 @pytest.mark.asyncio
@@ -40,6 +42,21 @@ async def cluster_of_five():
     await cluster.start()
     yield cluster
     await cluster.cleanup()
+    loop = asyncio.get_event_loop()
+    await tear_down(loop)
+    
+async def tear_down(event_loop):
+    # Collect all tasks and cancel those that are not 'done'.                                       
+    tasks = asyncio.all_tasks(event_loop)
+    tasks = [t for t in tasks if not t.done()]
+    for task in tasks:
+        task.cancel()
+
+    # Wait for all tasks to complete, ignoring any CancelledErrors                                  
+    try:
+        await asyncio.wait(tasks)
+    except asyncio.exceptions.CancelledError:
+        pass
     
 class T1Cluster:
 
@@ -59,7 +76,9 @@ class T1Cluster:
         cc = ClusterConfig(node_uris=self.node_uris)
         for uri, node in self.nodes.items():
             local_config = LocalConfig(uri=uri,
-                                       working_dir='/tmp/')
+                                       working_dir='/tmp/',
+                                       leader_lost_timeout=0.01,
+                                       election_timeout=0.15)
             data_log = MemoryLog()
             live_config = LiveConfig(cluster=cc,
                                      log=data_log,
@@ -133,18 +152,16 @@ class T1Server:
 
     async def cleanup(self):
         hull = self.hull
-        # not necessary, technically, but maybe will get collected sooner this way
-        hull.logger = None
-        hull.state = None
-        hull.log = None
-        hull.config = None
+        if hull.state:
+            self.logger.info('cleanup stopping %s %s', hull.state, hull.get_my_uri())
+            handle =  hull.state.async_handle
+            await hull.state.stop()
+            if handle:
+                self.logger.info('after %s %s stop, handle.cancelled() says %s',
+                                 hull.state, hull.get_my_uri(), handle.cancelled())
+            
         self.hull = None
-        self.uri = None
-        self.cluster = None
-        self.live_config = None
-        self.hull = None
-        self.in_messages = None
-        self.logger = None
+        del hull
 
 async def test_election_1(cluster_of_three):
     """ This is the happy path, everybody has same state, only one server runs for leader,
@@ -238,8 +255,6 @@ async def test_reelection_1(cluster_of_three):
     assert ts_3.hull.state.leader_uri == uri_1
 
     # now have leader resign, by telling it to become follower
-    # NOTE, this currently works, though the method is intended
-    # for use by the Candidate IRL
     await ts_1.hull.demote_and_handle(None)
     assert ts_1.hull.get_state_code() == "FOLLOWER"
     # pretend timeout on heartbeat on only one, ensuring it will win
@@ -269,26 +284,59 @@ async def test_reelection_2(cluster_of_three):
     assert ts_3.hull.state.leader_uri == uri_1
 
     # now have leader resign, by telling it to become follower
-    # NOTE, this currently works, though the method is intended
-    # for use by the Candidate IRL
     await ts_1.hull.demote_and_handle(None)
     assert ts_1.hull.get_state_code() == "FOLLOWER"
-    # pretend timeout on heartbeat on all followers, who will win?
+    # pretend timeout on heartbeat on only one followers, so it should win
     await ts_2.hull.state.lost_leader()
     await cluster.deliver_all_pending()
-    leader = None
-    for ts in [ts_1, ts_2, ts_3]:
-        if ts.hull.get_state_code() == "LEADER":
-            leader = ts
-            break
-    assert leader is not None
-    logger = logging.getLogger(__name__)
-    logger.info("leader is %s", leader.hull.get_my_uri())
-    for ts in [ts_1, ts_2, ts_3]:
-        if ts != leader:
-            assert ts.hull.get_state_code() == "FOLLOWER"
+    assert ts_2.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.get_state_code() == "FOLLOWER"
+    assert ts_3.hull.get_state_code() == "FOLLOWER"
     
     
+async def test_reelection_3(cluster_of_three):
+    cluster = cluster_of_three
     
+    uri_1 = cluster.node_uris[0]
+    uri_2 = cluster.node_uris[1]
+    uri_3 = cluster.node_uris[2]
+
+    ts_1 = cluster.nodes[uri_1]
+    ts_2 = cluster.nodes[uri_2]
+    ts_3 = cluster.nodes[uri_3]
+
+    await ts_1.hull.start_campaign()
+    # vote requests, then vote responses
+    await cluster.deliver_all_pending()
+    assert ts_1.hull.get_state_code() == "LEADER"
+    # append entries, then responses
+    await cluster.deliver_all_pending()
+    assert ts_2.hull.state.leader_uri == uri_1
+    assert ts_3.hull.state.leader_uri == uri_1
+
+    # make sure the run_after code works before
+    # checking uses of it
+    f1 = ts_1.hull.state
+    # stop the current timer, if any
+    await f1.stop()
+    f1.stopped = False
+    has_run = False
+    async def runner():
+        nonlocal has_run
+        has_run = True
+    await f1.run_after(0.001, runner)
+    assert not has_run
+    await asyncio.sleep(0.002)
+    assert has_run
+
+    # now make sure it doesn't run if state is stopped
+    has_run = False
+    # stop the current timer, if any
+    await f1.stop()
+    await f1.run_after(0.001, runner)
+    assert not has_run
+    await asyncio.sleep(0.002)
+    assert not has_run
+    f1.stopped = False
     
     

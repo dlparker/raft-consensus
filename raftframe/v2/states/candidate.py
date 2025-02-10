@@ -13,10 +13,12 @@ class Candidate(BaseState):
         self.reply_count = 0
 
     async def start(self):
+        await super().start()
         await self.start_campaign()
         
     async def start_campaign(self):
         self.term += 1
+        self.log.set_term(self.term)
         for node_id in self.hull.get_cluster_node_ids():
             if node_id == self.hull.get_my_uri():
                 self.votes[node_id] = True
@@ -47,17 +49,15 @@ class Candidate(BaseState):
             await self.retry()
             return
 
+    async def term_expired(self, message):
+        self.log.set_term(message.term)
+        await self.hull.demote_and_handle(message)
+        # don't reprocess message
+        return None
+
     async def retry(self):
         await asyncio.sleep(random.uniform(0.1, 0.3))
         await self.start_campaign()
         
-    async def append_entries(self, message):
-        if message.term > self.term:
-            await self.resign(message)
-        else:
-            await self.hull.send_reject_append_response(message)
-
-    async def resign(self, message):
-        return await self.hull.demote_and_handle(message)
 
 

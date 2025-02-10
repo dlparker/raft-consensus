@@ -23,7 +23,6 @@
 3. Clearify the support for writing uncommitted records to log, that is only done by the leader,
    and each record is committed once the majority concurrence is noted. Maybe just a little renaming
    and some comments.
-       
 
 4. Think about how to structure the "start raft logged write" process in such a way that the raft
    code can say "no, I am not leader, here is the leader id, send it to them".
@@ -37,3 +36,5 @@
    raft claims in advance of local state and requests resend of Dora record? That might actually
    work for recovery of a follower after crash, but look for a complete edge case definition.
 
+6. Need to make sure this line from the doc is true: "if one servers term is smaller than anothers
+(on message) then it updates its term to the larger value"

@@ -22,17 +22,24 @@ class Hull:
         await self.state.start()
 
     async def start_campaign(self):
+        if self.state:
+            await self.state.stop()
         self.state = Candidate(self)
         await self.state.start()
 
     async def win_vote(self, new_term):
+        if self.state:
+            await self.state.stop()
         self.state = Leader(self, new_term)
         await self.state.start()
 
     async def demote_and_handle(self, message):
-        # special case where candidate got an append_entries message,
+        if self.state:
+            await self.state.stop()
+        # special case where candidate or leader got an append_entries message,
         # which means we need to switch to follower and retry
         self.state = Follower(self)
+        await self.state.start()
         if message:
             return await self.on_message(message)
 
@@ -76,3 +83,8 @@ class Hull:
     def get_cluster_node_ids(self):
         return self.config.cluster.node_uris
 
+    def get_leader_lost_timeout(self):
+        return self.config.local.leader_lost_timeout
+
+    def get_election_timeout(self):
+        return self.config.local.election_timeout

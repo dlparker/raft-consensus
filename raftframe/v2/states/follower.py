@@ -16,12 +16,16 @@ class Follower(BaseState):
         self.leader_uri = None
         # only used during voting for leadership
         self.last_vote = None
-        self.last_vote_term = None
         # Needs to be as recent as configured maximum silence period, or we raise hell.
         # Pretend we just got a call, that gives possible actual leader time to ping us
         self.last_leader_contact = time.time()
+
+    async def start(self):
+        await super().start()
+        self.last_leader_contact = time.time()
+        await self.run_after(self.hull.get_leader_lost_timeout(), self.contact_checker)
         
-    async def append_entries(self, message):
+    async def on_append_entries(self, message):
         self.logger.info("append term = %d prev_index = %d local_term = %d local_index = %d",
                          message.term, message.prevLogIndex, self.term, self.commit_index)
 
@@ -38,6 +42,7 @@ class Follower(BaseState):
         if message.term < self.term:
             await self.send_reject_append_response(message)
             return
+        self.last_leader_contact = time.time()
         # Rare case, election in progress and leader declaring itself winner, other
         # append entries logic the same as when local and leader have same term
         if message.term > self.term:
@@ -62,23 +67,16 @@ class Follower(BaseState):
         return RaftContext()
 
     async def on_vote_request(self, message):
-        # We ignore any but the highest term in leadership claims
-        # so we keep track of the highest value
-        if self.last_vote_term is None:
-            # Start of voting, so let's make sure leader is not an
-            # old one with out of date state by starting with our
-            # persisted term
-            self.last_vote_term = self.log.get_last_term()
-        if self.last_vote_term < message.term:
-            # We are voting, yes or no, either way we want the highest
-            # value anyone reports
-            self.last_vote_term = message.term
+        if self.last_vote is not None:
+            # we only vote once
+            await self.send_vote_response_message(message, votedYes=False)
+            return
         # Leadership claims have to be for max log commit index of
         # at least the same as our local copy
         last_index = self.log.get_commit_index()
         # If the messages claim for log index or term are not at least as high
         # as our local values, then vote no.
-        if message.prevLogIndex < last_index or message.term < self.last_vote_term:
+        if message.prevLogIndex < last_index or message.term < self.log.get_term():
             self.logger.info("voting false on message %s %s",
                              message, message.data)
             self.logger.info("my last vote = %s, index %d, last term %d",
@@ -86,11 +84,15 @@ class Follower(BaseState):
             vote = False
         else: # both term and index proposals are acceptable, so vote yes
             self.last_vote = message.sender
-            self.last_vote_term = message.term
             self.logger.info("voting true for candidate %s", message.sender)
             vote = True
         await self.send_vote_response_message(message, votedYes=vote)
             
+    async def term_expired(self, message):
+        self.log.set_term(message.term)
+        # process the message as normal
+        return message
+
     async def lost_leader(self):
         await self.hull.start_campaign()
         
@@ -113,9 +115,13 @@ class Follower(BaseState):
                                                 prevLogIndex=message.prevLogIndex,
                                                 prevLogTerm=message.prevLogTerm,
                                                 leaderCommit=message.leaderCommit)
-        await self.restart_contact_timer()
         await self.hull.send_response(message, append_response)
-        
-    async def restart_contact_timer(self):
-        self.last_leader_contact = time.time()
+
+    async def contact_checker(self):
+        max_time = self.hull.get_leader_lost_timeout()
+        if time.time() - self.last_leader_contact > max_time:
+            await self.leader_lost()
+            return
+        # reschedule
+        await self.run_after(self.hull.get_leader_lost_timeout(), self.contact_checker)
     
