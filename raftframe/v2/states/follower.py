@@ -1,4 +1,5 @@
 import time
+import logging
 from raftframe.v2.states.base_state import StateCode, Substate, BaseState
 from raftframe.v2.states.context import RaftContext
 from raftframe.messages.append_entries import AppendResponseMessage
@@ -21,6 +22,9 @@ class Follower(BaseState):
         self.last_leader_contact = time.time()
         
     async def append_entries(self, message):
+        self.logger.info("append term = %d prev_index = %d local_term = %d local_index = %d",
+                         message.term, message.prevLogIndex, self.term, self.commit_index)
+
         # Read the following three if statements carefully before modifying.
         # There are logic claims implicit in the fall through
         # Common case first, leader's idea of cluster state matches ours, no new records
@@ -43,6 +47,7 @@ class Follower(BaseState):
             self.last_vote = None
             if message.prevLogIndex == self.commit_index:
                 # no new records
+                self.logger.info("no new records, just election result")
                 await self.send_append_entries_response(message, None)
                 return
         # We know messag.term == term from first if test seive.
@@ -86,11 +91,13 @@ class Follower(BaseState):
             vote = True
         await self.send_vote_response_message(message, votedYes=vote)
             
-
+    async def lost_leader(self):
+        await self.hull.start_campaign()
+        
     async def send_vote_response_message(self, message, votedYes=True):
         vote_response = RequestVoteResponseMessage(sender=self.hull.get_my_uri(),
                                                    receiver=message.sender,
-                                                   term=sender.term,
+                                                   term=message.term,
                                                    data={"response": votedYes})
         await self.hull.send_response(message, vote_response)
         
@@ -102,7 +109,7 @@ class Follower(BaseState):
         append_response = AppendResponseMessage(sender=self.hull.get_my_uri(),
                                                 receiver=message.sender,
                                                 term=self.log.get_term(),
-                                                data=date,
+                                                data=data,
                                                 prevLogIndex=message.prevLogIndex,
                                                 prevLogTerm=message.prevLogTerm,
                                                 leaderCommit=message.leaderCommit)
