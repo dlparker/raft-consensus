@@ -10,6 +10,8 @@ class Hull:
 
     def __init__(self, config):
         self.config = config
+        self.response_sender = config.response_sender
+        self.message_sender = config.message_sender
         self.log = config.log # should be some implementation of the LogAPI
         self.state = BaseState(self, StateCode.paused)
 
@@ -25,21 +27,28 @@ class Hull:
     def get_term(self):
         return self.log.get_term()
 
-    def start(self):
+    async def start(self):
         self.state = Follower(self)
+        await self.state.start()
 
-    def start_campaign(self):
+    async def start_campaign(self):
         self.state = Candidate(self)
+        await self.state.start()
 
-    def win_vote(self):
-        self.state = Leader(self)
+    async def win_vote(self, new_term):
+        self.state = Leader(self, new_term)
+        await self.state.start()
 
     async def demote_and_handle(self, message):
         # special case where candidate got an append_entries message,
         # which means we need to switch to follower and retry
         self.state = Follower(self)
-        return await self.on_message(message)
-    
+        if message:
+            return await self.on_message(message)
+
+    async def send_response(self, message, response):
+        raise Exception('not implemented')
+
     async def on_message(self, message):
         if not isinstance(message, BaseMessage):
             raise Exception('Message is not a raft type, did you use provided deserializer?')
@@ -52,9 +61,6 @@ class Hull:
         if isinstance(res, RaftContext):
             return res
 
-    async def start_logged_change(self, change_data):
-        ae = AppendEntriesMessage('foo', 'bar', 1, 'a', 1, 1, False)
-        
     async def handle_message_error(self, message, error):
         print(error)
         

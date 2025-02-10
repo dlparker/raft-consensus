@@ -67,6 +67,7 @@ class BaseState:
     def __init__(self, hull, state_code):
         self.hull = hull
         self.state_code = state_code
+        self.logger = logging.getLogger(__name__)
         self.substate = Substate.starting
         self.log = hull.get_log()
         self.routes = dict()
@@ -81,23 +82,52 @@ class BaseState:
         cod = RequestVoteResponseMessage.get_code()
         route = self.request_vote_response
 
+    async def start(self):
+        pass
+
     async def on_message(self, message):
-        logger = logging.getLogger(__name__)
         route = self.routes.get(message.get_code(), None)
         if route:
             return await route(message)
 
     async def append_entries(self, message):
-        raise Exception(f'append_entries not implemented in the class "{self.__class__.__name__}"')
+        self.logger.warn('append_entries not implemented in the class "%", sending rejection',
+                         self.__class__.__name__)
+        await self.send_reject_append_response(message)
 
     async def append_entries_response(self, message):
-        raise Exception(f'append_entries_response not implemented in the class "{self.__class__.__name__}"')
+        self.logger.warn('append_entries_response not implemented in the class "%", ignoring',
+                         self.__class__.__name__)
 
     async def request_vote(self, message):
-        raise Exception(f'request_vote not implemented in the class "{self.__class__.__name__}"')
+        self.logger.warn('request_vote not implemented in the class "%", sending rejection',
+                         self.__class__.__name__)
+        await self.send_reject_vote_response(message)
 
     async def request_vote_response(self, message):
-        raise Exception(f'request_vote_response not implemented in the class "{self.__class__.__name__}"')
+        self.logger.warn('request_vote_response not implemented in the class "%", ignoring',
+                         self.__class__.__name__)
     
+    async def send_reject_append_response(self, message):
+        data = dict(success=False,
+                    last_index=self.log.get_commit_index(),
+                    last_term=self.log.get_last_term())
+        reply = AppendResponseMessage(message.receiver,
+                                      message.sender,
+                                      term=self.log.get_term(),
+                                      data=data,
+                                      prevLogTerm=self.log.get_last_term(),
+                                      prevLogIndex=self.log.get_commit_index(),
+                                      leaderCommit=self.log.get_commit_index())
+        await self.hull.send_response(message, reply)
 
-
+    async def send_reject_vote_response(self, message):
+        data = dict(reponse=False)
+        reply = RequestVoteResponseMessage(message.receiver,
+                                           message.sender,
+                                           term=self.log.get_term(),
+                                           data=data,
+                                           prevLogTerm=self.log.get_last_term(),
+                                           prevLogIndex=self.log.get_commit_index(),
+                                           leaderCommit=self.log.get_commit_index())
+        await self.hull.send_response(message, reply)

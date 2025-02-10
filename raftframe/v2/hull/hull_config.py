@@ -2,11 +2,11 @@
 Configuration classes for setting up an instance of the class::`Server` class.
 """
 from dataclasses import dataclass
-from typing import Any, Type
+from typing import Any, Type, Callable, Awaitable
 import os
 from raftframe.log.log_api import LogAPI
 from raftframe.v2.comms.comms_api import CommsAPI
-from raftframe.states.state_map import StateMap
+from raftframe.messages.base_message import BaseMessage
 from raftframe.serializers.api import SerializerAPI
 
 @dataclass
@@ -19,9 +19,13 @@ class LocalConfig:
         working_dir:
             The location for the runtime to use as a working directory for output files 
             and the like
+        uri: 
+            Unique identifyer for this server, either directly
+            serving as a comms endpoint or translatable to one
 
     """
     working_dir: os.PathLike # where the server should run and place log files, data files, etc
+    uri: Any          # unique identifier of this server
 
 @dataclass
 class ClusterConfig:
@@ -30,24 +34,18 @@ class ClusterConfig:
 
 
     Args:
-        name:
-            The name of this node in the cluster map
-        uri: 
-            A specification of the COMMS endpoint for this server 
-            in the form needed by the configured COMSS module.
-        other_nodes: 
-            A list of addresses of the other nodes in the cluster
-            in the form needed by the configured COMSS module.
+        node_uris: 
+            A list of addresses of the all nodes in the cluster
+            in the same form as the uri in the LocalConfig. This server's
+            uri is in there too.
 
     """
-    name: str         # name of this node in cluster
-    uri: Any     # address for use with the CommsAPI instance
-    other_nodes: list # addresses of other nodes in the cluster
+    node_uris: list # addresses of other nodes in the cluster
 
 @dataclass
 class LiveConfig:
     """
-    Class used to provide configuration to :class:raftframe.`servers.server.Server` in
+    Class used to provide configuration to :class:raftframe.`v2.servers.server.Server` in
     the form of instantiated classes that are ready to be used.
 
     Args:
@@ -59,18 +57,20 @@ class LiveConfig:
             An instance of a class that implments :class:`raftframe.log.log_api.LogAPI` and
             provides log record storage and access using some underlying storage 
             technique. The default implementation for this is :class:`raftframe.log.sqlite_log.SqliteLog`.
-        comms:
-            An instance of a class that implments :class:`raftframe.comms.comss_api.CommsAPI` and
-            provides a message transport mechanism. The default implementation for this is 
-            :class:`raftframe.comms.udp.UDPComms`.
-        state_map:
-            An instance of :class:`raftframe.states.state_map.StateMap`.
+        message_sender:
+            A callable that returns and awaitable (such as an async function or method) that
+            takes an instance of BaseMessage class and sends it to the addressed recipient
+        response_sender:
+            A callable that returns and awaitable (such as an async function or method) that
+            takes an instance of BaseMessage class that was originally delivered to the caller
+            and an response, that arranges to send the response according to something in 
+            either the response or the original message, or both
     """
     
     cluster: ClusterConfig
     local: LocalConfig
     log: LogAPI # actual, live object
-    comms: CommsAPI # actual, live object
-    state_map: StateMap # actual, live object
+    message_sender: Callable[[BaseMessage], Awaitable[Any]]
+    response_sender: Callable[[BaseMessage, BaseMessage], Awaitable[Any]]
 
     

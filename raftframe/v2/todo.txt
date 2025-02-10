@@ -1,0 +1,39 @@
+
+1. Remove sender and receiver info from messages, that's comms layer stuff. Add leaderId to appendendtry
+   and candidateId to request vote. These are opaque to raft, just strings.
+   a. Also remove leaderCommit from vote.
+   b. Consider removing the data stuff from the messages too, it is not requred except for
+      append entries sequences
+   c. Think hard about server URIs and how they might translate to comms, but not permanently
+      restrict and instance to the same address:port. How does a server stop and then rejoin the
+      cluster on a different port? Maybe this is a secondary function that should be provided to
+      support clustering, but is not a required part of the raft library operations? That sounds
+      good, then we can develop using simple methods of sharing the cluster map, but allow more
+      sophisticated methods.
+
+2. Message ops
+   a. Add some means for the caller of the on_message function to tell the target how to send a response back,
+      probably and async callable (awaitable then, I guess). Think about what else might allow the caller
+      to just put this in the loop and ignore it if the comm mechanism is not call/response, and how it
+      would best work if the comm mechanism IS rpc.
+
+   b. Add mechanism to tell states (via hull) how to send messages that are not responses. Should use
+       the same kind of opaque id stuff used in the protocol messages.
+    
+3. Clearify the support for writing uncommitted records to log, that is only done by the leader,
+   and each record is committed once the majority concurrence is noted. Maybe just a little renaming
+   and some comments.
+       
+
+4. Think about how to structure the "start raft logged write" process in such a way that the raft
+   code can say "no, I am not leader, here is the leader id, send it to them".
+
+5. Game a scenario where we use the raft log to just persist a reference to something stored elsewhere,
+   see if that can make sense. This allows an alternative to building your own logAPI implementation
+   so that raft records can be stored in app storage. Think about it especially in terms of how you'd
+   do it in Dora, saving Dora log records locally and expecting remote nodes to save them too, then the
+   append entries operation (on remotes) would want to try to sync with that state. Could it work
+   where the Dora log record has not yet arrived? Maybe set up a periodic sweep that looks for
+   raft claims in advance of local state and requests resend of Dora record? That might actually
+   work for recovery of a follower after crash, but look for a complete edge case definition.
+
