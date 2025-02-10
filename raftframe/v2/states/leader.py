@@ -27,7 +27,10 @@ class Leader(BaseState):
                                            prevLogTerm=self.log.get_term(),
                                            prevLogIndex=self.log.get_commit_index(),
                                            leaderCommit=True)
-            self.logger.info("sending append_entries to %s", nid)
+            if message.data == []:
+                self.logger.debug("%s sending append_entries to %s", self.hull.get_my_uri(), nid)
+            else:
+                self.logger.info("%s sending append_entries to %s", self.hull.get_my_uri(), nid)
             await self.hull.send_message(message)
         self.pending_commit[self.log.get_commit_index()] = tracker
         
@@ -43,7 +46,7 @@ class Leader(BaseState):
             if tracker[nid] == "acked":
                 acked += 1
         if acked > len(self.hull.get_cluster_node_ids()) + 1: # we count too
-            self.logger.info('got consensus on index %d, committing',
+            self.logger.info('%s got consensus on index %d, committing', self.hull.get_my_uri(),
                              message.prevLogIndex)
             del self.pending_commit[message.prevLogIndex]
         

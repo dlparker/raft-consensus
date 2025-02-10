@@ -18,6 +18,7 @@ class Candidate(BaseState):
         
     async def start_campaign(self):
         self.term += 1
+        self.reply_count = 0
         self.log.set_term(self.term)
         for node_id in self.hull.get_cluster_node_ids():
             if node_id == self.hull.get_my_uri():
@@ -35,17 +36,24 @@ class Candidate(BaseState):
 
     
     async def on_vote_response(self, message):
+        if message.term < self.term:
+            self.logger.info("candidate %s ignoring out of date vote", self.hull.get_my_uri())
+            return
         self.votes[message.sender] = message.data['response']
+        self.logger.info("candidate %s voting result %s from %s", self.hull.get_my_uri(),
+                         message.data['response'], message.sender)
         self.reply_count += 1
         tally = 0
         for nid in self.votes:
             if self.votes[nid] == True:
                 tally += 1
-        self.logger.info("voting results with %d votes in, %d (includes self)", self.reply_count, tally)
+        self.logger.info("candidate %s voting results with %d votes in, wins = %d (includes self)",
+                         self.hull.get_my_uri(), self.reply_count + 1, tally)
         if tally > len(self.votes) / 2:
             await self.hull.win_vote(self.term)
             return
         if self.reply_count + 1 > len(self.votes) / 2:
+            self.logger.info("candidate %s campaign lost, trying again", self.hull.get_my_uri())
             await self.retry()
             return
 
@@ -56,8 +64,7 @@ class Candidate(BaseState):
         return None
 
     async def retry(self):
-        await asyncio.sleep(random.uniform(0.1, 0.3))
-        await self.start_campaign()
+        await self.run_after(self.hull.get_election_timeout(), self.start_campaign)
         
 
 

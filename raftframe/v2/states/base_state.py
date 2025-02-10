@@ -91,7 +91,7 @@ class BaseState:
         code = RequestVoteResponseMessage.get_code()
         route = self.on_vote_response
         self.routes[code] = route
-        
+
     async def start(self):
         # child classes not required to have this method, but if they do,
         # they should call this one (i.e. super().start())
@@ -102,7 +102,7 @@ class BaseState:
         # they should call this one (i.e. super().stop())
         self.stopped = True
         if self.async_handle:
-            self.logger.info("%s canceling scheduled task", self.hull.get_my_uri())
+            self.logger.debug("%s canceling scheduled task", self.hull.get_my_uri())
             self.async_handle.cancel()
 
     async def after_runner(self, target):
@@ -118,10 +118,12 @@ class BaseState:
         
     async def on_message(self, message):
         if message.term > self.log.get_term():
-            self.logger.debug('received message from higher term, calling self.term_expired')
+            self.logger.debug('%s received message from higher term, calling self.term_expired',
+                              self.hull.get_my_uri())
             res = await self.term_expired(message)
             if not res:
-                self.logger.debug('self.term_expired said no further processing required')
+                self.logger.debug('%s self.term_expired said no further processing required',
+                                  self.hull.get_my_uri())
                 # no additional handling of message needed
                 return None
         route = self.routes.get(message.get_code(), None)
@@ -160,12 +162,12 @@ class BaseState:
         await self.hull.send_response(message, reply)
 
     async def send_reject_vote_response(self, message):
-        data = dict(reponse=False)
+        data = dict(response=False)
         reply = RequestVoteResponseMessage(message.receiver,
                                            message.sender,
-                                           term=self.log.get_term(),
-                                           data=data,
-                                           prevLogTerm=self.log.get_last_term(),
-                                           prevLogIndex=self.log.get_commit_index(),
-                                           leaderCommit=self.log.get_commit_index())
+                                           term=message.term,
+                                           data=data)
         await self.hull.send_response(message, reply)
+
+    def __rep__(self):
+        self.state_code

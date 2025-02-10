@@ -26,7 +26,7 @@ class Follower(BaseState):
         await self.run_after(self.hull.get_leader_lost_timeout(), self.contact_checker)
         
     async def on_append_entries(self, message):
-        self.logger.info("append term = %d prev_index = %d local_term = %d local_index = %d",
+        self.logger.debug("append term = %d prev_index = %d local_term = %d local_index = %d",
                          message.term, message.prevLogIndex, self.term, self.commit_index)
 
         # Read the following three if statements carefully before modifying.
@@ -34,6 +34,10 @@ class Follower(BaseState):
         # Common case first, leader's idea of cluster state matches ours, no new records
         # for the log, a heartbeat, in other words
         if message.term == self.term and message.prevLogIndex == self.commit_index:
+            if self.leader_uri is None:
+                self.leader_uri = message.sender
+                self.logger.info("%s accepting new leader %s", self.hull.get_my_uri(),
+                                 self.leader_uri)
             await self.send_append_entries_response(message, None)
             return
         # Very rare case, sender thinks it is leader but has old term, probably
@@ -52,7 +56,7 @@ class Follower(BaseState):
             self.last_vote = None
             if message.prevLogIndex == self.commit_index:
                 # no new records
-                self.logger.info("no new records, just election result")
+                self.logger.debug("no new records, just election result")
                 await self.send_append_entries_response(message, None)
                 return
         # We know messag.term == term from first if test seive.
@@ -77,14 +81,12 @@ class Follower(BaseState):
         # If the messages claim for log index or term are not at least as high
         # as our local values, then vote no.
         if message.prevLogIndex < last_index or message.term < self.log.get_term():
-            self.logger.info("voting false on message %s %s",
+            self.logger.info("%s voting false on message %s %s", self.hull.get_my_uri(),
                              message, message.data)
-            self.logger.info("my last vote = %s, index %d, last term %d",
-                             self.last_vote, last_index, last_term)
             vote = False
         else: # both term and index proposals are acceptable, so vote yes
             self.last_vote = message.sender
-            self.logger.info("voting true for candidate %s", message.sender)
+            self.logger.info("%s voting true for candidate %s", self.hull.get_my_uri(), message.sender)
             vote = True
         await self.send_vote_response_message(message, votedYes=vote)
             
@@ -93,7 +95,7 @@ class Follower(BaseState):
         # process the message as normal
         return message
 
-    async def lost_leader(self):
+    async def leader_lost(self):
         await self.hull.start_campaign()
         
     async def send_vote_response_message(self, message, votedYes=True):

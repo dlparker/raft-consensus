@@ -3,6 +3,7 @@ from pathlib import Path
 import asyncio
 import logging
 import pytest
+import time
 from raftframe.v2.log.sqlite_log import SqliteLog
 from raftframe.v2.hull.hull_config import LiveConfig, ClusterConfig, LocalConfig
 from raftframe.v2.hull.hull import Hull
@@ -10,7 +11,11 @@ from raftframe.messages.request_vote import RequestVoteMessage,RequestVoteRespon
 from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 from dev_tools.memory_log import MemoryLog
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
+
+LEADER_LOST_TIMEOUT=0.01
+ELECTION_TIMEOUT_MIN=0.15
+ELECTION_TIMEOUT_MAX=0.350
 
 @pytest.fixture
 def create_log_db():
@@ -28,7 +33,6 @@ def create_log_db():
 async def cluster_of_three():
     cluster = T1Cluster(3)
     cluster.set_configs()
-    await cluster.start()
     yield cluster
     await cluster.cleanup()
     loop = asyncio.get_event_loop()
@@ -39,7 +43,6 @@ async def cluster_of_three():
 async def cluster_of_five():
     cluster = T1Cluster(5)
     cluster.set_configs()
-    await cluster.start()
     yield cluster
     await cluster.cleanup()
     loop = asyncio.get_event_loop()
@@ -77,8 +80,10 @@ class T1Cluster:
         for uri, node in self.nodes.items():
             local_config = LocalConfig(uri=uri,
                                        working_dir='/tmp/',
-                                       leader_lost_timeout=0.01,
-                                       election_timeout=0.15)
+                                       leader_lost_timeout=LEADER_LOST_TIMEOUT,
+                                       election_timeout_min=ELECTION_TIMEOUT_MIN,
+                                       election_timeout_max=ELECTION_TIMEOUT_MAX,
+                                       )
             data_log = MemoryLog()
             live_config = LiveConfig(cluster=cc,
                                      log=data_log,
@@ -94,14 +99,12 @@ class T1Cluster:
     async def response_sender(self, in_msg, reply_msg):
         target = self.nodes[reply_msg.receiver]
         target.in_messages.append(reply_msg)
-        self.logger.info("queing response from %s to %s", reply_msg.sender, 
-                         reply_msg.receiver)
+        self.logger.debug("queueing reply %s", reply_msg)
 
     async def message_sender(self, msg):
         target = self.nodes[msg.receiver]
         target.in_messages.append(msg)
-        self.logger.info("queuing message from %s to %s", msg.sender, 
-                         msg.receiver)
+        self.logger.debug("queueing message %s", msg)
 
     async def deliver_all_pending(self):
         any = True
@@ -110,7 +113,6 @@ class T1Cluster:
             any = False
             for uri, node in self.nodes.items():
                 if len(node.in_messages) > 0:
-                    self.logger.info("doing message for %s", uri)
                     await node.do_next_msg()
                     any = True
         
@@ -145,19 +147,18 @@ class T1Server:
     async def do_next_msg(self):
         msg = self.in_messages.pop(0)
         if msg:
-            self.logger.info("delivering %s message from %s to %s", msg.code, msg.sender, 
-                             msg.receiver)
+            self.logger.debug("delivering message %s", msg)
             await self.hull.on_message(msg)
         return msg
 
     async def cleanup(self):
         hull = self.hull
         if hull.state:
-            self.logger.info('cleanup stopping %s %s', hull.state, hull.get_my_uri())
+            self.logger.debug('cleanup stopping %s %s', hull.state, hull.get_my_uri())
             handle =  hull.state.async_handle
             await hull.state.stop()
             if handle:
-                self.logger.info('after %s %s stop, handle.cancelled() says %s',
+                self.logger.debug('after %s %s stop, handle.cancelled() says %s',
                                  hull.state, hull.get_my_uri(), handle.cancelled())
             
         self.hull = None
@@ -168,6 +169,7 @@ async def test_election_1(cluster_of_three):
         everybody response correctly """
 
     cluster = cluster_of_three
+    await cluster.start()
     uri_1 = cluster.node_uris[0]
     ts_1 = cluster.nodes[uri_1]
     uri_2 = cluster.node_uris[1]
@@ -210,7 +212,8 @@ async def test_election_1(cluster_of_three):
 
 async def test_election_2(cluster_of_five):
     cluster = cluster_of_five
-    
+    await cluster.start()
+
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]
     uri_3 = cluster.node_uris[2]
@@ -236,6 +239,7 @@ async def test_election_2(cluster_of_five):
     
 async def test_reelection_1(cluster_of_three):
     cluster = cluster_of_three
+    await cluster.start()
     
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]
@@ -258,13 +262,14 @@ async def test_reelection_1(cluster_of_three):
     await ts_1.hull.demote_and_handle(None)
     assert ts_1.hull.get_state_code() == "FOLLOWER"
     # pretend timeout on heartbeat on only one, ensuring it will win
-    await ts_2.hull.state.lost_leader()
+    await ts_2.hull.state.leader_lost()
     await cluster.deliver_all_pending()
     assert ts_2.hull.get_state_code() == "LEADER"
     assert ts_3.hull.get_state_code() == "FOLLOWER"
     
 async def test_reelection_2(cluster_of_three):
     cluster = cluster_of_three
+    await cluster.start()
     
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]
@@ -287,16 +292,14 @@ async def test_reelection_2(cluster_of_three):
     await ts_1.hull.demote_and_handle(None)
     assert ts_1.hull.get_state_code() == "FOLLOWER"
     # pretend timeout on heartbeat on only one followers, so it should win
-    await ts_2.hull.state.lost_leader()
+    await ts_2.hull.state.leader_lost()
     await cluster.deliver_all_pending()
     assert ts_2.hull.get_state_code() == "LEADER"
     assert ts_1.hull.get_state_code() == "FOLLOWER"
     assert ts_3.hull.get_state_code() == "FOLLOWER"
     
-    
 async def test_reelection_3(cluster_of_three):
     cluster = cluster_of_three
-    
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]
     uri_3 = cluster.node_uris[2]
@@ -305,38 +308,63 @@ async def test_reelection_3(cluster_of_three):
     ts_2 = cluster.nodes[uri_2]
     ts_3 = cluster.nodes[uri_3]
 
-    await ts_1.hull.start_campaign()
+    # make sure that we can control timeouts and get
+    # things to happend that way
+
+    # ensure that ts_3 wins first election
+    ts_1.hull.config.local.leader_lost_timeout = 1
+    ts_2.hull.config.local.leader_lost_timeout = 1
+    ts_3.hull.config.local.leader_lost_timeout = 0.001
+
+    # ensure that ts_2 wins re-election
+    ts_1.hull.config.local.election_timeout_min = 1
+    ts_1.hull.config.local.election_timeout_max = 1.2
+    ts_2.hull.config.local.election_timeout_min = 0.001
+    ts_2.hull.config.local.election_timeout_max = 0.0011
+    ts_3.hull.config.local.election_timeout_min = 1
+    ts_3.hull.config.local.election_timeout_max = 1.2
+    
+    await cluster.start()
+    # give ts_3 time to timeout and start campaign
+    await asyncio.sleep(0.0015)
+    assert len(ts_1.in_messages) == 1
+    assert len(ts_2.in_messages) == 1
+    assert ts_1.in_messages[0].get_code() == RequestVoteMessage.get_code()
+    assert ts_2.in_messages[0].get_code() == RequestVoteMessage.get_code()
+    
     # vote requests, then vote responses
     await cluster.deliver_all_pending()
-    assert ts_1.hull.get_state_code() == "LEADER"
-    # append entries, then responses
+    assert ts_3.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_3
+    assert ts_2.hull.state.leader_uri == uri_3
+
+    logger = logging.getLogger(__name__)
+    logger.warning('setting up re-election')
+    # tell leader to resign and manually trigger elections on all the
+    # servers, ts_2 should win because of timeout
+    await ts_3.hull.demote_and_handle(None)
+    await ts_3.hull.start_campaign()
+    logger.warning('leader ts_3 demoted and campaign started')
+    # ts_2 started last, but should win and raise term to 3 because of timeout
+    await ts_1.hull.start_campaign()
+    logger.warning('ts_1 starting campaign')
+    await ts_2.hull.start_campaign()
+    logger.warning('ts_2 starting campaign, delivering messages')
     await cluster.deliver_all_pending()
-    assert ts_2.hull.state.leader_uri == uri_1
-    assert ts_3.hull.state.leader_uri == uri_1
+    logger.warning('waiting for re-election to happend')
+    start_time = time.time()
+    while time.time() - start_time < 0.01:
+        await cluster.deliver_all_pending()
+        if ts_2.hull.get_state_code() == "LEADER":
+            break
+        await asyncio.sleep(0.0001)
+        
+    assert ts_2.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_2
+    assert ts_3.hull.state.leader_uri == uri_2
+    
+    
 
-    # make sure the run_after code works before
-    # checking uses of it
-    f1 = ts_1.hull.state
-    # stop the current timer, if any
-    await f1.stop()
-    f1.stopped = False
-    has_run = False
-    async def runner():
-        nonlocal has_run
-        has_run = True
-    await f1.run_after(0.001, runner)
-    assert not has_run
-    await asyncio.sleep(0.002)
-    assert has_run
-
-    # now make sure it doesn't run if state is stopped
-    has_run = False
-    # stop the current timer, if any
-    await f1.stop()
-    await f1.run_after(0.001, runner)
-    assert not has_run
-    await asyncio.sleep(0.002)
-    assert not has_run
-    f1.stopped = False
+    
     
     

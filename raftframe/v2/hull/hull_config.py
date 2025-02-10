@@ -24,13 +24,20 @@ class LocalConfig:
             serving as a comms endpoint or translatable to one
         leader_lost_timeout:
             if no leader messages in longer than this time, start an election
-        election_timeout:
-            if no leader elected after this time, start another election
+        election_timeout_min:
+            start another election if no leader elected in a random
+            amount of time bounded by election_timeout_min and election_timeout_max,
+            raft paper suggests range of 150 to 350 milliseconds
+        election_timeout_max:
+            start another election if no leader elected in a random
+            amount of time bounded by election_timeout_min and election_timeout_max,
+            raft paper suggests range of 150 to 350 milliseconds
     """
     working_dir: os.PathLike # where the server should run and place log files, data files, etc
     uri: Any          # unique identifier of this server
     leader_lost_timeout: float
-    election_timeout: float
+    election_timeout_min: float
+    election_timeout_max: float
 
 @dataclass
 class ClusterConfig:
