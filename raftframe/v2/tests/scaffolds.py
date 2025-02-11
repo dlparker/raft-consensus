@@ -5,7 +5,7 @@ import logging
 import pytest
 import time
 from raftframe.v2.log.sqlite_log import SqliteLog
-from raftframe.v2.hull.hull_config import LiveConfig, ClusterConfig, LocalConfig
+from raftframe.v2.hull.hull_config import ClusterConfig, LocalConfig
 from raftframe.v2.hull.hull import Hull
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
@@ -113,11 +113,7 @@ class T1Cluster:
             local_config = LocalConfig(uri=uri,
                                        working_dir='/tmp/',
                                        )
-            data_log = MemoryLog()
-            live_config = LiveConfig(cluster=cc,
-                                     log=data_log,
-                                     local=local_config)
-            node.set_config(live_config)
+            node.set_configs(local_config, cc)
 
     async def start(self, only_these=None):
         for uri, node in self.nodes.items():
@@ -173,15 +169,22 @@ class T1Server(PilotAPI):
     def __init__(self, uri, cluster):
         self.uri = uri
         self.cluster = cluster
-        self.live_config = None
+        self.cluster_config = None
+        self.local_config = None
         self.hull = None
         self.in_messages = []
         self.logger = logging.getLogger(__name__)
+        self.log = MemoryLog()
 
-    def set_config(self, live_config):
-        self.live_config = live_config
-        self.hull = Hull(self.live_config, self)
+    def set_configs(self, local_config, cluster_config):
+        self.cluster_config = cluster_config
+        self.local_config = local_config
+        self.hull = Hull(self.cluster_config, self.local_config, self)
         self.operations = simpleOps()
+
+    # Part of PilotAPI
+    def get_log(self):
+        return self.log
 
     # Part of PilotAPI
     async def process_command(self, command):

@@ -1,6 +1,7 @@
 import abc
 from dataclasses import dataclass
 from typing import List, Any
+from raftframe.v2.log.log_api import LogAPI
 
 class PilotAPI(metaclass=abc.ABCMeta):
     """
@@ -8,9 +9,18 @@ class PilotAPI(metaclass=abc.ABCMeta):
     implmentations the interface between the raft library and the containing 
     process. You build a pilot implementation, it runs the raft.
     """
+    @abc.abstractmethod
+    def get_log(self) -> LogAPI: # pragma: no cover abstract
+        """ Provides an implementation of the LogAPI. Can be one of the provided 
+        implementations, or something that the library user provides. Providing
+        your own gives the opportunity to provide transactional constraints to 
+        your own data operations and include the raft log records in those 
+        transactions. 
+        """
+        raise NotImplementedError
     
     @abc.abstractmethod
-    async def process_command(self, command: str) -> List[Any]:# pragma: no cover abstract
+    async def process_command(self, command: str) -> List[Any]: # pragma: no cover abstract
         """ Causes raft operations to trigger user defined commands once the raft 
         algorithm has determined that the command is safe to commit. This
         is explained in the raft paper. The basic theory is that the commands

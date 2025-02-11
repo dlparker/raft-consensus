@@ -56,25 +56,4 @@ class ClusterConfig:
     election_timeout_min: float
     election_timeout_max: float
 
-@dataclass
-class LiveConfig:
-    """
-    Class used to provide configuration to :class:raftframe.`v2.servers.server.Server` in
-    the form of instantiated classes that are ready to be used.
-
-    Args:
-        cluster: 
-            A :class:`ClusterConfig` instance that defines a cluster
-        local:
-            A :class:`LocalConfig` instance that defines the local machine configuration
-        log:
-            An instance of a class that implments :class:`raftframe.log.log_api.LogAPI` and
-            provides log record storage and access using some underlying storage 
-            technique. The default implementation for this is :class:`raftframe.log.sqlite_log.SqliteLog`.
-    """
-    
-    cluster: ClusterConfig
-    local: LocalConfig
-    log: LogAPI # actual, live object
-
     

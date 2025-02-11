@@ -10,12 +10,13 @@ from raftframe.v2.hull.api import PilotAPI
 
 class Hull:
 
-    def __init__(self, config, pilot: PilotAPI):
-        self.config = config
+    def __init__(self, cluster_config, local_config, pilot: PilotAPI):
+        self.cluster_config = cluster_config
+        self.local_config = local_config
         if not isinstance(pilot, PilotAPI):
             raise Exception('Must supply a raftframe.v2.hull.api.PilotAPI implementation')
         self.pilot = pilot
-        self.log = config.log # should be some implementation of the LogAPI
+        self.log = pilot.get_log()
         self.state = BaseState(self, StateCode.paused)
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -82,7 +83,7 @@ class Hull:
         return self.state.state_code
 
     def get_my_uri(self):
-        return self.config.local.uri
+        return self.local_config.uri
         
     def get_processor(self):
         return self.pilot
@@ -91,15 +92,15 @@ class Hull:
         return self.log.get_term()
 
     def get_cluster_node_ids(self):
-        return self.config.cluster.node_uris
+        return self.cluster_config.node_uris
 
     def get_leader_lost_timeout(self):
-        return self.config.cluster.leader_lost_timeout
+        return self.cluster_config.leader_lost_timeout
 
     def get_heartbeat_period(self):
-        return self.config.cluster.heartbeat_period
+        return self.cluster_config.heartbeat_period
 
     def get_election_timeout(self):
-        res = random.uniform(self.config.cluster.election_timeout_min,
-                             self.config.cluster.election_timeout_max)
+        res = random.uniform(self.cluster_config.election_timeout_min,
+                             self.cluster_config.election_timeout_max)
         return res

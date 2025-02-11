@@ -20,9 +20,9 @@ async def test_command_1(cluster_of_three):
     ts_2 = cluster.nodes[uri_2]
     ts_3 = cluster.nodes[uri_3]
 
-    ts_1.hull.config.cluster.leader_lost_timeout = 1000
-    ts_2.hull.config.cluster.leader_lost_timeout = 1000
-    ts_3.hull.config.cluster.leader_lost_timeout = 1000
+    ts_1.hull.cluster_config.leader_lost_timeout = 1000
+    ts_2.hull.cluster_config.leader_lost_timeout = 1000
+    ts_3.hull.cluster_config.leader_lost_timeout = 1000
 
     # make sure that we can control timeouts and get
     # things to happend that way

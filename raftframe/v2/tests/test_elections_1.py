@@ -158,17 +158,17 @@ async def test_reelection_3(cluster_of_three):
     # things to happend that way
 
     # ensure that ts_3 wins first election
-    ts_1.hull.config.cluster.leader_lost_timeout = 1
-    ts_2.hull.config.cluster.leader_lost_timeout = 1
-    ts_3.hull.config.cluster.leader_lost_timeout = 0.001
+    ts_1.hull.cluster_config.leader_lost_timeout = 1
+    ts_2.hull.cluster_config.leader_lost_timeout = 1
+    ts_3.hull.cluster_config.leader_lost_timeout = 0.001
 
     # ensure that ts_2 wins re-election
-    ts_1.hull.config.cluster.election_timeout_min = 1
-    ts_1.hull.config.cluster.election_timeout_max = 1.2
-    ts_2.hull.config.cluster.election_timeout_min = 0.001
-    ts_2.hull.config.cluster.election_timeout_max = 0.0011
-    ts_3.hull.config.cluster.election_timeout_min = 1
-    ts_3.hull.config.cluster.election_timeout_max = 1.2
+    ts_1.hull.cluster_config.election_timeout_min = 1
+    ts_1.hull.cluster_config.election_timeout_max = 1.2
+    ts_2.hull.cluster_config.election_timeout_min = 0.001
+    ts_2.hull.cluster_config.election_timeout_max = 0.0011
+    ts_3.hull.cluster_config.election_timeout_min = 1
+    ts_3.hull.cluster_config.election_timeout_max = 1.2
     
     await cluster.start()
     # give ts_3 time to timeout and start campaign
