@@ -19,7 +19,9 @@ DONE! 2. Condense comms and DSL into a single structure, something like "pilot".
 
 5. Change entries sent to proposed log record, so that things like config data can
    be destributed the same was as commands
-   
+
+6. Think about providing an option uri map implementation for users.
+
 10. Consider adding the state map logic or something like it so that "pilot" can receive
     callbacks to notify about state changes. Prolly simpler than the original. Maybe
     something that can be implemented in base_state or even hull.

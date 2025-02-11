@@ -75,7 +75,16 @@ class Hull:
 
     async def handle_message_error(self, message, error):
         self.logger.error("%s had error handling message error '%s'", self.get_my_uri(), error)
-        
+
+    async def apply_command(self, command):
+        if self.state.state_code == StateCode.leader:
+            result = await self.state.apply_command(command)
+            return dict(result=result, retry=None, redirect=None)
+        elif self.state.state_code == StateCode.follower:
+            return dict(result=None, retry=None, redirect=self.state.leader_uri)
+        elif self.state.state_code == StateCode.candidate:
+            return dict(result=None, retry=1, redirect=None)
+
     def get_log(self):
         return self.log
 

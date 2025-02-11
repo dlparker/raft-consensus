@@ -44,13 +44,17 @@ async def test_command_1(cluster_of_three):
     logger.error('----------------------------------------------------------')
     await cluster.start_auto_comms()
 
-    res1,err1 = await ts_3.hull.state.apply_command("add 1")
+    command_result = await ts_3.hull.apply_command("add 1")
+    res1,err1 = command_result['result']
     assert res1 is not None
     assert err1 is None
     assert ts_1.operations.total == 1
     assert ts_2.operations.total == 1
     assert ts_3.operations.total == 1
 
+    command_result = await ts_1.hull.apply_command("add 1")
+    assert command_result['redirect'] == uri_3
+    
 
     
     
