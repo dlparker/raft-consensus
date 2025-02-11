@@ -5,10 +5,9 @@ import json
 from dataclasses import dataclass
 from typing import Dict, List, Any
 from enum import Enum
-from raftframe.v2.states.base_state import StateCode, Substate, BaseState
-from raftframe.v2.states.context import RaftContext
+from raftframe.v2.states.base_state import StateCode, BaseState
 from raftframe.v2.log.log_api import LogRec
-from raftframe.messages.append_entries import AppendEntriesMessage
+from raftframe.v2.messages.append_entries import AppendEntriesMessage
 
 class PushStatusCode(str, Enum):
     sent = "SENT"
@@ -94,12 +93,10 @@ class Leader(BaseState):
             message = AppendEntriesMessage(sender=self.hull.get_my_uri(),
                                            receiver=nid,
                                            term=self.log.get_term(),
-                                           data=[],
+                                           entries=[],
                                            prevLogTerm=self.log.get_term(),
-                                           prevLogIndex=self.log.get_last_index(),
-                                           leaderCommit=True)
-            if message.data == []:
-                self.logger.debug("%s sending heartbeat to %s", self.hull.get_my_uri(), nid)
+                                           prevLogIndex=self.log.get_last_index())
+            self.logger.debug("%s sending heartbeat to %s", message.sender, message.receiver)
             await self.hull.send_message(message)
         self.last_broadcast_time = time.time()
         
@@ -113,14 +110,10 @@ class Leader(BaseState):
             message = AppendEntriesMessage(sender=self.hull.get_my_uri(),
                                            receiver=nid,
                                            term=self.log.get_term(),
-                                           data=tracker.commands,
+                                           entries=tracker.commands,
                                            prevLogTerm=self.log.get_term(),
-                                           prevLogIndex=self.log.get_last_index(),
-                                           leaderCommit=True)
-            if message.data == []:
-                self.logger.debug("%s sending heartbeat to %s", self.hull.get_my_uri(), nid)
-            else:
-                self.logger.info("%s sending append_entries to %s", self.hull.get_my_uri(), nid)
+                                           prevLogIndex=self.log.get_last_index())
+            self.logger.info("sending %s", message)
             await self.hull.send_message(message)
         self.last_broadcast_time = time.time()
         

@@ -1,16 +1,24 @@
-
-1. Remove sender and receiver info from messages, that's comms layer stuff. Add leaderId to appendendtry
-   and candidateId to request vote. These are opaque to raft, just strings.
+1. Messaege classes update
    a. Also remove leaderCommit from vote.
    b. Consider removing the data stuff from the messages too, it is not requred except for
       append entries sequences
-   c. Think hard about server URIs and how they might translate to comms, but not permanently
-      restrict and instance to the same address:port. How does a server stop and then rejoin the
-      cluster on a different port? Maybe this is a secondary function that should be provided to
-      support clustering, but is not a required part of the raft library operations? That sounds
-      good, then we can develop using simple methods of sharing the cluster map, but allow more
-      sophisticated methods.
+   c. Look at each one for simplifications and clarifications. Build short and long __rep__
+      for each
 
+2. Condense comms and DSL into a single structure, something like "pilot".
+
+3. Make command call part of base state with appropriate response if not leader. Follower replies
+   "redirect: uri", candiate response "retry". Build a test sequence for this.
+
+4. Build test wrapper (maybe an implementation of "pilot"?) that supports message pausing based
+   on patterns, e.g. after sending an apppend entries response. Have it also know how to
+   perform simulated timer triggers
+
+10. Consider adding the state map logic or something like it so that "pilot" can receive
+    callbacks to notify about state changes. Prolly simpler than the original. Maybe
+    something that can be implemented in base_state or even hull.
+
+# REVIEW
 2. Message ops
    a. Add some means for the caller of the on_message function to tell the target how to send a response back,
       probably and async callable (awaitable then, I guess). Think about what else might allow the caller
@@ -45,3 +53,12 @@
    steps on records that are being overwritten). Should explain how this can be handled by supplying
    a custom logAPI module so that raft log operations can be transactional with "real" state storage
    operations.
+
+8, Change log api to support multiple record types, command, cluster_config, for sure maybe others.
+
+9. Change command processor sequence to provide unsaved log record with message then save the result.
+   Check raft.pdf to see if there is an implication that a restarted leader might have uncommitted
+   records to apply, and if not then get rid of whole committed/not committed logic everywhere. Otherwise
+   think about how to store them, maybe separate table so that there is no confusion about what the
+   log actually looks like?
+

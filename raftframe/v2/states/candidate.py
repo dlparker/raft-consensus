@@ -1,8 +1,7 @@
 import asyncio
 import random
 from raftframe.v2.states.base_state import StateCode, Substate, BaseState
-from raftframe.messages.request_vote import RequestVoteMessage
-from raftframe.v2.states.context import RaftContext
+from raftframe.v2.messages.request_vote import RequestVoteMessage
 
 class Candidate(BaseState):
 
@@ -28,10 +27,8 @@ class Candidate(BaseState):
                 message = RequestVoteMessage(sender=self.hull.get_my_uri(),
                                              receiver=node_id,
                                              term=self.term,
-                                             data="",
                                              prevLogTerm=self.log.get_term(),
-                                             prevLogIndex=self.log.get_last_index(),
-                                             leaderCommit=0)
+                                             prevLogIndex=self.log.get_last_index())
                 await self.hull.send_message(message)
 
     
@@ -39,9 +36,9 @@ class Candidate(BaseState):
         if message.term < self.term:
             self.logger.info("candidate %s ignoring out of date vote", self.hull.get_my_uri())
             return
-        self.votes[message.sender] = message.data['response']
+        self.votes[message.sender] = message.vote
         self.logger.info("candidate %s voting result %s from %s", self.hull.get_my_uri(),
-                         message.data['response'], message.sender)
+                         message.vote, message.sender)
         self.reply_count += 1
         tally = 0
         for nid in self.votes:

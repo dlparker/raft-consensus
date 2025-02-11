@@ -7,8 +7,8 @@ import time
 from raftframe.v2.log.sqlite_log import SqliteLog
 from raftframe.v2.hull.hull_config import LiveConfig, ClusterConfig, LocalConfig
 from raftframe.v2.hull.hull import Hull
-from raftframe.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
-from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
+from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 from dev_tools.memory_log_v2 import MemoryLog
 from raftframe.v2.hull.cmd_api import DSLAPI
 

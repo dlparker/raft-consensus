@@ -3,8 +3,8 @@ import asyncio
 import logging
 import pytest
 import time
-from raftframe.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
-from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
+from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
 logging.basicConfig(level=logging.DEBUG)
 

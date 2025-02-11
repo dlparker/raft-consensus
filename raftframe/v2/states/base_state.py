@@ -1,8 +1,8 @@
 import asyncio
 import logging
 from enum import Enum
-from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
-from raftframe.messages.request_vote import RequestVoteMessage, RequestVoteResponseMessage
+from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.v2.messages.request_vote import RequestVoteMessage, RequestVoteResponseMessage
 
 class StateCode(str, Enum):
 
@@ -61,8 +61,6 @@ class Substate(str, Enum):
     
     """ Just sent log entry commit (as leader) """
     sent_commit = "SENT_COMMIT"
-
-
 
 class BaseState:
     
@@ -155,10 +153,10 @@ class BaseState:
         reply = AppendResponseMessage(message.receiver,
                                       message.sender,
                                       term=self.log.get_term(),
-                                      data=data,
+                                      entries=message.entries,
+                                      results=[],
                                       prevLogTerm=self.log.get_last_term(),
-                                      prevLogIndex=self.log.get_last_index(),
-                                      leaderCommit=self.log.get_last_index())
+                                      prevLogIndex=self.log.get_last_index())
         await self.hull.send_response(message, reply)
 
     async def send_reject_vote_response(self, message):
@@ -166,7 +164,9 @@ class BaseState:
         reply = RequestVoteResponseMessage(message.receiver,
                                            message.sender,
                                            term=message.term,
-                                           data=data)
+                                           prevLogIndex=self.log.get_last_index(),
+                                           prevLogTerm=self.log.get_last_term(),
+                                           vote=False)
         await self.hull.send_response(message, reply)
 
     def __rep__(self):

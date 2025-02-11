@@ -4,9 +4,8 @@ import logging
 import json
 from raftframe.v2.log.log_api import LogRec
 from raftframe.v2.states.base_state import StateCode, Substate, BaseState
-from raftframe.v2.states.context import RaftContext
-from raftframe.messages.append_entries import AppendResponseMessage
-from raftframe.messages.request_vote import RequestVoteResponseMessage
+from raftframe.v2.messages.append_entries import AppendResponseMessage
+from raftframe.v2.messages.request_vote import RequestVoteResponseMessage
 
 class Follower(BaseState):
 
@@ -37,7 +36,7 @@ class Follower(BaseState):
         # Common case first, leader's idea of cluster state matches ours, no new records
         # for the log, a heartbeat, in other words
         if (message.term == self.log.get_term()
-            and message.prevLogIndex == self.last_index and message.data == []):
+            and message.prevLogIndex == self.last_index and message.entries == []):
             if self.leader_uri is None:
                 self.leader_uri = message.sender
                 self.logger.info("%s accepting new leader %s", self.hull.get_my_uri(),
@@ -76,7 +75,7 @@ class Follower(BaseState):
         self.logger.debug("new records")
         processor = self.hull.get_processor()
         recs = []
-        for command in message.data:
+        for command in message.entries:
             result = None
             error = None
             try:
@@ -97,7 +96,7 @@ class Follower(BaseState):
                              user_data=json.dumps(run_result))
             self.log.append([new_rec,])
         await self.send_append_entries_response(message, recs)
-        return RaftContext()
+        return
 
     async def on_vote_request(self, message):
         if self.last_vote is not None:
@@ -110,8 +109,8 @@ class Follower(BaseState):
         # If the messages claim for log index or term are not at least as high
         # as our local values, then vote no.
         if message.prevLogIndex < last_index or message.term < self.log.get_term():
-            self.logger.info("%s voting false on message %s %s", self.hull.get_my_uri(),
-                             message, message.data)
+            self.logger.info("%s voting false on %s", self.hull.get_my_uri(),
+                             message.sender)
             vote = False
         else: # both term and index proposals are acceptable, so vote yes
             self.last_vote = message.sender
@@ -131,22 +130,23 @@ class Follower(BaseState):
         vote_response = RequestVoteResponseMessage(sender=self.hull.get_my_uri(),
                                                    receiver=message.sender,
                                                    term=message.term,
-                                                   data={"response": votedYes})
+                                                   prevLogIndex=self.log.get_last_index(),
+                                                   prevLogTerm=self.log.get_last_term(),
+                                                   vote=votedYes)
         await self.hull.send_response(message, vote_response)
         
     async def send_append_entries_response(self, message, new_records):
-        data = dict(success=True,
-                    last_index=self.log.get_last_index(),
-                    last_term=self.log.get_last_term(),
-                    results=new_records,
-                    commit_only=True)
+        if new_records is None:
+            new_records = []
         append_response = AppendResponseMessage(sender=self.hull.get_my_uri(),
                                                 receiver=message.sender,
                                                 term=self.log.get_term(),
-                                                data=data,
+                                                entries=message.entries,
+                                                results=new_records,
                                                 prevLogIndex=message.prevLogIndex,
                                                 prevLogTerm=message.prevLogTerm,
-                                                leaderCommit=message.leaderCommit)
+                                                myPrevLogIndex=self.log.get_last_index(),
+                                                myPrevLogTerm=self.log.get_last_term())
         await self.hull.send_response(message, append_response)
 
     async def contact_checker(self):

@@ -1,12 +1,11 @@
 import traceback
 import logging
 import random
-from raftframe.messages.base_message import BaseMessage
+from raftframe.v2.messages.base_message import BaseMessage
 from raftframe.v2.states.base_state import StateCode, BaseState
 from raftframe.v2.states.follower import Follower
 from raftframe.v2.states.candidate import Candidate
 from raftframe.v2.states.leader import Leader
-from raftframe.v2.states.context import RaftContext
 from raftframe.v2.hull.cmd_api import DSLAPI
 
 class Hull:
@@ -65,6 +64,7 @@ class Hull:
         self.logger.debug("Handling message type %s", message.get_code())
         if not isinstance(message, BaseMessage):
             raise Exception('Message is not a raft type, did you use provided deserializer?')
+        res = None
         try:
             res = await self.state.on_message(message)
         except Exception as e:
@@ -72,11 +72,10 @@ class Hull:
             self.logger.error(error)
             await self.handle_message_error(message, error)
             return None
-        if isinstance(res, RaftContext):
-            return res
+        return res
 
     async def handle_message_error(self, message, error):
-        self.logger.error("%s had error handling message %s", self.get_my_uri(), error)
+        self.logger.error("%s had error handling message error '%s'", self.get_my_uri(), error)
         
     def get_log(self):
         return self.log
