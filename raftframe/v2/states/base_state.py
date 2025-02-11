@@ -150,15 +150,15 @@ class BaseState:
     
     async def send_reject_append_response(self, message):
         data = dict(success=False,
-                    last_index=self.log.get_commit_index(),
+                    last_index=self.log.get_last_index(),
                     last_term=self.log.get_last_term())
         reply = AppendResponseMessage(message.receiver,
                                       message.sender,
                                       term=self.log.get_term(),
                                       data=data,
                                       prevLogTerm=self.log.get_last_term(),
-                                      prevLogIndex=self.log.get_commit_index(),
-                                      leaderCommit=self.log.get_commit_index())
+                                      prevLogIndex=self.log.get_last_index(),
+                                      leaderCommit=self.log.get_last_index())
         await self.hull.send_response(message, reply)
 
     async def send_reject_vote_response(self, message):

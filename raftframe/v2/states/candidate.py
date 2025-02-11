@@ -30,7 +30,7 @@ class Candidate(BaseState):
                                              term=self.term,
                                              data="",
                                              prevLogTerm=self.log.get_term(),
-                                             prevLogIndex=self.log.get_commit_index(),
+                                             prevLogIndex=self.log.get_last_index(),
                                              leaderCommit=0)
                 await self.hull.send_message(message)
 

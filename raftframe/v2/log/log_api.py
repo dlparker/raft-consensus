@@ -19,13 +19,16 @@ class RecordCode(str, Enum):
 
     """ Results of local client command operation """
     local_client = "LOCAL_CLIENT" 
+
+    """ Cluster Configuration Data """
+    cluster_confit = "CLUSTER_CONFIG" 
+
     
 @dataclass
 class LogRec:
     code: RecordCode = field(default=RecordCode.client)
     index: int = field(default = 0)
     term: int = field(default = 0)
-    committed: bool = field(default = False)
     user_data: list =  field(default=None, repr=False)
 
     @classmethod
@@ -33,7 +36,6 @@ class LogRec:
         rec = cls(RecordCode(data['code']),
                   index=data['index'],
                   term=data['term'],
-                  committed=data['committed'],
                   user_data=data['user_data'])
         return rec
     
@@ -61,14 +63,6 @@ class LogAPI(metaclass=abc.ABCMeta):
     def incr_term(self) -> int:  # pragma: no cover abstract
         raise NotImplementedError
     
-    @abc.abstractmethod
-    def commit(self, index: int): # pragma: no cover abstract
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def get_commit_index(self) -> int:  # pragma: no cover abstract
-        raise NotImplementedError
-
     @abc.abstractmethod
     def append(self, entries: List[LogRec]):  # pragma: no cover abstract
         raise NotImplementedError

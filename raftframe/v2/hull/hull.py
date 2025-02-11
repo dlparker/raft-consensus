@@ -1,17 +1,21 @@
 import traceback
 import logging
 import random
+from raftframe.messages.base_message import BaseMessage
 from raftframe.v2.states.base_state import StateCode, BaseState
 from raftframe.v2.states.follower import Follower
 from raftframe.v2.states.candidate import Candidate
 from raftframe.v2.states.leader import Leader
 from raftframe.v2.states.context import RaftContext
-from raftframe.messages.base_message import BaseMessage
+from raftframe.v2.hull.cmd_api import DSLAPI
 
 class Hull:
 
-    def __init__(self, config):
+    def __init__(self, config, cmd_api: DSLAPI):
         self.config = config
+        if not isinstance(cmd_api, DSLAPI):
+            raise Exception('Must supply a raftframe.v2.hull.cmd_api.DSLAPI implementation')
+        self.command_processor = cmd_api
         self.response_sender = config.response_sender
         self.message_sender = config.message_sender
         self.log = config.log # should be some implementation of the LogAPI
@@ -83,6 +87,9 @@ class Hull:
     def get_my_uri(self):
         return self.config.local.uri
         
+    def get_processor(self):
+        return self.command_processor
+    
     def get_term(self):
         return self.log.get_term()
 
@@ -90,10 +97,12 @@ class Hull:
         return self.config.cluster.node_uris
 
     def get_leader_lost_timeout(self):
-        return self.config.local.leader_lost_timeout
+        return self.config.cluster.leader_lost_timeout
+
+    def get_heartbeat_period(self):
+        return self.config.cluster.heartbeat_period
 
     def get_election_timeout(self):
-        # TODO: needs to change to random.uniform(election_timeout_min, election_timeout_max)
-        res = random.uniform(self.config.local.election_timeout_min,
-                             self.config.local.election_timeout_max)
+        res = random.uniform(self.config.cluster.election_timeout_min,
+                             self.config.cluster.election_timeout_max)
         return res

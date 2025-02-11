@@ -38,3 +38,10 @@
 
 6. Need to make sure this line from the doc is true: "if one servers term is smaller than anothers
 (on message) then it updates its term to the larger value"
+
+7. Need to write up implications of recovery processing, i.e. that operations that were done at a server
+   might be overwritten, so if you persist stuff based on the command execution there needs to be
+   an undo operation (and this library needs to support it, which means follower needs to call undo
+   steps on records that are being overwritten). Should explain how this can be handled by supplying
+   a custom logAPI module so that raft log operations can be transactional with "real" state storage
+   operations.
