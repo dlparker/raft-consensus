@@ -15,11 +15,8 @@ class RecordCode(str, Enum):
     no_op = "NO_OP"
 
     """ Results of client command operation """
-    client = "CLIENT" 
-
-    """ Results of local client command operation """
-    local_client = "LOCAL_CLIENT" 
-
+    client = "CLIENT"
+    
     """ Cluster Configuration Data """
     cluster_confit = "CLUSTER_CONFIG" 
 

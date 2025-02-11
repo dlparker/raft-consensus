@@ -10,15 +10,12 @@ DONE! 2. Condense comms and DSL into a single structure, something like "pilot".
 2.b Add config read and write and config-to-and-from-json to hull. Think about defining
     and API for the hull (probably not since it needs stuff at init)
     
-3. Make command call part of base state with appropriate response if not leader. Follower replies
+DONE 3. Make command call part of base state with appropriate response if not leader. Follower replies
    "redirect: uri", candiate response "retry". Build a test sequence for this.
 
 4. Build test wrapper (maybe an implementation of "pilot"?) that supports message pausing based
    on patterns, e.g. after sending an apppend entries response. Have it also know how to
    perform simulated timer triggers
-
-5. Change entries sent to proposed log record, so that things like config data can
-   be destributed the same was as commands
 
 6. Think about providing an option uri map implementation for users.
 
@@ -26,6 +23,9 @@ DONE! 2. Condense comms and DSL into a single structure, something like "pilot".
     callbacks to notify about state changes. Prolly simpler than the original. Maybe
     something that can be implemented in base_state or even hull.
 
+11. Figure out how to log config changes, and in the process make general mechanism for
+    non-command records.
+    
 # REVIEW
 2. Message ops
    a. Add some means for the caller of the on_message function to tell the target how to send a response back,
