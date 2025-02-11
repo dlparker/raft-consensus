@@ -71,20 +71,10 @@ class LiveConfig:
             An instance of a class that implments :class:`raftframe.log.log_api.LogAPI` and
             provides log record storage and access using some underlying storage 
             technique. The default implementation for this is :class:`raftframe.log.sqlite_log.SqliteLog`.
-        message_sender:
-            A callable that returns and awaitable (such as an async function or method) that
-            takes an instance of BaseMessage class and sends it to the addressed recipient
-        response_sender:
-            A callable that returns and awaitable (such as an async function or method) that
-            takes an instance of BaseMessage class that was originally delivered to the caller
-            and an response, that arranges to send the response according to something in 
-            either the response or the original message, or both
     """
     
     cluster: ClusterConfig
     local: LocalConfig
     log: LogAPI # actual, live object
-    message_sender: Callable[[BaseMessage], Awaitable[Any]]
-    response_sender: Callable[[BaseMessage, BaseMessage], Awaitable[Any]]
 
     

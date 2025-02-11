@@ -2,6 +2,7 @@ import logging
 import asyncio
 import time
 import json
+import traceback
 from dataclasses import dataclass
 from typing import Dict, List, Any
 from enum import Enum
@@ -69,7 +70,7 @@ class Leader(BaseState):
             processor = self.hull.get_processor()
             result,error = await processor.process_command(command)
         except Exception as e:
-            error = trackback.format_exc()
+            error = traceback.format_exc()
             result = None
         run_result = dict(command=command,
                           result=result,

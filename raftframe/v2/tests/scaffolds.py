@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+
 from pathlib import Path
 import asyncio
 import logging
@@ -10,7 +10,7 @@ from raftframe.v2.hull.hull import Hull
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 from dev_tools.memory_log_v2 import MemoryLog
-from raftframe.v2.hull.cmd_api import DSLAPI
+from raftframe.v2.hull.api import PilotAPI
 
 
 HEARTBEAT_PERIOD=0.03 # must be less than leader_lost_timeout
@@ -62,7 +62,7 @@ async def tear_down(event_loop):
     except asyncio.exceptions.CancelledError:
         pass
 
-class simpleDSL(DSLAPI):
+class simpleOps():
     total = 0
     async def process_command(self, command):
         logger = logging.getLogger(__name__)
@@ -116,25 +116,23 @@ class T1Cluster:
             data_log = MemoryLog()
             live_config = LiveConfig(cluster=cc,
                                      log=data_log,
-                                     local=local_config,
-                                     message_sender=self.message_sender,
-                                     response_sender=self.response_sender)
+                                     local=local_config)
             node.set_config(live_config)
 
     async def start(self, only_these=None):
         for uri, node in self.nodes.items():
             await node.start()
             
-    async def response_sender(self, in_msg, reply_msg):
-        target = self.nodes[reply_msg.receiver]
+    async def response_sender(self, target_uri, in_msg, reply_msg):
+        target = self.nodes[target_uri]
         target.in_messages.append(reply_msg)
         self.logger.debug("queueing reply %s", reply_msg)
         if self.auto_comms_flag:
             async with self.auto_comms_condition:
                 self.auto_comms_condition.notify_all()
 
-    async def message_sender(self, msg):
-        target = self.nodes[msg.receiver]
+    async def message_sender(self, target_uri, msg):
+        target = self.nodes[target_uri]
         target.in_messages.append(msg)
         self.logger.debug("queueing message %s", msg)
         if self.auto_comms_flag:
@@ -170,7 +168,7 @@ class T1Cluster:
         self.node_uris = []
 
             
-class T1Server:
+class T1Server(PilotAPI):
 
     def __init__(self, uri, cluster):
         self.uri = uri
@@ -178,13 +176,25 @@ class T1Server:
         self.live_config = None
         self.hull = None
         self.in_messages = []
-        self.command_processor = simpleDSL()
         self.logger = logging.getLogger(__name__)
 
     def set_config(self, live_config):
         self.live_config = live_config
-        self.hull = Hull(self.live_config, self.command_processor)
+        self.hull = Hull(self.live_config, self)
+        self.operations = simpleOps()
 
+    # Part of PilotAPI
+    async def process_command(self, command):
+        return await self.operations.process_command(command)
+        
+    # Part of PilotAPI
+    async def send_message(self, target, msg):
+        await self.cluster.message_sender(target, msg)
+
+    # Part of PilotAPI
+    async def send_response(self, target, in_msg, reply):
+        await self.cluster.response_sender(target, in_msg, reply)
+                
     async def start(self):
         await self.hull.start()
 

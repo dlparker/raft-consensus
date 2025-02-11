@@ -47,9 +47,10 @@ async def test_command_1(cluster_of_three):
     res1,err1 = await ts_3.hull.state.apply_command("add 1")
     assert res1 is not None
     assert err1 is None
-    assert ts_1.command_processor.total == 1
-    assert ts_2.command_processor.total == 1
-    assert ts_3.command_processor.total == 1
+    assert ts_1.operations.total == 1
+    assert ts_2.operations.total == 1
+    assert ts_3.operations.total == 1
+
 
     
     

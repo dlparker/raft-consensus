@@ -6,17 +6,15 @@ from raftframe.v2.states.base_state import StateCode, BaseState
 from raftframe.v2.states.follower import Follower
 from raftframe.v2.states.candidate import Candidate
 from raftframe.v2.states.leader import Leader
-from raftframe.v2.hull.cmd_api import DSLAPI
+from raftframe.v2.hull.api import PilotAPI
 
 class Hull:
 
-    def __init__(self, config, cmd_api: DSLAPI):
+    def __init__(self, config, pilot: PilotAPI):
         self.config = config
-        if not isinstance(cmd_api, DSLAPI):
-            raise Exception('Must supply a raftframe.v2.hull.cmd_api.DSLAPI implementation')
-        self.command_processor = cmd_api
-        self.response_sender = config.response_sender
-        self.message_sender = config.message_sender
+        if not isinstance(pilot, PilotAPI):
+            raise Exception('Must supply a raftframe.v2.hull.api.PilotAPI implementation')
+        self.pilot = pilot
         self.log = config.log # should be some implementation of the LogAPI
         self.state = BaseState(self, StateCode.paused)
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -54,11 +52,11 @@ class Hull:
 
     async def send_message(self, message):
         self.logger.debug("Sending message type %s to %s", message.get_code(), message.receiver)
-        await self.config.message_sender(message)
+        await self.pilot.send_message(message.receiver, message)
 
     async def send_response(self, message, response):
         self.logger.debug("Sending response type %s to %s", response.get_code(), response.receiver)
-        await self.config.response_sender(message, response)
+        await self.pilot.send_response(response.receiver, message, response)
 
     async def on_message(self, message):
         self.logger.debug("Handling message type %s", message.get_code())
@@ -87,7 +85,7 @@ class Hull:
         return self.config.local.uri
         
     def get_processor(self):
-        return self.command_processor
+        return self.pilot
     
     def get_term(self):
         return self.log.get_term()
