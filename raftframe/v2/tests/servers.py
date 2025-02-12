@@ -252,40 +252,6 @@ class ConditionSet:
                 return True
         return False
 
-class ConditionSetSet:
-    
-    def __init__(self, sets=None, mode="and", name=None):
-        if sets is None:
-            sets = []
-        self.sets = sets
-        self.mode = mode
-        if name is None:
-            name = f"SetSet-[cset.name for cset in sets]"
-        self.name = name
-
-    def __repr__(self):
-        return self.name
-    
-    def add_set(self, c_set):
-        self.sets.append(c_set)
-        
-    async def is_met(self, server):
-        logger = logging.getLogger(__name__)
-        sets_done = 0
-        for cond_set in self.cond_set_set.sets:
-            is_met = await cond_set.is_met(server)
-            if not is_met:
-                if self.mode == "and":
-                    return False
-            if self.mode == "or":
-                logger.debug(f"%s ConditionSet {cond_set} met, run done (or)", server.uri)
-                return True
-            sets_done += 1
-            if sets_done == len(self.sets):
-                logger.debug(f"%s ConditionSet {cond_set} met, all met", server.uri)
-                return True
-        return False
-
 class PausingServer(PilotAPI):
 
     def __init__(self, uri, cluster):
@@ -299,7 +265,6 @@ class PausingServer(PilotAPI):
         self.logger = logging.getLogger(__name__)
         self.log = MemoryLog()
         self.cond_set = None
-        self.cond_set_set = None
         self.condition = None
 
     def set_configs(self, local_config, cluster_config):
@@ -381,22 +346,17 @@ class PausingServer(PilotAPI):
     def clear_conditions(self, hard=False):
         self.condition = None
         self.cond_set = None
-        self.cond_set_set = None
 
     def set_condition(self, condition):
         if self.condition is not None:
             raise Exception('this is for single condition operation, already set')
         if self.cond_set is not None:
             raise Exception('only one condition mode allowed, already have single set')
-        if self.cond_set_set is not None:
-            raise Exception('only one condition mode allowed, already have multiple sets')
         self.condition = condition
         
     def add_condition(self, condition):
         if self.condition is not None:
             raise Exception('only one condition mode allowed, already have single')
-        if self.cond_set_set is not None:
-            raise Exception('only one condition mode allowed, already have multiple sets')
         if self.cond_set is None:
             self.cond_set = ConditionSet(mode="and")
         self.cond_set.add_condition(condition)
@@ -406,8 +366,6 @@ class PausingServer(PilotAPI):
             raise Exception('only one condition mode allowed, already have single')
         if self.cond_set is None:
             raise Exception('only one condition mode allowed, already have single set')
-        if self.cond_set_set is None:
-            self.cond_set_set = ConditionSetSet(mode="and")
         self.cond_set_set.add_set(condition_set)
 
     async def run_till_conditions(self, timeout=1):

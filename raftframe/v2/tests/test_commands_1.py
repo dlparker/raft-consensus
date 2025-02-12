@@ -27,14 +27,16 @@ async def test_command_1():
     logger = logging.getLogger(__name__)
     await cluster.start()
     await ts_3.hull.start_campaign()
-    
-    ts_1.set_condition(WhenMessageOut(AppendResponseMessage.get_code()))
-    ts_2.set_condition(WhenMessageOut(AppendResponseMessage.get_code()))
-    ts_3.add_condition(WhenInMessageCount(AppendResponseMessage.get_code(), 2))
-    assert len(ts_3.cond_set.conditions) == 1
+    ts_1.set_condition(WhenElectionDone())
+    ts_2.set_condition(WhenElectionDone())
+    ts_3.set_condition(WhenElectionDone())
+        
     await asyncio.gather(ts_1.run_till_conditions(),
                          ts_2.run_till_conditions(),
                          ts_3.run_till_conditions())
+    
+    ts_1.clear_conditions()
+    ts_2.clear_conditions()
     ts_3.clear_conditions()
     assert ts_3.hull.get_state_code() == "LEADER"
     assert ts_1.hull.state.leader_uri == uri_3
@@ -56,5 +58,6 @@ async def test_command_1():
     
 
     
-    
+    # FIXME!:
+    # need to try to send a command to a candidate
     
