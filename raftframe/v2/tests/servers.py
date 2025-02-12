@@ -187,7 +187,9 @@ class WhenHasLeader(PauseCondition):
     
 class ConditionSet:
 
-    def __init__(self, conditions=[], mode="and"):
+    def __init__(self, conditions=None, mode="and"):
+        if conditions is None:
+            conditions = []
         self.conditions = conditions
         self.mode = mode
 
@@ -196,7 +198,9 @@ class ConditionSet:
         
 class ConditionSetSet:
     
-    def __init__(self, sets=[], mode="and"):
+    def __init__(self, sets=None, mode="and"):
+        if sets is None:
+            sets = []
         self.sets = sets
         self.mode = mode
 
@@ -316,7 +320,7 @@ class PausingServer(PilotAPI):
         if self.cond_set_set is not None:
             raise Exception('only one condition mode allowed, already have multiple sets')
         if self.cond_set is None:
-            self.cond_set = ConditionSet(conditions=[], mode="and")
+            self.cond_set = ConditionSet(mode="and")
         self.cond_set.add_condition(condition)
         
     def add_condition_set(self, condition_set):
