@@ -19,9 +19,9 @@ class BaseMessage:
         self.prevLogTerm = prevLogTerm
 
     def __str__(self):
-        return self.__rep__()
+        return self.__repr__()
 
-    def __rep__(self):
+    def __repr__(self):
         msg = f"{self.code}:{self.sender}->{self.receiver}: "
         msg += f"t={self.term},pI={self.prevLogIndex},pt={self.prevLogTerm}"
         return msg

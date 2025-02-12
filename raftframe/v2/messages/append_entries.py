@@ -11,8 +11,8 @@ class AppendEntriesMessage(BaseMessage):
         BaseMessage.__init__(self, sender, receiver, term, prevLogIndex, prevLogTerm)
         self.entries = entries
     
-    def __rep__(self):
-        msg = super().__rep__()
+    def __repr__(self):
+        msg = super().__repr__()
         msg += f" e={len(self.entries)}"
         return msg
 

@@ -13,7 +13,7 @@ class RequestVoteResponseMessage(BaseMessage):
         BaseMessage.__init__(self, sender, receiver, term, prevLogIndex, prevLogTerm)
         self.vote = vote
 
-    def __rep__(self):
-        msg = super().__rep__()
+    def __repr__(self):
+        msg = super().__repr__()
         msg += f" v={self.vote}"
         return msg

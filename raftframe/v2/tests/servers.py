@@ -39,7 +39,7 @@ class PauseCondition:
     async def is_met(self, server):
         return False
 
-class WhenMessageOut:
+class WhenMessageOut(PauseCondition):
     # When a particular message have been sent
     # by the raft code, and is waiting to be transported
     # to the receiver. You can just check the message
@@ -53,23 +53,23 @@ class WhenMessageOut:
         self.message_target = message_target
         self.flush_when_done = flush_when_done
 
-    def __rep__(self):
+    def __repr__(self):
         msg = f"{self.__class__.__name__} {self.message_code} {self.message_target}"
         return msg
 
     async def is_met(self, server):
         done = False
-        for message  in server.out_messages:
+        for message in server.out_messages:
             if message.get_code() == self.message_code:
                 if self.message_target is None:
                     done = True
                 elif self.message_target == message.receiver:
                     done = True
         if done and self.flush_when_done:
-            await server.flush_one_out_message(message)
+            await server.flush_one_out_message(message)            
         return done
     
-class WhenMessageIn:
+class WhenMessageIn(PauseCondition):
     # Whenn a particular message have been transported
     # from a different server and placed in the input
     # pending buffer of this server. The message
@@ -80,25 +80,61 @@ class WhenMessageIn:
         self.message_code = message_code
         self.message_sender = message_sender
 
-    def __rep__(self):
+    def __repr__(self):
         msg = f"{self.__class__.__name__} {self.message_code} {self.message_sender}"
         return msg
     
     async def is_met(self, server):
+        done = False
         for message in server.in_messages:
             if message.get_code() == self.message_code:
                 if self.message_sender is None:
-                    return True
+                    done = True
                 if self.message_sender == message.sender:
-                    return True
-        return False
+                    done = True
+        return done
     
-class WhenAllMessagesForwarded:
+class WhenInMessageCount(PauseCondition):
+    # Whenn a particular message has been transported
+    # from a different server and placed in the input
+    # pending buffer of this server a number of times.
+    # Until the count is reached, messages will be processed,
+    # then the last on will be held in the input queue.
+    # If this is a problem follow the wait for this condition
+    # with server.do_next_in_msg()
+
+    def __init__(self, message_code, goal):
+        self.message_code = message_code
+        self.goal = goal
+        self.captured = []
+        self.logged_done = False
+
+    def __repr__(self):
+        msg = f"{self.__class__.__name__} {self.message_code} {self.goal}"
+        return msg
+    
+    async def is_met(self, server):
+        logger = logging.getLogger(__name__)
+        for message in server.in_messages:
+            if message.get_code() == self.message_code:
+                if message not in self.captured:
+                    self.captured.append(message)
+                    logger.debug("%s captured = %s", self, self.captured)
+        if len(self.captured) == self.goal:
+            if not self.logged_done:
+                logger.debug("%s satisfied ", self)
+                self.logged_done = True
+            return True
+        else:
+            return False
+    
+    
+class WhenAllMessagesForwarded(PauseCondition):
     # When the server has forwarded (i.e. transported) all
     # of its pending output messages to the other servers,
     # where they sit in the input queues.
 
-    def __rep__(self):
+    def __repr__(self):
         msg = f"{self.__class__.__name__}"
         return msg
     
@@ -107,12 +143,12 @@ class WhenAllMessagesForwarded:
             return False
         return True
     
-class WhenAllInMessagesHandled:
+class WhenAllInMessagesHandled(PauseCondition):
     # When the server has processed all the messages
     # in the input queue, submitting them to the raft
     # code for processing.
 
-    def __rep__(self):
+    def __repr__(self):
         msg = f"{self.__class__.__name__}"
         return msg
     
@@ -121,10 +157,10 @@ class WhenAllInMessagesHandled:
             return False
         return True
     
-class WhenIsLeader:
+class WhenIsLeader(PauseCondition):
     # When the server has won the election and
     # knows it.
-    def __rep__(self):
+    def __repr__(self):
         msg = f"{self.__class__.__name__}"
         return msg
     
@@ -133,12 +169,12 @@ class WhenIsLeader:
             return True
         return False
     
-class WhenHasLeader:
+class WhenHasLeader(PauseCondition):
     # When the server started following specified leader
     def __init__(self, leader_uri):
         self.leader_uri = leader_uri
 
-    async def __rep__(self):
+    async def __repr__(self):
         msg = f"{self.__class__.__name__} leader={self.leader_uri}"
         return msg
         
@@ -223,7 +259,7 @@ class PausingServer(PilotAPI):
         if len(self.in_messages) == 0:
             return None
         msg = self.in_messages.pop(0)
-        self.logger.debug("delivering message %s", msg)
+        self.logger.debug("%s handling message %s", self.hull.get_my_uri(), msg)
         await self.hull.on_message(msg)
         return msg
 
@@ -241,7 +277,7 @@ class PausingServer(PilotAPI):
         new_list = []
         for msg in self.out_messages:
             if msg == message:
-                self.logger.debug("forwarding message %s", msg)
+                self.logger.debug("FLUSH forwarding message %s", msg)
                 await self.cluster.send_message(msg)
             else:
                 new_list.append(msg)
@@ -260,11 +296,11 @@ class PausingServer(PilotAPI):
         self.hull = None
         del hull
 
-    def clear_conditions(self):
+    def clear_conditions(self, hard=False):
         self.condition = None
         self.cond_set = None
         self.cond_set_set = None
-        
+
     def set_condition(self, condition):
         if self.condition is not None:
             raise Exception('this is for single condition operation, already set')
@@ -277,10 +313,10 @@ class PausingServer(PilotAPI):
     def add_condition(self, condition):
         if self.condition is not None:
             raise Exception('only one condition mode allowed, already have single')
-        if self.cond_set is None:
-            self.cond_set = ConditionSet(mode="and")
         if self.cond_set_set is not None:
             raise Exception('only one condition mode allowed, already have multiple sets')
+        if self.cond_set is None:
+            self.cond_set = ConditionSet(conditions=[], mode="and")
         self.cond_set.add_condition(condition)
         
     def add_condition_set(self, condition_set):
@@ -290,7 +326,7 @@ class PausingServer(PilotAPI):
             raise Exception('only one condition mode allowed, already have single set')
         if self.cond_set_set is None:
             self.cond_set_set = ConditionSetSet(mode="and")
-        self.cond_set.add_set(condition_set)
+        self.cond_set_set.add_set(condition_set)
 
     async def run_till_conditions(self, timeout=1):
         start_time = time.time()
@@ -298,25 +334,25 @@ class PausingServer(PilotAPI):
         while not done and time.time() - start_time < timeout:
             if self.condition is not None:
                 if await self.condition.is_met(self):
-                    self.logger.debug("Condition %s met, run done")
+                    self.logger.debug(f"Condition {self.condition} met, run done")
                     done = True
                     break
             elif self.cond_set is not None:
                 for_set = 0
                 for cond in self.cond_set.conditions:
-                    if not await cond.is_met(self):
+                    is_met = await cond.is_met(self)
+                    if not is_met:
                         continue
                     for_set += 1
                     if self.cond_set.mode == "or":
-                        self.logger.debug("Condition %s met, run done (or)")
+                        self.logger.debug(f"Condition {cond} met, run done (or)")
                         done = True
                         break
                     else:
                         if for_set == len(self.cond_set.conditions):
-                            self.logger.debug("Condition %s met, all met")
+                            self.logger.debug(f"Condition {cond} met, all met")
                             done = True
-                        else:
-                            self.logger.debug("Condition %s met more to go")
+                            break
             elif self.cond_set_set is not None:
                 sets_done = 0
                 for cond_set in self.cond_set_set.sets:
@@ -348,7 +384,7 @@ class PausingServer(PilotAPI):
     
 class PausingCluster:
 
-    def __init__(self, node_count):
+    def __init__(self, node_count, suffix=0):
         self.node_uris = []
         self.nodes = dict()
         self.logger = logging.getLogger(__name__)
@@ -356,7 +392,7 @@ class PausingCluster:
         self.auto_comms_condition = asyncio.Condition()
         for i in range(node_count):
             nid = i + 1
-            uri = f"mcpy://{nid}"
+            uri = f"mcpy://{nid}/{suffix}"
             self.node_uris.append(uri)
             t1s = PausingServer(uri, self)
             self.nodes[uri] = t1s
@@ -418,37 +454,3 @@ class PausingCluster:
         # lose references to everything
         self.nodes = {}
         self.node_uris = []
-    
-    
-@pytest.fixture
-@pytest.mark.asyncio
-async def cluster_of_three():
-    cluster = PausingCluster(3)
-    cluster.set_configs()
-    yield cluster
-    await cluster.cleanup()
-    loop = asyncio.get_event_loop()
-    await tear_down(loop)
-    
-@pytest.fixture
-@pytest.mark.asyncio
-async def cluster_of_five():
-    cluster = PausingCluster(5)
-    cluster.set_configs()
-    yield cluster
-    await cluster.cleanup()
-    loop = asyncio.get_event_loop()
-    await tear_down(loop)
-    
-async def tear_down(event_loop):
-    # Collect all tasks and cancel those that are not 'done'.                                       
-    tasks = asyncio.all_tasks(event_loop)
-    tasks = [t for t in tasks if not t.done()]
-    for task in tasks:
-        task.cancel()
-
-    # Wait for all tasks to complete, ignoring any CancelledErrors                                  
-    try:
-        await asyncio.wait(tasks)
-    except asyncio.exceptions.CancelledError:
-        pass

@@ -8,13 +8,16 @@ from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendRes
 
 logging.basicConfig(level=logging.DEBUG)
 
-from raftframe.v2.tests.servers import cluster_of_three,cluster_of_five
+from raftframe.v2.tests.servers import PausingCluster
 from raftframe.v2.tests.servers import WhenMessageOut, WhenMessageIn
 from raftframe.v2.tests.servers import WhenIsLeader, WhenHasLeader
 from raftframe.v2.tests.servers import WhenAllMessagesForwarded, WhenAllInMessagesHandled
+from raftframe.v2.tests.servers import WhenInMessageCount
 
-async def test_stepwise_election_1(cluster_of_three):
-    cluster = cluster_of_three
+
+async def test_stepwise_election_1():
+    cluster = PausingCluster(3)
+    cluster.set_configs()
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]
     uri_3 = cluster.node_uris[2]
@@ -27,13 +30,14 @@ async def test_stepwise_election_1(cluster_of_three):
     await cluster.start()
     await ts_3.hull.start_campaign()
     out1 = WhenMessageOut(RequestVoteMessage.get_code(),
-                        message_target=uri_1)
+                          message_target=uri_1, flush_when_done=False)
     ts_3.add_condition(out1)
     out2 = WhenMessageOut(RequestVoteMessage.get_code(),
-                        message_target=uri_2)
+                          message_target=uri_2, flush_when_done=False)
     ts_3.add_condition(out2)
     await ts_3.run_till_conditions()
     ts_3.clear_conditions()
+
     # Candidate is poised to send request for vote to other two servers
     # let the messages go out
     candidate = ts_3.hull.state
@@ -71,9 +75,11 @@ async def test_stepwise_election_1(cluster_of_three):
     assert ts_2.hull.state.leader_uri == uri_3
 
     logger.debug("Stepwise paused election test completed")
-    
-async def test_stepwise_election_1(cluster_of_three):
-    cluster = cluster_of_three
+
+async def test_run_to_election_1():
+    cluster = PausingCluster(3)
+    cluster.set_configs()
+
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]
     uri_3 = cluster.node_uris[2]
@@ -85,22 +91,17 @@ async def test_stepwise_election_1(cluster_of_three):
     logger = logging.getLogger(__name__)
     await cluster.start()
     await ts_3.hull.start_campaign()
-
+    
     ts_1.set_condition(WhenMessageOut(AppendResponseMessage.get_code()))
     ts_2.set_condition(WhenMessageOut(AppendResponseMessage.get_code()))
-
-    ts_3.add_condition(WhenMessageIn(AppendResponseMessage.get_code(), uri_1))
-    ts_3.add_condition(WhenMessageIn(AppendResponseMessage.get_code(), uri_2))
+    ts_3.add_condition(WhenInMessageCount(AppendResponseMessage.get_code(), 2))
+    assert len(ts_3.cond_set.conditions) == 1
     await asyncio.gather(ts_1.run_till_conditions(),
                          ts_2.run_till_conditions(),
                          ts_3.run_till_conditions())
-
     ts_3.clear_conditions()
-    ts_3.set_condition(WhenAllMessagesForwarded())
-    await ts_3.run_till_conditions()
     assert ts_3.hull.get_state_code() == "LEADER"
     assert ts_1.hull.state.leader_uri == uri_3
     assert ts_2.hull.state.leader_uri == uri_3
 
-    logger.debug("Election completion pause test completed")
-    
+    logger.debug("----------------------------Election completion pause test completed")
