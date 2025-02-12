@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import pytest
+from collections import defaultdict
 from raftframe.v2.hull.hull_config import ClusterConfig, LocalConfig
 from raftframe.v2.hull.hull import Hull
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
@@ -174,7 +175,7 @@ class WhenHasLeader(PauseCondition):
     def __init__(self, leader_uri):
         self.leader_uri = leader_uri
 
-    async def __repr__(self):
+    def __repr__(self):
         msg = f"{self.__class__.__name__} leader={self.leader_uri}"
         return msg
         
@@ -185,28 +186,105 @@ class WhenHasLeader(PauseCondition):
             return True
         return False
     
+class WhenElectionDone(PauseCondition):
+    # Examine whole cluster to make sure we are in the
+    # post election quiet period
+
+    def __init__(self):
+        self.announced = defaultdict(dict)
+        
+    def __repr__(self):
+        msg = f"{self.__class__.__name__}"
+        return msg
+        
+    async def is_met(self, server):
+        logger = logging.getLogger(__name__)
+        quiet = []
+        have_leader = False
+        for uri, node in server.cluster.nodes.items():
+            if node.hull.get_state_code() == "LEADER":
+                have_leader = True
+                rec = self.announced[uri]
+                if "is_leader" not in rec:
+                    rec['is_leader'] = True
+                    logger.debug('%s is now leader', uri)
+            if len(node.in_messages) == 0 and len(node.out_messages) == 0:
+                quiet.append(uri)
+                rec = self.announced[uri]
+                if "is_quiet" not in rec:
+                    rec['is_quiet'] = True
+                    logger.debug('%s is now quiet, total quiet == %d', uri, len(quiet))
+        if have_leader and len(quiet) == len(server.cluster.nodes):
+            return True
+        return False
+    
 class ConditionSet:
 
-    def __init__(self, conditions=None, mode="and"):
+    def __init__(self, conditions=None, mode="and", name=None):
         if conditions is None:
             conditions = []
         self.conditions = conditions
         self.mode = mode
+        if name is None:
+            name = f"Set-[str(cond) for cond in conditions]"
+        self.name = name
+
+    def __repr__(self):
+        return self.name
 
     def add_condition(self, condition):
         self.conditions.append(condition)
-        
+
+    async def is_met(self, server):
+        logger = logging.getLogger(__name__)
+        for_set = 0
+        for cond in self.conditions:
+            is_met = await cond.is_met(server)
+            if not is_met:
+                if self.mode == "and":
+                    return False
+            for_set += 1
+            if self.mode == "or":
+                logger.debug(f"%s Condition {cond} met, run done (or)", server.uri)
+                return True
+            if for_set == len(self.conditions):
+                logger.debug(f"%s Condition {cond} met, all met", server.uri)
+                return True
+        return False
+
 class ConditionSetSet:
     
-    def __init__(self, sets=None, mode="and"):
+    def __init__(self, sets=None, mode="and", name=None):
         if sets is None:
             sets = []
         self.sets = sets
         self.mode = mode
+        if name is None:
+            name = f"SetSet-[cset.name for cset in sets]"
+        self.name = name
 
+    def __repr__(self):
+        return self.name
+    
     def add_set(self, c_set):
         self.sets.append(c_set)
         
+    async def is_met(self, server):
+        logger = logging.getLogger(__name__)
+        sets_done = 0
+        for cond_set in self.cond_set_set.sets:
+            is_met = await cond_set.is_met(server)
+            if not is_met:
+                if self.mode == "and":
+                    return False
+            if self.mode == "or":
+                logger.debug(f"%s ConditionSet {cond_set} met, run done (or)", server.uri)
+                return True
+            sets_done += 1
+            if sets_done == len(self.sets):
+                logger.debug(f"%s ConditionSet {cond_set} met, all met", server.uri)
+                return True
+        return False
 
 class PausingServer(PilotAPI):
 
@@ -338,44 +416,19 @@ class PausingServer(PilotAPI):
         while not done and time.time() - start_time < timeout:
             if self.condition is not None:
                 if await self.condition.is_met(self):
-                    self.logger.debug(f"Condition {self.condition} met, run done")
+                    self.logger.debug(f"%s Condition {self.condition} met, run done", self.uri)
                     done = True
                     break
             elif self.cond_set is not None:
-                for_set = 0
-                for cond in self.cond_set.conditions:
-                    is_met = await cond.is_met(self)
-                    if not is_met:
-                        continue
-                    for_set += 1
-                    if self.cond_set.mode == "or":
-                        self.logger.debug(f"Condition {cond} met, run done (or)")
-                        done = True
-                        break
-                    else:
-                        if for_set == len(self.cond_set.conditions):
-                            self.logger.debug(f"Condition {cond} met, all met")
-                            done = True
-                            break
+                if await self.cond_set.is_met(self):
+                    self.logger.debug(f"%s ConditionSet {self.cond_set} met, run done", self.uri)
+                    done = True
+                    break
             elif self.cond_set_set is not None:
-                sets_done = 0
-                for cond_set in self.cond_set_set.sets:
-                    for_set = 0
-                    for cond in self.cond_set.conditions:
-                        if not await cond.is_met(self):
-                            continue
-                        for_set += 1
-                        if self.cond_set.mode == "or":
-                            sets_done += 1
-                            break
-                        else:
-                            if for_set == len(self.cond_set.conditions):
-                                sets_done += 1
-                    if self.cond_set_set.mode == "or" and sets_done > 0:
-                        done = True
-                        break
-                    if sets_done == len(self.cond_set_set.sets):
-                        done = True
+                if await self.cond_set_set.is_met(self):
+                    self.logger.debug(f"%s ConditionSetSet {self.cond_set_set} met, run done", self.uri)
+                    done = True
+                    break
             if not done:
                 msg = await self.do_next_out_msg()
                 if not msg:
@@ -383,12 +436,12 @@ class PausingServer(PilotAPI):
                 if not msg:
                     await asyncio.sleep(0.00001)
         if not done:
-            raise Exception('timeout waiting for conditions')
+            raise Exception(f'{self.uri} timeout waiting for conditions')
         return # all conditions met as required by mode flags, so pause ops
     
 class PausingCluster:
 
-    def __init__(self, node_count, suffix=0):
+    def __init__(self, node_count):
         self.node_uris = []
         self.nodes = dict()
         self.logger = logging.getLogger(__name__)
@@ -396,7 +449,7 @@ class PausingCluster:
         self.auto_comms_condition = asyncio.Condition()
         for i in range(node_count):
             nid = i + 1
-            uri = f"mcpy://{nid}/{suffix}"
+            uri = f"mcpy://{nid}"
             self.node_uris.append(uri)
             t1s = PausingServer(uri, self)
             self.nodes[uri] = t1s
@@ -428,13 +481,13 @@ class PausingCluster:
         node  = self.nodes[message.receiver]
         await node.accept_in_msg(message)
         
-    async def deliver_all_pending(self):
+    async def deliver_all_pending(self,  out_only=False):
         any = True
         # want to bounce around, not deliver each ts completely
         while any:
             any = False
             for uri, node in self.nodes.items():
-                if len(node.in_messages) > 0:
+                if len(node.in_messages) > 0 and not out_only:
                     await node.do_next_in_msg()
                     any = True
                 if len(node.out_messages) > 0:

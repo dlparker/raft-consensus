@@ -37,8 +37,9 @@ class Follower(BaseState):
         # for the log, a heartbeat, in other words
         if (message.term == self.log.get_term()
             and message.prevLogIndex == self.last_index and message.entries == []):
-            if self.leader_uri is None:
+            if self.leader_uri != message.sender:
                 self.leader_uri = message.sender
+                self.last_vote = None
                 self.logger.info("%s accepting new leader %s", self.hull.get_my_uri(),
                                  self.leader_uri)
             else:
@@ -53,9 +54,12 @@ class Follower(BaseState):
             await self.send_reject_append_response(message)
             return
         self.last_leader_contact = time.time()
-        # Rare case, election in progress and leader declaring itself winner, other
-        # append entries logic the same as when local and leader have same term
         if message.term > self.log.get_term():
+            # Supposed to get a call to term_expired first, which raises our local term
+            # to match. Followers never decide that a higher term is not valid
+            raise Exception('this should never happen!')
+        
+        
             self.logger.info("accepting leader %s after voting for %s", message.sender,
                              self.last_vote)
             self.leader_uri = message.sender
@@ -101,6 +105,8 @@ class Follower(BaseState):
     async def on_vote_request(self, message):
         if self.last_vote is not None:
             # we only vote once
+            self.logger.info("%s voting false on %s, already voted", self.hull.get_my_uri(),
+                             message.sender)
             await self.send_vote_response_message(message, votedYes=False)
             return
         # Leadership claims have to be for max log commit index of
@@ -119,8 +125,12 @@ class Follower(BaseState):
         await self.send_vote_response_message(message, votedYes=vote)
             
     async def term_expired(self, message):
+        # Raft protocol says all participants should record the highest term
+        # value that they receive in a message. Always means an election has
+        # happened and we are in the new term.
+        # Followers never decide that a higher term is not valid
         self.log.set_term(message.term)
-        # process the message as normal
+        # Tell the base class method to route the message back to us as normal
         return message
 
     async def leader_lost(self):

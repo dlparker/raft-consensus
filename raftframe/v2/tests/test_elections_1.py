@@ -6,15 +6,21 @@ import time
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
+from raftframe.v2.tests.servers import PausingCluster
+
 logging.basicConfig(level=logging.DEBUG)
 
-from raftframe.v2.tests.scaffolds import cluster_of_three,cluster_of_five
+async def test_election_1():
+    """This is the happy path, everybody has same state, only one server
+        runs for leader, everybody response correctly. It is written
+        using the most granular control provided by the PausingServer
+        class, controlling the message movement steps directly (for
+        the most part).
 
-async def test_election_1(cluster_of_three):
-    """ This is the happy path, everybody has same state, only one server runs for leader,
-        everybody response correctly """
+    """
 
-    cluster = cluster_of_three
+    cluster = PausingCluster(3)
+    cluster.set_configs()
     await cluster.start()
     uri_1 = cluster.node_uris[0]
     ts_1 = cluster.nodes[uri_1]
@@ -25,39 +31,55 @@ async def test_election_1(cluster_of_three):
 
     # tell first one to start election, should send request vote messages to other two
     await ts_1.hull.start_campaign()
+    await cluster.deliver_all_pending(out_only=True)
     assert len(ts_2.in_messages) == 1
     assert len(ts_3.in_messages) == 1
     assert ts_2.in_messages[0].get_code() == RequestVoteMessage.get_code()
     assert ts_3.in_messages[0].get_code() == RequestVoteMessage.get_code()
 
     # now deliver those, we should get two replies at first one, both with yes
-    await ts_2.do_next_msg()
-    await ts_3.do_next_msg()
+    await ts_2.do_next_in_msg()
+    await ts_2.do_next_out_msg()
+    assert len(ts_1.in_messages) == 1
+    await ts_3.do_next_in_msg()
+    await ts_3.do_next_out_msg()
     assert len(ts_1.in_messages) == 2
     assert ts_1.in_messages[0].get_code() == RequestVoteResponseMessage.get_code()
     assert ts_1.in_messages[1].get_code() == RequestVoteResponseMessage.get_code()
     
     # now let candidate process votes, should then promote itself
-    await ts_1.do_next_msg()
-    await ts_1.do_next_msg()
+    await ts_1.do_next_in_msg()
+    await ts_1.do_next_in_msg()
     assert ts_1.hull.get_state_code() == "LEADER"
 
     # leader should send append_entries to everyone else in cluster,
     # check for delivery pending
+    await ts_1.do_next_out_msg()
+    await ts_1.do_next_out_msg()
     assert len(ts_2.in_messages) == 1
     assert len(ts_3.in_messages) == 1
     assert ts_2.in_messages[0].get_code() == AppendEntriesMessage.get_code()
     assert ts_3.in_messages[0].get_code() == AppendEntriesMessage.get_code()
+
     # now deliver those, we should get two replies at first one,
-    await ts_2.do_next_msg()
-    await ts_3.do_next_msg()
+    await ts_2.do_next_in_msg()
+    await ts_2.do_next_out_msg()
+    assert len(ts_1.in_messages) == 1
+    await ts_3.do_next_in_msg()
+    await ts_3.do_next_out_msg()
     assert len(ts_1.in_messages) == 2
     assert ts_1.in_messages[0].get_code() == AppendResponseMessage.get_code()
     assert ts_1.in_messages[1].get_code() == AppendResponseMessage.get_code()
 
 
-async def test_election_2(cluster_of_five):
-    cluster = cluster_of_five
+async def test_election_2():
+    """Just a simple test of first election with 5 servers, to ensure it
+    works as well as 3 servers. Mostly pointless, but might catch an
+    assumption in test support code that only three servers are used.
+    """
+    
+    cluster = PausingCluster(5)
+    cluster.set_configs()
     await cluster.start()
 
     uri_1 = cluster.node_uris[0]
@@ -83,8 +105,9 @@ async def test_election_2(cluster_of_five):
     assert ts_5.hull.state.leader_uri == uri_1
 
     
-async def test_reelection_1(cluster_of_three):
-    cluster = cluster_of_three
+async def test_reelection_1():
+    cluster = PausingCluster(3)
+    cluster.set_configs()
     await cluster.start()
     
     uri_1 = cluster.node_uris[0]
@@ -113,8 +136,9 @@ async def test_reelection_1(cluster_of_three):
     assert ts_2.hull.get_state_code() == "LEADER"
     assert ts_3.hull.get_state_code() == "FOLLOWER"
     
-async def test_reelection_2(cluster_of_three):
-    cluster = cluster_of_three
+async def test_reelection_2():
+    cluster = PausingCluster(3)
+    cluster.set_configs()
     await cluster.start()
     
     uri_1 = cluster.node_uris[0]
@@ -144,8 +168,9 @@ async def test_reelection_2(cluster_of_three):
     assert ts_1.hull.get_state_code() == "FOLLOWER"
     assert ts_3.hull.get_state_code() == "FOLLOWER"
     
-async def test_reelection_3(cluster_of_three):
-    cluster = cluster_of_three
+async def test_reelection_3():
+    cluster = PausingCluster(3)
+    cluster.set_configs()
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]
     uri_3 = cluster.node_uris[2]
@@ -173,11 +198,6 @@ async def test_reelection_3(cluster_of_three):
     await cluster.start()
     # give ts_3 time to timeout and start campaign
     await asyncio.sleep(0.001)
-    assert len(ts_1.in_messages) == 1
-    assert len(ts_2.in_messages) == 1
-    assert ts_1.in_messages[0].get_code() == RequestVoteMessage.get_code()
-    assert ts_2.in_messages[0].get_code() == RequestVoteMessage.get_code()
-    
     # vote requests, then vote responses
     await cluster.deliver_all_pending()
     assert ts_3.hull.get_state_code() == "LEADER"

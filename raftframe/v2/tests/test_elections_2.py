@@ -11,11 +11,21 @@ logging.basicConfig(level=logging.DEBUG)
 from raftframe.v2.tests.servers import PausingCluster
 from raftframe.v2.tests.servers import WhenMessageOut, WhenMessageIn
 from raftframe.v2.tests.servers import WhenIsLeader, WhenHasLeader
+from raftframe.v2.tests.servers import WhenElectionDone
 from raftframe.v2.tests.servers import WhenAllMessagesForwarded, WhenAllInMessagesHandled
 from raftframe.v2.tests.servers import WhenInMessageCount
 
 
 async def test_stepwise_election_1():
+    """This test is mainly for the purpose of testing the test support
+        features implemented in the PausingCluster, PausingServer and
+        various Condition implementations. Other tests already proved
+        the basic election process using more granular control
+        methods, this does the same kind of thing but using the
+        run_till_condition model of controlling the code. It is still somewhat
+        granular, and serves as a demo of how to build tests that can run 
+        things, stop em, examine state, and continue
+    """
     cluster = PausingCluster(3)
     cluster.set_configs()
     uri_1 = cluster.node_uris[0]
@@ -77,6 +87,12 @@ async def test_stepwise_election_1():
     logger.debug("Stepwise paused election test completed")
 
 async def test_run_to_election_1():
+    """This test is mainly for the purpose of testing the test support
+        features implemented in the PausingCluster, PausingServer and
+        various Condition implementations. This test shows how to use
+        the least granular style of control, just allowing everything
+        (except timers) proceed normally until the election is complete.
+    """
     cluster = PausingCluster(3)
     cluster.set_configs()
 
@@ -91,17 +107,44 @@ async def test_run_to_election_1():
     logger = logging.getLogger(__name__)
     await cluster.start()
     await ts_3.hull.start_campaign()
-    
-    ts_1.set_condition(WhenMessageOut(AppendResponseMessage.get_code()))
-    ts_2.set_condition(WhenMessageOut(AppendResponseMessage.get_code()))
-    ts_3.add_condition(WhenInMessageCount(AppendResponseMessage.get_code(), 2))
-    assert len(ts_3.cond_set.conditions) == 1
+    ts_1.set_condition(WhenElectionDone())
+    ts_2.set_condition(WhenElectionDone())
+    ts_3.set_condition(WhenElectionDone())
+        
     await asyncio.gather(ts_1.run_till_conditions(),
                          ts_2.run_till_conditions(),
                          ts_3.run_till_conditions())
+    
+    ts_1.clear_conditions()
+    ts_2.clear_conditions()
     ts_3.clear_conditions()
+    
     assert ts_3.hull.get_state_code() == "LEADER"
     assert ts_1.hull.state.leader_uri == uri_3
     assert ts_2.hull.state.leader_uri == uri_3
 
-    logger.debug("----------------------------Election completion pause test completed")
+    logger.debug("-------- Initial election completion pause test completed starting reelection")
+    # now have leader resign, by telling it to become follower
+    await ts_3.hull.demote_and_handle(None)
+    assert ts_3.hull.get_state_code() == "FOLLOWER"
+    # simulate timeout on heartbeat on only one follower, so it should win
+    await ts_2.hull.state.leader_lost()
+    
+    ts_1.set_condition(WhenElectionDone())
+    ts_2.set_condition(WhenElectionDone())
+    ts_3.set_condition(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_conditions(),
+                         ts_2.run_till_conditions(),
+                         ts_3.run_till_conditions())
+    
+    ts_1.clear_conditions()
+    ts_2.clear_conditions()
+    ts_3.clear_conditions()
+
+    assert ts_2.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_2
+    assert ts_3.hull.state.leader_uri == uri_2
+    logger.debug("-------- Re-election test done")
+
+    

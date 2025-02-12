@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any, Type, Callable, Awaitable
 import os
 from raftframe.log.log_api import LogAPI
-from raftframe.v2.comms.comms_api import CommsAPI
 from raftframe.v2.messages.base_message import BaseMessage
 
 @dataclass

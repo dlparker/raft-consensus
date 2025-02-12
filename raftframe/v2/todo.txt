@@ -7,8 +7,6 @@ DONE! 1. Messaege classes update
 
 DONE! 2. Condense comms and DSL into a single structure, something like "pilot".
 
-2.b Add config read and write and config-to-and-from-json to hull. Think about defining
-    and API for the hull (probably not since it needs stuff at init)
     
 DONE 3. Make command call part of base state with appropriate response if not leader. Follower replies
    "redirect: uri", candiate response "retry". Build a test sequence for this.
@@ -16,10 +14,14 @@ DONE 3. Make command call part of base state with appropriate response if not le
 4. Build test wrapper (maybe an implementation of "pilot"?) that supports
    a. message pausing based on patterns, e.g. after sending an apppend entries response. DONE!
    b. Have it also know how to perform simulated timer triggers
+      1. Figure out a clean way to manage call_later tasks from base state or from hull
+         so that code looks sensible but supports manipulation during testing.
+   c. Add support for firing breakpoint in on_message when condigtion met. Maybe subclass
+      hull? Maybe monkey patch it?
 
 5. Need timeout mechanism for command
 
-6. fix the asyncio fixture setting problem in tests, have to update the re-election tests
+DONE 6. fix the asyncio fixture setting problem in tests, have to update the re-election tests
 
 9. Think about providing an option uri map implementation for users.
 
@@ -39,6 +41,8 @@ DONE 3. Make command call part of base state with appropriate response if not le
    log actually looks like?
 
 
+30. Add config read and write and config-to-and-from-json to hull. Think about defining
+    and API for the hull (probably not since it needs stuff at init)
 
 # REVIEW
 2. Message ops
