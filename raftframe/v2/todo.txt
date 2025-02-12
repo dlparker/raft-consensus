@@ -17,10 +17,13 @@ DONE 3. Make command call part of base state with appropriate response if not le
       1. Figure out a clean way to manage call_later tasks from base state or from hull
          so that code looks sensible but supports manipulation during testing.
    c. Add support for firing breakpoint in on_message when condigtion met. Maybe subclass
-      hull? Maybe monkey patch it?
+      hull? Maybe monkey patch it? DONE!
 
 5. Need timeout mechanism for command
 
+6. Think deep about reporting errors in raft code, and detecting them in testing. Break something
+   such as rejected append entries and fiddle.
+   
 DONE 6. fix the asyncio fixture setting problem in tests, have to update the re-election tests
 
 9. Think about providing an option uri map implementation for users.

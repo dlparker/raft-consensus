@@ -6,11 +6,11 @@ import time
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
-from raftframe.v2.tests.servers import PausingCluster
+from raftframe.v2.tests.servers import PausingCluster, cluster_maker
 
 logging.basicConfig(level=logging.DEBUG)
 
-async def test_election_1():
+async def test_election_1(cluster_maker):
     """This is the happy path, everybody has same state, only one server
         runs for leader, everybody response correctly. It is written
         using the most granular control provided by the PausingServer
@@ -19,7 +19,7 @@ async def test_election_1():
 
     """
 
-    cluster = PausingCluster(3)
+    cluster = cluster_maker(3)
     cluster.set_configs()
     await cluster.start()
     uri_1 = cluster.node_uris[0]
@@ -72,13 +72,13 @@ async def test_election_1():
     assert ts_1.in_messages[1].get_code() == AppendResponseMessage.get_code()
 
 
-async def test_election_2():
+async def test_election_2(cluster_maker):
     """Just a simple test of first election with 5 servers, to ensure it
     works as well as 3 servers. Mostly pointless, but might catch an
     assumption in test support code that only three servers are used.
     """
     
-    cluster = PausingCluster(5)
+    cluster = cluster_maker(5)
     cluster.set_configs()
     await cluster.start()
 
@@ -105,8 +105,8 @@ async def test_election_2():
     assert ts_5.hull.state.leader_uri == uri_1
 
     
-async def test_reelection_1():
-    cluster = PausingCluster(3)
+async def test_reelection_1(cluster_maker):
+    cluster = cluster_maker(3)
     cluster.set_configs()
     await cluster.start()
     
@@ -136,8 +136,8 @@ async def test_reelection_1():
     assert ts_2.hull.get_state_code() == "LEADER"
     assert ts_3.hull.get_state_code() == "FOLLOWER"
     
-async def test_reelection_2():
-    cluster = PausingCluster(3)
+async def test_reelection_2(cluster_maker):
+    cluster = cluster_maker(3)
     cluster.set_configs()
     await cluster.start()
     
@@ -168,8 +168,8 @@ async def test_reelection_2():
     assert ts_1.hull.get_state_code() == "FOLLOWER"
     assert ts_3.hull.get_state_code() == "FOLLOWER"
     
-async def test_reelection_3():
-    cluster = PausingCluster(3)
+async def test_reelection_3(cluster_maker):
+    cluster = cluster_maker(3)
     cluster.set_configs()
     uri_1 = cluster.node_uris[0]
     uri_2 = cluster.node_uris[1]

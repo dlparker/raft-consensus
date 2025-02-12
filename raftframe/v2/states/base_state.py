@@ -71,7 +71,6 @@ class BaseState:
         self.substate = Substate.starting
         self.log = hull.get_log()
         self.stopped = False
-        self.async_handle = None
         self.routes = None
         self.build_routes()
 
@@ -99,20 +98,9 @@ class BaseState:
         # child classes not required to have this method, but if they do,
         # they should call this one (i.e. super().stop())
         self.stopped = True
-        if self.async_handle:
-            self.logger.debug("%s canceling scheduled task", self.hull.get_my_uri())
-            self.async_handle.cancel()
 
-    async def after_runner(self, target):
-        if self.stopped:
-            return
-        await target()
-        
     async def run_after(self, delay, target):
-        loop = asyncio.get_event_loop()
-        self.async_handle = loop.call_later(delay,
-                                            lambda target=target:
-                                            asyncio.create_task(self.after_runner(target)))
+        await self.hull.state_run_after(delay, target)
         
     async def on_message(self, message):
         if message.term > self.log.get_term():
@@ -129,23 +117,34 @@ class BaseState:
             return await route(message)
 
     async def on_append_entries(self, message):
-        self.logger.warning('append_entries not implemented in the class "%s", sending rejection',
-                         self.__class__.__name__)
+        problem = 'append_entries not implemented in the class '
+        problem += '"{self.__class__.__name__}", sending rejection'
+        self.logger.warning(problem)
         await self.send_reject_append_response(message)
+        await self.hull.record_message_problem(message, problem)
 
     async def on_append_entries_response(self, message):
-        self.logger.warning('append_entries_response not implemented in the class "%s", ignoring',
-                         self.__class__.__name__)
+        problem = 'append_entries_response not implemented in the class '
+        problem += '"{self.__class__.__name__}", sending rejection'
+        self.logger.warning(problem)
+        await self.hull.record_message_problem(message, problem)
 
     async def on_vote_request(self, message):
-        self.logger.warning('request_vote not implemented in the class "%s", sending rejection',
-                         self.__class__.__name__)
+        problem = 'request_vote not implemented in the class '
+        problem += '"{self.__class__.__name__}", sending rejection'
+        self.logger.warning(problem)
         await self.send_reject_vote_response(message)
+        await self.hull.record_message_problem(message, problem)
 
     async def on_vote_response(self, message):
-        self.logger.warning('request_vote_response not implemented in the class "%s", ignoring',
-                         self.__class__.__name__)
-    
+        if self.state_code == "LEADER" and message.term == self.log.get_term():
+            self.logger.info('request_vote_response leftover from finished election, ignoring')
+            return
+        problem = 'request_vote_response not implemented in the class '
+        problem += '"{self.__class__.__name__}", sending rejection'
+        self.logger.warning(problem)
+        await self.hull.record_message_problem(message, problem)
+        
     async def send_reject_append_response(self, message):
         data = dict(success=False,
                     last_index=self.log.get_last_index(),
@@ -155,8 +154,10 @@ class BaseState:
                                       term=self.log.get_term(),
                                       entries=message.entries,
                                       results=[],
-                                      prevLogTerm=self.log.get_last_term(),
-                                      prevLogIndex=self.log.get_last_index())
+                                      prevLogTerm=message.prevLogTerm,
+                                      prevLogIndex=message.prevLogIndex,
+                                      myPrevLogTerm=self.log.get_last_term(),
+                                      myPrevLogIndex=self.log.get_last_index())
         await self.hull.send_response(message, reply)
 
     async def send_reject_vote_response(self, message):
@@ -169,5 +170,5 @@ class BaseState:
                                            vote=False)
         await self.hull.send_response(message, reply)
 
-    def __rep__(self):
-        self.state_code
+    def __repr__(self):
+        return self.state_code

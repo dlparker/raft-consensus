@@ -1,3 +1,4 @@
+import asyncio
 import traceback
 import logging
 import random
@@ -19,29 +20,39 @@ class Hull:
         self.log = pilot.get_log()
         self.state = BaseState(self, StateCode.paused)
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.state_async_handle = None
+        self.message_problem_history = []
 
     async def start(self):
         self.state = Follower(self)
         await self.state.start()
 
-    async def start_campaign(self):
+    async def stop_state(self):
         if self.state:
             await self.state.stop()
+            if self.state_async_handle:
+                self.logger.debug("%s canceling scheduled task", self.get_my_uri())
+                self.state_async_handle.cancel()
+                self.state_async_handle = None
+                
+    async def start_campaign(self):
+        if self.state:
+            await self.stop_state()
         self.state = Candidate(self)
         await self.state.start()
         self.logger.warning("%s started campaign %s", self.get_my_uri(), self.log.get_term())
 
     async def win_vote(self, new_term):
         if self.state:
-            await self.state.stop()
+            await self.stop_state()
         self.state = Leader(self, new_term)
         self.logger.warning("%s promoting to leader for term %s", self.get_my_uri(), new_term)
         await self.state.start()
 
-    async def demote_and_handle(self, message):
+    async def demote_and_handle(self, message=None):
         if self.state:
             self.logger.warning("%s demoting to follower from %s", self.get_my_uri(), self.state)
-            await self.state.stop()
+            await self.stop_state()
         else:
             self.logger.warning("%s demoting to follower", self.get_my_uri())
         # special case where candidate or leader got an append_entries message,
@@ -84,6 +95,21 @@ class Hull:
             return dict(result=None, retry=None, redirect=self.state.leader_uri)
         elif self.state.state_code == StateCode.candidate:
             return dict(result=None, retry=1, redirect=None)
+
+    async def state_after_runner(self, target):
+        if self.state.stopped:
+            return
+        await target()
+        
+    async def state_run_after(self, delay, target):
+        loop = asyncio.get_event_loop()
+        self.state_async_handle = loop.call_later(delay,
+                                                  lambda target=target:
+                                                  asyncio.create_task(self.state_after_runner(target)))
+
+    async def record_message_problem(self, message, problem):
+        rec = dict(problem=problem, message=message)
+        self.message_problem_history.append(rec)
 
     def get_log(self):
         return self.log

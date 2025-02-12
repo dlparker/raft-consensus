@@ -12,7 +12,6 @@ class Follower(BaseState):
     def __init__(self, hull):
         super().__init__(hull, StateCode.follower)
         # log is set in BaseState
-        self.last_index = self.log.get_last_index()
         # only known after first accepted append_entries call
         self.leader_uri = None
         # only used during voting for leadership
@@ -29,14 +28,14 @@ class Follower(BaseState):
     async def on_append_entries(self, message):
         self.logger.debug("%s append term = %d prev_index = %d local_term = %d local_index = %d",
                           self.hull.get_my_uri(),  message.term,
-                          message.prevLogIndex, self.log.get_term(), self.last_index)
+                          message.prevLogIndex, self.log.get_term(), self.log.get_last_index())
 
         # Read the following three if statements carefully before modifying.
         # There are logic claims implicit in the fall through
         # Common case first, leader's idea of cluster state matches ours, no new records
         # for the log, a heartbeat, in other words
         if (message.term == self.log.get_term()
-            and message.prevLogIndex == self.last_index and message.entries == []):
+            and message.prevLogIndex == self.log.get_last_index() and message.entries == []):
             if self.leader_uri != message.sender:
                 self.leader_uri = message.sender
                 self.last_vote = None
@@ -64,7 +63,7 @@ class Follower(BaseState):
                              self.last_vote)
             self.leader_uri = message.sender
             self.last_vote = None
-            if message.prevLogIndex == self.last_index:
+            if message.prevLogIndex == self.log.get_last_index():
                 # no new records
                 self.logger.debug("no new records, just election result")
                 await self.send_append_entries_response(message, None)
