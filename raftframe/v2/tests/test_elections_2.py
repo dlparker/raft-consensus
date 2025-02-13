@@ -224,11 +224,11 @@ async def test_election_timeout_1(cluster_maker):
     # don't call stop(), it cancels the timeout
     ts_1.hull.state.stopped = True
     # now delay for more than the timeout, should start new election with new term
-    old_term = ts_1.hull.log.get_term()
+    old_term = ts_1.hull.get_term()
     assert ts_1.hull.state_async_handle is not None
     await asyncio.sleep(0.015)
     assert ts_1.hull.get_state_code() == "CANDIDATE"
-    new_term = ts_1.hull.log.get_term()
+    new_term = ts_1.hull.get_term()
     assert new_term == old_term
 
     

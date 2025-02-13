@@ -29,33 +29,27 @@ class Hull:
         await self.state.start()
 
     async def stop_state(self):
-        if self.state:
-            await self.state.stop()
-            if self.state_async_handle:
-                self.logger.debug("%s canceling scheduled task", self.get_my_uri())
-                self.state_async_handle.cancel()
-                self.state_async_handle = None
+        await self.state.stop()
+        if self.state_async_handle:
+            self.logger.debug("%s canceling scheduled task", self.get_my_uri())
+            self.state_async_handle.cancel()
+            self.state_async_handle = None
                 
     async def start_campaign(self):
-        if self.state:
-            await self.stop_state()
+        await self.stop_state()
         self.state = Candidate(self)
         await self.state.start()
         self.logger.warning("%s started campaign %s", self.get_my_uri(), self.log.get_term())
 
     async def win_vote(self, new_term):
-        if self.state:
-            await self.stop_state()
+        await self.stop_state()
         self.state = Leader(self, new_term)
         self.logger.warning("%s promoting to leader for term %s", self.get_my_uri(), new_term)
         await self.state.start()
 
     async def demote_and_handle(self, message=None):
-        if self.state:
-            self.logger.warning("%s demoting to follower from %s", self.get_my_uri(), self.state)
-            await self.stop_state()
-        else:
-            self.logger.warning("%s demoting to follower", self.get_my_uri())
+        self.logger.warning("%s demoting to follower from %s", self.get_my_uri(), self.state)
+        await self.stop_state()
         # special case where candidate or leader got an append_entries message,
         # which means we need to switch to follower and retry
         self.state = Follower(self)
@@ -72,21 +66,18 @@ class Hull:
         await self.pilot.send_response(response.receiver, message, response)
 
     async def on_message(self, message):
-        self.logger.debug("Handling message type %s", message.get_code())
-        if not isinstance(message, BaseMessage):
-            raise Exception('Message is not a raft type, did you use provided deserializer?')
         res = None
         try:
+            if not isinstance(message, BaseMessage):
+                raise Exception('Message is not a raft type, did you use provided deserializer?')
+            self.logger.debug("Handling message type %s", message.get_code())
             res = await self.state.on_message(message)
         except Exception as e:
             error = traceback.format_exc()
             self.logger.error(error)
-            await self.handle_message_error(message, error)
+            await self.record_message_problem(message, error)
             return None
         return res
-
-    async def handle_message_error(self, message, error):
-        self.logger.error("%s had error handling message error '%s'", self.get_my_uri(), error)
 
     async def apply_command(self, command):
         if self.state.state_code == StateCode.leader:
@@ -115,10 +106,9 @@ class Hull:
                                                   asyncio.create_task(self.state_after_runner(target)))
 
     async def cancel_state_run_after(self):
-        if self.state_async_handle is None:
-            return
-        self.state_async_handle.cancel()
-        self.state_async_handle = None
+        if self.state_async_handle:
+            self.state_async_handle.cancel()
+            self.state_async_handle = None
         
     async def record_message_problem(self, message, problem):
         rec = dict(problem=problem, message=message)

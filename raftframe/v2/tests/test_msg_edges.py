@@ -176,3 +176,12 @@ async def test_slow_voter(cluster_maker):
     assert msg.vote == True
     assert ts_1.hull.state.leader_uri == uri_3
     assert ts_2.hull.state.leader_uri == uri_3
+
+    ts_1.hull.message_problem_history = []
+    ts_1.hull.explode_on_message_code = AppendEntriesMessage.get_code()
+    await ts_3.hull.state.send_heartbeats()
+    await ts_3.do_next_out_msg()
+    await ts_3.do_next_out_msg()
+    await ts_1.do_next_in_msg()
+    
+    assert len(ts_1.hull.message_problem_history) == 1

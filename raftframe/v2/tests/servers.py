@@ -267,6 +267,7 @@ class TestHull(Hull):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.break_on_message_code = None
+        self.explode_on_message_code = None
         self.state_run_later_def = None
         self.timers_paused = False
         self.condition = asyncio.Condition()
@@ -275,7 +276,10 @@ class TestHull(Hull):
         if self.break_on_message_code == message.get_code():
             breakpoint()
             print('here to catch break')
-        result = await super().on_message(message)
+        if self.explode_on_message_code == message.get_code():
+            result = await super().on_message('foo')
+        else:
+            result = await super().on_message(message)
         return result
 
     async def pause_timers(self):
@@ -287,12 +291,10 @@ class TestHull(Hull):
             await self.condition.notify()
             
     async def state_after_runner(self, target):
-        if self.state.stopped:
-            return
         while self.timers_paused:
             async with self.condition:
                 await self.condition.wait()
-        await target()
+        return await super().state_after_runner(target)
 
     async def state_run_after(self, delay, target):
         self.state_run_later_def = dict(state_code=self.state.state_code,
