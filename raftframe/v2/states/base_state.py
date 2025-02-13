@@ -101,6 +101,9 @@ class BaseState:
 
     async def run_after(self, delay, target):
         await self.hull.state_run_after(delay, target)
+
+    async def cancel_run_after(self):
+        await self.hull.cancel_state_run_after()
         
     async def on_message(self, message):
         if message.term > self.log.get_term():
@@ -118,20 +121,20 @@ class BaseState:
 
     async def on_append_entries(self, message):
         problem = 'append_entries not implemented in the class '
-        problem += '"{self.__class__.__name__}", sending rejection'
+        problem += f'"{self.__class__.__name__}", sending rejection'
         self.logger.warning(problem)
         await self.send_reject_append_response(message)
         await self.hull.record_message_problem(message, problem)
 
     async def on_append_entries_response(self, message):
         problem = 'append_entries_response not implemented in the class '
-        problem += '"{self.__class__.__name__}", sending rejection'
+        problem += f'"{self.__class__.__name__}", sending rejection'
         self.logger.warning(problem)
         await self.hull.record_message_problem(message, problem)
 
     async def on_vote_request(self, message):
         problem = 'request_vote not implemented in the class '
-        problem += '"{self.__class__.__name__}", sending rejection'
+        problem += f'"{self.__class__.__name__}", sending rejection'
         self.logger.warning(problem)
         await self.send_reject_vote_response(message)
         await self.hull.record_message_problem(message, problem)
@@ -141,7 +144,7 @@ class BaseState:
             self.logger.info('request_vote_response leftover from finished election, ignoring')
             return
         problem = 'request_vote_response not implemented in the class '
-        problem += '"{self.__class__.__name__}", sending rejection'
+        problem += f'"{self.__class__.__name__}", sending rejection'
         self.logger.warning(problem)
         await self.hull.record_message_problem(message, problem)
         

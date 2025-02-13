@@ -38,7 +38,7 @@ class Follower(BaseState):
             and message.prevLogIndex == self.log.get_last_index() and message.entries == []):
             if self.leader_uri != message.sender:
                 self.leader_uri = message.sender
-                self.last_vote = None
+                self.last_vote = message
                 self.logger.info("%s accepting new leader %s", self.hull.get_my_uri(),
                                  self.leader_uri)
             else:
@@ -58,16 +58,6 @@ class Follower(BaseState):
             # to match. Followers never decide that a higher term is not valid
             raise Exception('this should never happen!')
         
-        
-            self.logger.info("accepting leader %s after voting for %s", message.sender,
-                             self.last_vote)
-            self.leader_uri = message.sender
-            self.last_vote = None
-            if message.prevLogIndex == self.log.get_last_index():
-                # no new records
-                self.logger.debug("no new records, just election result")
-                await self.send_append_entries_response(message, None)
-                return
         # We know messag.term == term from first if test seive.
         # We know message.prevLogIndex is > self.last_index
         # because protocol guarantees it is not less (if code is correct)
@@ -103,11 +93,15 @@ class Follower(BaseState):
 
     async def on_vote_request(self, message):
         if self.last_vote is not None:
-            # we only vote once
-            self.logger.info("%s voting false on %s, already voted", self.hull.get_my_uri(),
-                             message.sender)
-            await self.send_vote_response_message(message, votedYes=False)
-            return
+            if self.last_vote.term >= message.term:
+                # we only vote once per term, unlike some dead people I know
+                self.logger.info("%s voting false on %s, already voted for %s", self.hull.get_my_uri(),
+                                 message.sender, self.last_vote.sender)
+                await self.send_vote_response_message(message, votedYes=False)
+                return
+            # we have a new vote with a higher term, so forget about the last term's vote
+            self.last_vote = None
+            
         # Leadership claims have to be for max log commit index of
         # at least the same as our local copy
         last_index = self.log.get_last_index()
@@ -118,7 +112,7 @@ class Follower(BaseState):
                              message.sender)
             vote = False
         else: # both term and index proposals are acceptable, so vote yes
-            self.last_vote = message.sender
+            self.last_vote = message
             self.logger.info("%s voting true for candidate %s", self.hull.get_my_uri(), message.sender)
             vote = True
         await self.send_vote_response_message(message, votedYes=vote)

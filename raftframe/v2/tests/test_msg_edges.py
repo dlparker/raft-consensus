@@ -86,3 +86,93 @@ async def test_restart_during_heartbeat(cluster_maker):
     assert len(ts_3.hull.message_problem_history) == 1
     rep = ts_3.hull.message_problem_history[0]
     assert rep['message'] == msg
+
+
+async def test_slow_voter(cluster_maker):
+    cluster = cluster_maker(3)
+    config = cluster.build_cluster_config()
+    cluster.set_configs(config)
+    uri_1 = cluster.node_uris[0]
+    uri_2 = cluster.node_uris[1]
+    uri_3 = cluster.node_uris[2]
+
+    ts_1 = cluster.nodes[uri_1]
+    ts_2 = cluster.nodes[uri_2]
+    ts_3 = cluster.nodes[uri_3]
+
+    logger = logging.getLogger(__name__)
+    await cluster.start()
+    await ts_3.hull.start_campaign()
+    ts_1.set_trigger(WhenElectionDone())
+    ts_2.set_trigger(WhenElectionDone())
+    ts_3.set_trigger(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_triggers(),
+                         ts_2.run_till_triggers(),
+                         ts_3.run_till_triggers())
+    
+    ts_1.clear_triggers()
+    ts_2.clear_triggers()
+    ts_3.clear_triggers()
+    assert ts_3.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_3
+    assert ts_2.hull.state.leader_uri == uri_3
+
+    # Now get an re-election started on current leader,
+    # but block the follower's votes, then trigger the
+    # candidate to retry, which will up the term, then let
+    # the old votes flow in. They should get ignored
+    # and the election should succeed
+    await ts_3.hull.demote_and_handle(None)
+    await ts_3.hull.state.leader_lost()
+    await ts_3.do_next_out_msg()
+    await ts_3.do_next_out_msg()
+    msg = await ts_1.do_next_in_msg()
+    assert msg is not None
+    msg = await ts_2.do_next_in_msg()
+    assert msg is not None
+    assert len(ts_1.out_messages) == 1
+    assert len(ts_2.out_messages) == 1
+    old_term = ts_3.hull.log.get_term()
+    await ts_3.hull.state.start_campaign()
+    assert old_term + 1 == ts_3.hull.log.get_term()
+    # this should be a stale vote
+    msg = await ts_1.do_next_out_msg()
+    msg = await ts_3.do_next_in_msg()
+    assert msg.term == old_term
+    # this too
+    msg = await ts_2.do_next_out_msg()
+    msg = await ts_3.do_next_in_msg()
+    assert msg.term == old_term
+    logger.debug("--------------------Stale votes processed")
+    # stale votes should be ignored, election should complete normally
+
+    # so we need two more outs from the candidate ts_3
+    # two more ins for the followers
+    # then two outs from them to get their new votes
+    # then two ins to candiate and the first one should
+    # settle the election
+    new_term = ts_3.hull.log.get_term()
+    msg = await ts_3.do_next_out_msg()
+    assert msg.term == new_term
+    msg = await ts_3.do_next_out_msg()
+    assert msg.term == new_term
+    msg = await ts_1.do_next_in_msg()
+    assert msg.term == new_term
+    msg = await ts_2.do_next_in_msg()
+    assert msg.term == new_term
+    msg = await ts_1.do_next_out_msg()
+    assert msg.term == new_term
+    assert msg.vote == True
+    msg = await ts_2.do_next_out_msg()
+    assert msg.term == new_term
+    assert msg.vote == True
+    msg = await ts_3.do_next_in_msg()
+    assert msg.term == new_term
+    assert msg.vote == True
+    assert ts_3.hull.get_state_code() == "LEADER"
+    msg = await ts_3.do_next_in_msg()
+    assert msg.term == new_term
+    assert msg.vote == True
+    assert ts_1.hull.state.leader_uri == uri_3
+    assert ts_2.hull.state.leader_uri == uri_3

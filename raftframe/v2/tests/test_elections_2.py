@@ -76,15 +76,15 @@ async def test_stepwise_election_1(cluster_maker):
 
     logger.debug("Followers outgoing vote response messages pending")
 
-    assert ts_1.hull.state.last_vote == uri_3
-    assert ts_2.hull.state.last_vote == uri_3
+    assert ts_1.hull.state.last_vote.sender == uri_3
+    assert ts_2.hull.state.last_vote.sender == uri_3
     # Let all the messages fly until delivered
     await cluster.deliver_all_pending()
     assert ts_3.hull.get_state_code() == "LEADER"
     assert ts_1.hull.state.leader_uri == uri_3
     assert ts_2.hull.state.leader_uri == uri_3
 
-    logger.debug("Stepwise paused election test completed")
+    logger.info("Stepwise paused election test completed")
 
 async def test_run_to_election_1(cluster_maker):
     """This test is mainly for the purpose of testing the test support
@@ -123,7 +123,7 @@ async def test_run_to_election_1(cluster_maker):
     assert ts_1.hull.state.leader_uri == uri_3
     assert ts_2.hull.state.leader_uri == uri_3
 
-    logger.debug("-------- Initial election completion pause test completed starting reelection")
+    logger.info("-------- Initial election completion pause test completed starting reelection")
     # now have leader resign, by telling it to become follower
     await ts_3.hull.demote_and_handle(None)
     assert ts_3.hull.get_state_code() == "FOLLOWER"
@@ -145,6 +145,92 @@ async def test_run_to_election_1(cluster_maker):
     assert ts_2.hull.get_state_code() == "LEADER"
     assert ts_1.hull.state.leader_uri == uri_2
     assert ts_3.hull.state.leader_uri == uri_2
-    logger.debug("-------- Re-election test done")
+    logger.info("-------- Re-election test done")
 
     
+async def test_election_timeout_1(cluster_maker):
+    cluster = cluster_maker(3)
+    config = cluster.build_cluster_config(election_timeout_min=0.01,
+                                          election_timeout_max=0.011)
+    cluster.set_configs(config)
+
+    uri_1 = cluster.node_uris[0]
+    uri_2 = cluster.node_uris[1]
+    uri_3 = cluster.node_uris[2]
+
+    ts_1 = cluster.nodes[uri_1]
+    ts_2 = cluster.nodes[uri_2]
+    ts_3 = cluster.nodes[uri_3]
+
+    logger = logging.getLogger(__name__)
+    await cluster.start()
+    await ts_3.hull.start_campaign()
+    ts_1.set_trigger(WhenElectionDone())
+    ts_2.set_trigger(WhenElectionDone())
+    ts_3.set_trigger(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_triggers(),
+                         ts_2.run_till_triggers(),
+                         ts_3.run_till_triggers())
+    
+    ts_1.clear_triggers()
+    ts_2.clear_triggers()
+    ts_3.clear_triggers()
+    
+    assert ts_3.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_3
+    assert ts_2.hull.state.leader_uri == uri_3
+
+    logger.info("-------- Initial election completion, starting reelection")
+    # now have leader resign, by telling it to become follower
+    await ts_3.hull.demote_and_handle(None)
+    assert ts_3.hull.get_state_code() == "FOLLOWER"
+    # simulate timeout on heartbeat on only one follower, so it should win
+    await ts_2.hull.state.leader_lost()
+
+    # now delay for more than the timeout, should start new election with new term
+    old_term = ts_2.hull.log.get_term()
+    await asyncio.sleep(0.015)
+    new_term = ts_2.hull.log.get_term()
+    assert new_term == old_term + 1
+
+    # now it should just finish, everybody should know what to do
+    # with messages rendered irrelevant by restart
+    ts_1.set_trigger(WhenElectionDone())
+    ts_2.set_trigger(WhenElectionDone())
+    ts_3.set_trigger(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_triggers(),
+                         ts_2.run_till_triggers(),
+                         ts_3.run_till_triggers())
+    
+    ts_1.clear_triggers()
+    ts_2.clear_triggers()
+    ts_3.clear_triggers()
+
+    assert ts_2.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_2
+    assert ts_3.hull.state.leader_uri == uri_2
+    logger.info("-------- Re-election timeout test done")
+
+
+    # do the same sequence, only this time set the stopped flag on the
+    # candidate to make sure the election timeout does not start another
+    # election
+    assert ts_2.hull.demote_and_handle()
+    await ts_1.hull.state.leader_lost()
+    assert ts_1.hull.get_state_code() == "CANDIDATE"
+    # Set the stopped flag to prevent timeout from restarting election
+    # don't call stop(), it cancels the timeout
+    ts_1.hull.state.stopped = True
+    # now delay for more than the timeout, should start new election with new term
+    old_term = ts_1.hull.log.get_term()
+    assert ts_1.hull.state_async_handle is not None
+    await asyncio.sleep(0.015)
+    assert ts_1.hull.get_state_code() == "CANDIDATE"
+    new_term = ts_1.hull.log.get_term()
+    assert new_term == old_term
+
+    
+    logger.info("-------- Election restart on timeout prevention test passed")
+

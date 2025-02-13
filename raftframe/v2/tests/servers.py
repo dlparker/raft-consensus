@@ -464,8 +464,8 @@ class PausingCluster:
 
     def build_cluster_config(self, heartbeat_period=1000,
                              leader_lost_timeout=1000,
-                             election_timeout_min=0.15,
-                             election_timeout_max=0.35):
+                             election_timeout_min=10000,
+                             election_timeout_max=20000):
         
             cc = ClusterConfig(node_uris=self.node_uris,
                                heartbeat_period=heartbeat_period,

@@ -30,8 +30,10 @@ class Candidate(BaseState):
                                              prevLogTerm=self.log.get_term(),
                                              prevLogIndex=self.log.get_last_index())
                 await self.hull.send_message(message)
-
-    
+        timeout =self.hull.get_election_timeout()
+        self.logger.debug("%s setting election timeout to %f", self.hull.get_my_uri(), timeout)
+        await self.run_after(timeout, self.election_timed_out)
+        
     async def on_vote_response(self, message):
         if message.term < self.term:
             self.logger.info("candidate %s ignoring out of date vote", self.hull.get_my_uri())
@@ -47,11 +49,13 @@ class Candidate(BaseState):
         self.logger.info("candidate %s voting results with %d votes in, wins = %d (includes self)",
                          self.hull.get_my_uri(), self.reply_count + 1, tally)
         if tally > len(self.votes) / 2:
+            await self.cancel_run_after()
             await self.hull.win_vote(self.term)
             return
         if self.reply_count + 1 > len(self.votes) / 2:
             self.logger.info("candidate %s campaign lost, trying again", self.hull.get_my_uri())
-            await self.retry()
+            await self.cancel_run_after()
+            await self.run_after(self.hull.get_election_timeout(), self.start_campaign)            
             return
 
     async def term_expired(self, message):
@@ -60,8 +64,10 @@ class Candidate(BaseState):
         # don't reprocess message
         return None
 
-    async def retry(self):
-        await self.run_after(self.hull.get_election_timeout(), self.start_campaign)
+    async def election_timed_out(self):
+        self.logger.info("--!!!!!--candidate %s campaign timedout, trying again", self.hull.get_my_uri())
+        await self.start_campaign()
+        
         
 
 

@@ -21,6 +21,7 @@ class Hull:
         self.state = BaseState(self, StateCode.paused)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.state_async_handle = None
+        self.state_run_after_target = None
         self.message_problem_history = []
 
     async def start(self):
@@ -103,10 +104,22 @@ class Hull:
         
     async def state_run_after(self, delay, target):
         loop = asyncio.get_event_loop()
+        if self.state_async_handle:
+            self.logger.debug('%s cancelling after target to %s', self.local_config.uri,
+                        self.state_run_after_target)
+            self.state_async_handle.cancel()
+        self.logger.debug('%s setting run after target to %s', self.local_config.uri, target)
+        self.state_run_after_target = target
         self.state_async_handle = loop.call_later(delay,
                                                   lambda target=target:
                                                   asyncio.create_task(self.state_after_runner(target)))
 
+    async def cancel_state_run_after(self):
+        if self.state_async_handle is None:
+            return
+        self.state_async_handle.cancel()
+        self.state_async_handle = None
+        
     async def record_message_problem(self, message, problem):
         rec = dict(problem=problem, message=message)
         self.message_problem_history.append(rec)
