@@ -103,5 +103,7 @@ async def test_lost_leader_1(cluster_maker):
             break
         await asyncio.sleep(fraction)
     
-    assert ts_1.hull.state.state_code == "LEADER" or ts_2.hull.state.state_code == "LEADER"
+    assert (ts_1.hull.state.state_code == "LEADER"
+            or ts_2.hull.state.state_code == "LEADER"
+            or ts_3.hull.state.state_code == "LEADER")
     

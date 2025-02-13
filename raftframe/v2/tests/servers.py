@@ -27,11 +27,17 @@ async def cluster_maker():
     
 class simpleOps():
     total = 0
+    explode = False
+    exploded = False
     async def process_command(self, command):
         logger = logging.getLogger(__name__)
         error = None
         result = None
+        self.exploded = False
         op, operand = command.split()
+        if self.explode:
+            self.exploded = True
+            raise Exception('boom!')
         if op not in ['add', 'sub']:
             error = "invalid command"
             logger.error("invalid command %s provided", op)
@@ -106,7 +112,7 @@ class WhenMessageIn(PauseTrigger):
         return done
     
 class WhenInMessageCount(PauseTrigger):
-    # Whenn a particular message has been transported
+    # When a particular message has been transported
     # from a different server and placed in the input
     # pending buffer of this server a number of times.
     # Until the count is reached, messages will be processed,
@@ -193,6 +199,20 @@ class WhenHasLeader(PauseTrigger):
         if server.hull.get_state_code() != "FOLLOWER":
             return False
         if server.hull.state.leader_uri == self.leader_uri:
+            return True
+        return False
+    
+class WhenHasLogIndex(PauseTrigger):
+    # When the server has saved record with provided index
+    def __init__(self, index):
+        self.index = index
+
+    def __repr__(self):
+        msg = f"{self.__class__.__name__} index={self.index}"
+        return msg
+        
+    async def is_tripped(self, server):
+        if server.hull.log.get_last_index() >= self.index:
             return True
         return False
     
@@ -368,6 +388,26 @@ class PausingServer(PilotAPI):
         await self.cluster.send_message(msg)
         return msg
 
+    async def do_next_msg(self):
+        msg = await self.do_next_out_msg()
+        if not msg:
+            msg = await self.do_next_in_msg()
+        return msg
+
+    def clear_out_msgs(self):
+        for msg in self.out_messages:
+            self.logger.debug('%s clearing pending outbound %s', self.uri, msg)
+        self.out_messages = []
+        
+    def clear_in_msgs(self):
+        for msg in self.in_messages:
+            self.logger.debug('%s clearing pending inbound %s', self.uri, msg)
+        self.in_messages = []
+        
+    def clear_all_msgs(self):
+        self.clear_out_msgs()
+        self.clear_in_msgs()
+        
     async def flush_one_out_message(self, message):
         if len(self.out_messages) == 0:
             return None
@@ -418,7 +458,7 @@ class PausingServer(PilotAPI):
             raise Exception('only one trigger mode allowed, already have single set')
         self.trigger_set_set.add_set(trigger_set)
 
-    async def run_till_triggers(self, timeout=1):
+    async def run_till_triggers(self, timeout=1, free_others=False):
         start_time = time.time()
         done = False
         while not done and time.time() - start_time < timeout:
@@ -441,7 +481,13 @@ class PausingServer(PilotAPI):
                 msg = await self.do_next_out_msg()
                 if not msg:
                     msg = await self.do_next_in_msg()
-                if not msg:
+                omsg = False
+                if free_others:
+                    for uri, node in self.cluster.nodes.items():
+                        omsg_tmp = await node.do_next_msg()
+                        if omsg_tmp:
+                            omsg = True
+                if not msg and not omsg:
                     await asyncio.sleep(0.00001)
         if not done:
             raise Exception(f'{self.uri} timeout waiting for triggers')
@@ -528,6 +574,14 @@ class PausingCluster:
         self.auto_comms_flag = True
         loop = asyncio.get_event_loop()
         self.async_handle = loop.call_soon(lambda: loop.create_task(self.auto_comms_runner()))
+        
+    async def stop_auto_comms(self):
+        if self.auto_comms_flag:
+            self.auto_comms_flag = False
+            async with self.auto_comms_condition:
+                self.auto_comms_condition.notify()
+                self.async_handle.cancel()
+                self.async_handle = None
         
     async def cleanup(self):
         for uri, node in self.nodes.items():

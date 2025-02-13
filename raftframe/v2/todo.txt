@@ -7,25 +7,40 @@ DONE! 1. Messaege classes update
 
 DONE! 2. Condense comms and DSL into a single structure, something like "pilot".
 
-    
 DONE 3. Make command call part of base state with appropriate response if not leader. Follower replies
    "redirect: uri", candiate response "retry". Build a test sequence for this.
 
-4. Build test wrapper (maybe an implementation of "pilot"?) that supports
+DONE! 4. Build test wrapper (maybe an implementation of "pilot"?) that supports
    a. message pausing based on patterns, e.g. after sending an apppend entries response. DONE!
    b. Have it also know how to perform simulated timer triggers
       1. Figure out a clean way to manage call_later tasks from base state or from hull
          so that code looks sensible but supports manipulation during testing.
-   c. Add support for firing breakpoint in on_message when condigtion met. Maybe subclass
+   c. Add support for firing breakpoint in on_message when condition met. Maybe subclass
       hull? Maybe monkey patch it? DONE!
 
-5. Need timeout mechanism for command
+4W. Pull message transport code into simnet class, teach it to simulate partions.
+    a. Keep granular api in current server and cluster that allows individual messages
+       and the deliver_all_pending functions, along with the condition variable stuff
+
+4X. Add "caller_context" to command ops
+
+4y. rough out ideas for cluster class
+    1. Knows about "static config" provided at startup. Can be programatically changed?
+    2. Knows about "dynamic config" resulting from cluster changes while running.
+    3. teach candidate and leader to use it
+    4. build quorum feature such that (if configed) there is a minimum dynamic cluster
+       size for starting election, with default of 1/2 + 1 of static config. Prove this
+       prevents the inconsistent values at same log index problem after partition heal
+       
+
+5. Need timeout mechanism for command (timeout supplied to condition.wait)
 
 6. Think deep about reporting errors in raft code, and detecting them in testing. Break something
    such as rejected append entries and fiddle.
    
 DONE 6. fix the asyncio fixture setting problem in tests, have to update the re-election tests
 
+7. !!!!! IMPORTANT !!!! change log api to be async
 9. Think about providing an option uri map implementation for users.
 
 10. Consider adding the state map logic or something like it so that "pilot" can receive
