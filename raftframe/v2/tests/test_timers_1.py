@@ -99,7 +99,8 @@ async def test_lost_leader_1(cluster_maker):
     while time.time() - start_time < leader_lost_timeout  + (fraction * 2):
         await cluster.deliver_all_pending()
         if (ts_1.hull.state.state_code == "LEADER"
-            or ts_2.hull.state.state_code == "LEADER"):
+            or ts_2.hull.state.state_code == "LEADER"
+            or ts_3.hull.state.state_code == "LEADER"):
             break
         await asyncio.sleep(fraction)
     

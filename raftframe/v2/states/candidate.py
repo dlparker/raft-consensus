@@ -59,11 +59,19 @@ class Candidate(BaseState):
             return
 
     async def term_expired(self, message):
-        self.log.set_term(message.term)
         await self.hull.demote_and_handle(message)
-        # don't reprocess message
         return None
 
+    async def on_append_entries(self, message):
+        self.logger.info("candidate %s got append entries from %s", self.hull.get_my_uri(),
+                         message.sender)
+        if message.term == self.log.get_term():
+            self.logger.info("candidate %s at term %d yielding to %s term %d", self.hull.get_my_uri(),
+                             self.log.get_term(), message.sender, message.term)
+            await self.hull.demote_and_handle(message)
+            return
+        await self.send_reject_append_response(message)
+        
     async def election_timed_out(self):
         self.logger.info("--!!!!!--candidate %s campaign timedout, trying again", self.hull.get_my_uri())
         await self.start_campaign()

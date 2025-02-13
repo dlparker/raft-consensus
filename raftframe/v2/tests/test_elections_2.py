@@ -234,3 +234,188 @@ async def test_election_timeout_1(cluster_maker):
     
     logger.info("-------- Election restart on timeout prevention test passed")
 
+async def test_election_vote_once_1(cluster_maker):
+    cluster = cluster_maker(3)
+    cluster.set_configs()
+
+    uri_1 = cluster.node_uris[0]
+    uri_2 = cluster.node_uris[1]
+    uri_3 = cluster.node_uris[2]
+
+    ts_1 = cluster.nodes[uri_1]
+    ts_2 = cluster.nodes[uri_2]
+    ts_3 = cluster.nodes[uri_3]
+
+    logger = logging.getLogger(__name__)
+    await cluster.start()
+    await ts_3.hull.start_campaign()
+    ts_1.set_trigger(WhenElectionDone())
+    ts_2.set_trigger(WhenElectionDone())
+    ts_3.set_trigger(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_triggers(),
+                         ts_2.run_till_triggers(),
+                         ts_3.run_till_triggers())
+    
+    ts_1.clear_triggers()
+    ts_2.clear_triggers()
+    ts_3.clear_triggers()
+    
+    assert ts_3.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_3
+    assert ts_2.hull.state.leader_uri == uri_3
+
+    logger.info("-------- Initial election completion, starting messed up re-election")
+
+    # now have leader resign, by telling it to become follower
+    await ts_3.hull.demote_and_handle(None)
+    assert ts_3.hull.get_state_code() == "FOLLOWER"
+    # simulate timeout on heartbeat on two followers causing
+    # two candidates to try election in same term
+    await ts_2.hull.state.leader_lost()
+    await ts_3.hull.state.leader_lost()
+
+    # now let the remainging follower see only the vote request from 
+    # one candidate, so let one of them send their two messages
+    msg1 = await ts_2.do_next_out_msg()
+    msg2 = await ts_2.do_next_out_msg()
+    # just to make sure our logic is working
+    assert msg1.receiver == uri_1 or msg2.receiver == uri_1
+
+    # now let the follower cast the vote, which should be true
+    await ts_1.do_next_in_msg()
+    vote_yes_msg = await ts_1.do_next_out_msg()
+    assert vote_yes_msg.vote == True
+    await ts_2.do_next_in_msg()
+
+    # now let the other candidate send requests
+    msg3 = await ts_3.do_next_out_msg()
+    msg4 = await ts_3.do_next_out_msg()
+    # just to make sure our logic is working
+    assert msg3.receiver == uri_1 or msg4.receiver == uri_1
+
+    # now let the follower cast the vote, which should be false
+    await ts_1.do_next_in_msg()
+    vote_no_msg = await ts_1.do_next_out_msg()
+    assert vote_no_msg.vote == False
+    await ts_3.do_next_in_msg()
+
+    # now it should just finish, everybody should know what to do
+
+    logger.info("-------- allowing election to continue ---")
+    ts_1.set_trigger(WhenElectionDone())
+    ts_2.set_trigger(WhenElectionDone())
+    ts_3.set_trigger(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_triggers(),
+                         ts_2.run_till_triggers(),
+                         ts_3.run_till_triggers())
+    
+    ts_1.clear_triggers()
+    ts_2.clear_triggers()
+    ts_3.clear_triggers()
+
+    assert ts_2.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_2
+    assert ts_3.hull.state.leader_uri == uri_2
+    logger.info("-------- Re-election vote once test complete ---")
+
+
+async def test_election_candidate_too_slow_1(cluster_maker):
+    cluster = cluster_maker(3)
+    cluster.set_configs()
+
+    uri_1 = cluster.node_uris[0]
+    uri_2 = cluster.node_uris[1]
+    uri_3 = cluster.node_uris[2]
+
+    ts_1 = cluster.nodes[uri_1]
+    ts_2 = cluster.nodes[uri_2]
+    ts_3 = cluster.nodes[uri_3]
+
+    logger = logging.getLogger(__name__)
+    await cluster.start()
+    await ts_3.hull.start_campaign()
+    ts_1.set_trigger(WhenElectionDone())
+    ts_2.set_trigger(WhenElectionDone())
+    ts_3.set_trigger(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_triggers(),
+                         ts_2.run_till_triggers(),
+                         ts_3.run_till_triggers())
+    
+    ts_1.clear_triggers()
+    ts_2.clear_triggers()
+    ts_3.clear_triggers()
+    
+    assert ts_3.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_3
+    assert ts_2.hull.state.leader_uri == uri_3
+
+    logger.info("-------- Initial election completion, starting messed up re-election")
+
+    # now have leader resign, by telling it to become follower
+    await ts_3.hull.demote_and_handle(None)
+    assert ts_3.hull.get_state_code() == "FOLLOWER"
+    # simulate timeout on heartbeat on two followers causing
+    # two candidates to try election but fiddle one of them
+    # to have a higher term
+    await ts_2.hull.state.leader_lost()
+    term = ts_3.hull.log.get_term()
+    ts_3.hull.log.set_term(term + 1)
+    await ts_3.hull.state.leader_lost()
+
+    # Let the low term one send vote request first,
+    # then before it receives any replies let the second
+    # one send requests.
+    msg1 = await ts_2.do_next_out_msg()
+    msg2 = await ts_2.do_next_out_msg()
+    
+    logger.debug("-------- Letting first candidate win follower's vote")
+    # now let the follower cast the vote, which should be true
+    await ts_1.do_next_in_msg()
+    vote_yes_msg_1 = await ts_1.do_next_out_msg()
+    assert vote_yes_msg_1.vote == True
+    # Don't let ts_2 get response, we want it to stay a candidate
+    assert ts_2.hull.get_state_code() == "CANDIDATE"
+    logger.debug("-------- First candidate is now has yes vote pending ---")
+    # save the pending yes vote and let the other candidate's votes in
+    # instead
+    saved_vote = ts_2.in_messages.pop(0)
+    # now let the second candidate requests in to the first one.
+    # which should accept the new candidate because of the higher
+    # term. Have to let both requests go
+    msg3 = await ts_3.do_next_out_msg()
+    msg4 = await ts_3.do_next_out_msg()
+
+    # this should trigger old term candidate to resign
+    # in favor of new term candidate
+    await ts_2.do_next_in_msg()
+    assert ts_2.hull.get_state_code() == "FOLLOWER"
+    logger.debug("-------- First candidate has accepted second candidate and resigned ")
+
+    # Push the out of date vote back on to what used
+    # to be the old candidate, just for completeness.
+    # Might uncover a regression some day
+    # let everbody go and check the results
+    ts_2.in_messages.append(saved_vote)
+
+    # now let everbody run and make sure election concludes
+    # with second candidate elected
+    ts_1.set_trigger(WhenElectionDone())
+    ts_2.set_trigger(WhenElectionDone())
+    ts_3.set_trigger(WhenElectionDone())
+        
+    await asyncio.gather(ts_1.run_till_triggers(),
+                         ts_2.run_till_triggers(),
+                         ts_3.run_till_triggers())
+    
+    ts_1.clear_triggers()
+    ts_2.clear_triggers()
+    ts_3.clear_triggers()
+
+    
+    assert ts_3.hull.get_state_code() == "LEADER"
+    assert ts_1.hull.state.leader_uri == uri_3
+    assert ts_2.hull.state.leader_uri == uri_3
+    
