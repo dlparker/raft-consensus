@@ -217,7 +217,7 @@ async def test_election_timeout_1(cluster_maker):
     # do the same sequence, only this time set the stopped flag on the
     # candidate to make sure the election timeout does not start another
     # election
-    assert ts_2.hull.demote_and_handle()
+    await ts_2.hull.demote_and_handle()
     await ts_1.hull.state.leader_lost()
     assert ts_1.hull.get_state_code() == "CANDIDATE"
     # Set the stopped flag to prevent timeout from restarting election

@@ -23,8 +23,9 @@ class PushRecord:
 class CommandTracker:
     term: int
     prevIndex: int
+    prevTerm: int
     commands: List[str]
-    finished: Any
+    finished: bool
     pushes: Dict[str, PushRecord]
 
     
@@ -50,25 +51,26 @@ class Leader(BaseState):
                 await asyncio.sleep(0.001)
         if self.pending_command:
             msg = f'command already pending not completed in {timeout} seconds, command was'
-            msg += f" {self.pending_command.str}"
+            msg += f" {self.pending_command.commands}"
             raise Exception(msg)
         self.logger.info("%s starting command sequence for index %d", self.hull.get_my_uri(),
                          self.log.get_last_index())
         consensus_condition = asyncio.Condition()
         self.pending_command = CommandTracker(term=self.log.get_term(),
                                               prevIndex=self.log.get_last_index(),
-                                              finished=consensus_condition,
+                                              prevTerm=self.log.get_last_term(),
+                                              finished=False,
                                               pushes=dict(),
                                               commands=[command,])
 
         run_result = None
         await self.send_entries()
-        async def done_check():
+        async def done_check(tracker):
             if self.pending_command is None:
                 return
             await asyncio.sleep(0.0001)
         try:
-            await asyncio.wait_for(asyncio.create_task(done_check()), timeout=timeout)
+            await asyncio.wait_for(asyncio.create_task(done_check(self.pending_command)), timeout=timeout)
         except asyncio.TimeoutError:
             msg = f'Requested command sequence not completed in {timeout} seconds'
             raise Exception(msg)
@@ -123,10 +125,10 @@ class Leader(BaseState):
             tracker.pushes[nid] = PushRecord(status=PushStatusCode.sent, result=None)
             message = AppendEntriesMessage(sender=self.hull.get_my_uri(),
                                            receiver=nid,
-                                           term=self.log.get_term(),
+                                           term=tracker.term,
                                            entries=tracker.commands,
-                                           prevLogTerm=self.log.get_term(),
-                                           prevLogIndex=self.log.get_last_index())
+                                           prevLogTerm=tracker.prevTerm,
+                                           prevLogIndex=tracker.prevIndex)
             self.logger.info("sending %s", message)
             await self.hull.send_message(message)
         self.last_broadcast_time = time.time()
@@ -164,7 +166,7 @@ class Leader(BaseState):
             tracker = old_rec
         else:
             tracker = self.pending_command
-        if message.prevLogIndex != tracker.prevIndex:
+        if message.prevLogIndex != tracker.prevIndex or message.prevLogTerm != tracker.prevTerm:
             self.logger.error("%s got append entries response that can't be identifed", self.hull.get_my_uri())
             return
         tracker.pushes[message.sender] = "acked"
@@ -178,11 +180,11 @@ class Leader(BaseState):
             if acked  > len(tracker.pushes) / 2:
                 self.logger.info('%s got consensus on index %d, applying command', self.hull.get_my_uri(),
                                  message.prevLogIndex)
-                if tracker.finished:
-                    # current state is "committed" as defined in raft paper, command can
-                    # be applied
-                    self.logger.debug("%s notify", self.hull.get_my_uri())
-                    self.pending_command = None
+                # current state is "committed" as defined in raft paper, command can
+                # be applied
+                tracker.finished = True
+                self.pending_command = None
+                self.old_commands[tracker.prevIndex] = tracker
         else:
             # this is an old one, remove it if last reply
             if acked == len(tracker.pushes):

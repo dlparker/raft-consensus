@@ -41,6 +41,11 @@ DONE! 4. Build test wrapper (maybe an implementation of "pilot"?) that supports
 DONE 6. fix the asyncio fixture setting problem in tests, have to update the re-election tests
 
 7. !!!!! IMPORTANT !!!! change log api to be async
+7b. !!!!! IMPORTANT !!!! Figure out how to reconcile candidates always uping the term with healing
+                         back to an older term. Must have misread something in the raft doc.
+
+8. fiddle with test logging to make it more helpful. different loggers for things, for example
+
 9. Think about providing an option uri map implementation for users.
 
 10. Consider adding the state map logic or something like it so that "pilot" can receive

@@ -52,7 +52,7 @@ class Follower(BaseState):
             return
         if (message.prevLogIndex > self.log.get_last_index() and message.entries == []):
             # we are behind, request a catch up
-            self.logger.debug("%s heartbeat from leader %s is ahead, asking for catchup",
+            self.logger.debug("%s log at leader %s is ahead, asking for catchup",
                               self.hull.get_my_uri(), message.sender)
             await self.ask_for_catchup(message)
             return

@@ -321,6 +321,103 @@ class TestHull(Hull):
                                         delay=delay, target=target)
         await super().state_run_after(delay, target)
 
+class Network:
+
+    def __init__(self, nodes, net_mgr):
+        self.nodes = {}
+        self.net_mgr = net_mgr
+        self.logger = logging.getLogger("SimulatedNetwork")
+        for uri,node in nodes.items():
+            self.add_node(node)
+
+    def add_node(self, node):
+        if node.uri not in self.nodes:
+            self.nodes[node.uri] = node
+        node.change_networks(self)
+        
+    def remove_node(self, node):
+        if node.uri in self.nodes:
+            del self.nodes[node.uri]
+
+    def get_node_by_uri(self, uri):
+        if uri not in self.nodes:
+            return None
+        return self.nodes[uri]
+
+    async def do_next_in_msg(self, node):
+        if node.uri not in self.nodes:
+            raise Exception(f'botched network setup, {node.uri} not in {self.nodes}')
+        if node.network != self:
+            raise Exception(f'botched network setup, {node.uri} does not belong to this network')
+        if len(node.in_messages) == 0:
+            return None
+        msg = node.in_messages.pop(0)
+        self.logger.debug("%s handling message %s", node.uri, msg)
+        await node.hull.on_message(msg)
+        return msg
+        
+    async def do_next_out_msg(self, node):
+        if node.uri not in self.nodes:
+            raise Exception(f'botched network setup, {node.uri} not in {self.nodes}')
+        if node.network != self:
+            raise Exception(f'botched network setup, {node.uri} does not belong to this network')
+        if len(node.out_messages) == 0:
+            return None
+        msg = node.out_messages.pop(0)
+        target = self.get_node_by_uri(msg.receiver)
+        if not target:
+            self.logger.debug("%s losing message %s", node.uri, msg)
+            node.lost_out_messages.append(msg)
+            return msg
+        else:
+            self.logger.debug("%s forwarding message %s", node.uri, msg)
+            target.in_messages.append(msg)
+            return msg
+        
+        
+class NetManager:
+
+    def __init__(self, all_nodes:dict, start_nodes:dict):
+        self.all_nodes = all_nodes
+        self.start_nodes = start_nodes
+        self.full_cluster = None
+        self.segments = None
+        self.logger = logging.getLogger("SimulatedNetwork")
+
+    def setup_network(self):
+        self.full_cluster = Network(self.start_nodes, self)
+        return self.full_cluster
+
+    def split_network(self, segments):
+        # don't mess with original
+        # validate first
+        node_set = set()
+        disp = []
+        for part in segments:
+            for uri,node in part.items():
+                assert node.uri in self.full_cluster.nodes
+                assert node not in node_set
+                node_set.add(node)
+        # all legal, no dups
+        self.segments = []
+        for part in segments:
+            disp.append(f"{len(part)}")
+            net = Network(part, self)
+            for uir,node in part.items():
+                node.hull.cluster_config.node_uris = list(part.keys())
+            self.segments.append(net)
+        
+        self.logger.info(f"Split {len(self.full_cluster.nodes)} node network into {','.join(disp)}")
+
+    def unsplit(self):
+        if self.segments is None:
+            return
+        for uri,node in self.full_cluster.nodes.items():
+            self.full_cluster.add_node(node)
+            node.hull.cluster_config.node_uris =  list(self.full_cluster.nodes.keys())
+        self.segments = None
+                
+        
 class PausingServer(PilotAPI):
 
     def __init__(self, uri, cluster):
@@ -331,11 +428,13 @@ class PausingServer(PilotAPI):
         self.hull = None
         self.in_messages = []
         self.out_messages = []
+        self.lost_out_messages = []
         self.logger = logging.getLogger(__name__)
         self.log = MemoryLog()
         self.trigger_set = None
         self.trigger = None
         self.break_on_message_code = None
+        self.network = None
 
     def set_configs(self, local_config, cluster_config):
         self.cluster_config = cluster_config
@@ -367,26 +466,22 @@ class PausingServer(PilotAPI):
     async def start_election(self):
         await self.hull.campaign()
 
+    def change_networks(self, network):
+        if self.network != network:
+            self.logger.info("%s changing networks, must be partition or heal", self.uri)
+            self.logger.info("%s new network has %d nodes", self.uri, len(network.nodes))
+        self.network = network
+        
     async def accept_in_msg(self, message):
         # called by cluster on behalf of sender
         self.logger.debug("queueing sent %s", message)
         self.in_messages.append(message)
         
     async def do_next_in_msg(self):
-        if len(self.in_messages) == 0:
-            return None
-        msg = self.in_messages.pop(0)
-        self.logger.debug("%s handling message %s", self.hull.get_my_uri(), msg)
-        await self.hull.on_message(msg)
-        return msg
-
+        return await self.network.do_next_in_msg(self)
+        
     async def do_next_out_msg(self):
-        if len(self.out_messages) == 0:
-            return None
-        msg = self.out_messages.pop(0)
-        self.logger.debug("forwarding message %s", msg)
-        await self.cluster.send_message(msg)
-        return msg
+        return await self.network.do_next_out_msg(self)
 
     async def do_next_msg(self):
         msg = await self.do_next_out_msg()
@@ -500,7 +595,6 @@ class PausingCluster:
         self.nodes = dict()
         self.logger = logging.getLogger(__name__)
         self.auto_comms_flag = False
-        self.auto_comms_condition = asyncio.Condition()
         self.async_handle = None
         for i in range(node_count):
             nid = i + 1
@@ -508,6 +602,10 @@ class PausingCluster:
             self.node_uris.append(uri)
             t1s = PausingServer(uri, self)
             self.nodes[uri] = t1s
+        self.net_mgr = NetManager(self.nodes, self.nodes)
+        net = self.net_mgr.setup_network()
+        for uri, node in self.nodes.items():
+            node.network = net
         assert len(self.node_uris) == node_count
 
     def build_cluster_config(self, heartbeat_period=1000,
@@ -566,10 +664,11 @@ class PausingCluster:
 
     async def auto_comms_runner(self):
         while self.auto_comms_flag:
-            await self.deliver_all_pending()
-            async with self.auto_comms_condition:
-                await self.auto_comms_condition.wait()
-            
+            try:
+                await self.deliver_all_pending()
+            except:
+                self.logger.error("error trying to deliver messages %s", traceback.print_exc())
+            await asyncio.sleep(0.0001)
     async def start_auto_comms(self):
         self.auto_comms_flag = True
         loop = asyncio.get_event_loop()
@@ -578,10 +677,8 @@ class PausingCluster:
     async def stop_auto_comms(self):
         if self.auto_comms_flag:
             self.auto_comms_flag = False
-            async with self.auto_comms_condition:
-                self.auto_comms_condition.notify()
-                self.async_handle.cancel()
-                self.async_handle = None
+            self.async_handle.cancel()
+            self.async_handle = None
         
     async def cleanup(self):
         for uri, node in self.nodes.items():
