@@ -14,45 +14,33 @@ also be easy to understand. The chosen fork base did that well.
 However, the original code had features that seem to indicate that it
 was just a proof of concept, not intended to be production code. This
 fork therefore had to make a number of basic changes to eliminate those
-features.
+features. Eventually it underwent a complete rewrite. The only things
+remaining are:
 
-The other main goal of the change to this fork is to make it more of a
-generalized library to aid in the construction of cluster of servers
-rather that to turn it into another key-value store implemention. 
+1. The structure of the message classes, where the specific messages
+   derive from a base class, and the names of the specific messages,
+   which in turn derive from the original paper found in raft.pdf.
+2. The structure of the state classes, where the specific states
+   derive from a base class.
+3. The names of the mmessages and states directories.
+
+As a result of the extent of these changes, I have changed the license
+file to include me as copyright holder, and removed Bao Nguyen's name.
+I am not a lawyer, but I have studdied software copyright litigation,
+and my laymen's assessment is that nothing I retained constitutes copying
+of the original. 
+
+The main purpose of this project is to make it a generalized library
+to aid in the construction of cluster of servers. 
 
 When building a server that is going to be part of a cluster that uses
 raft for consensus, then changes in the cluster configuration should trigger
 user code in order to allow decisions about possible processing algorithm adjustments.
 This project is designed to provide a frame on which to build such servers.
 
-Planned changes:
-- Add functions to support integration in server clusters with control
-  and status operations
-- Add election state transition logging, in both python logging and in a user
-  queryable format
-- Add gRPC support
-- Add startup pause/continue controls so that cluster management functions
-  are possible, such as orderly shutdown, runtime reconfiguration, etc
-
-Completed changes:
- - Changed a few variable names to make things a bit clearer
- - Addressed some minor coding issues to improve clarity and testing
- - Changed banking demo app to support actual multi-machine (or dockers/vms)
-   ops, not local only
- - Added unit testing for existing code, at 98% coverage as of 5/24/23 on simplify branch
- - Added basic status query operation to report leader endpoint info to clients
- - Fixed logic bug in election code that caused failure when one server out
-   of three failed.
- - Removed the embedded application code that provides the banking app
-   functions, generalizing it to an API that the user code excersizes
- - Replaced the in memory log with at least one SQLite based log mechanism, and
-   provided an API for other log mechanisms
- - Refactored where necessary to make it more clear how the message flow
-   effects state management during elections
- - Replaced the existing UDP operations with a more general comms API,
-   and re-implemented the UDP ops as a reference implementation
-
 ## References
+
 - [raftos](https://github.com/zhebrak/raftos)
+- [protocol extensions]https://dev.to/tarantool/raft-notalmighty-how-to-make-it-more-robust-3a11
 - [simpleRaft](https://github.com/streed/simpleRaft/tree/master/simpleRaft)
 - [Raft visualization](http://thesecretlivesofdata.com/raft/)
