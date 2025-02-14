@@ -102,8 +102,8 @@ async def test_partition_1(cluster_maker):
     assert ts_5.operations.total == 1
 
     logger.info('--------- Now healing partition and looking for sync ----')
-    cluster.net_mgr.unsplit()
     await cluster.stop_auto_comms()
+    cluster.net_mgr.unsplit()
     ts_1.hull.state.last_broadcast_time = 0
     await ts_1.hull.state.send_heartbeats()
     # gonna send four

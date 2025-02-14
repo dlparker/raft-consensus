@@ -67,9 +67,11 @@ class Leader(BaseState):
         run_result = None
         await self.send_entries()
         async def done_check(tracker):
-            if self.pending_command is None:
-                return
-            await asyncio.sleep(0.0001)
+            while not tracker.finished:
+                try:
+                    await asyncio.sleep(0.0001)
+                except asyncio.CancelledError:
+                    return
         try:
             await asyncio.wait_for(asyncio.create_task(done_check(self.pending_command)), timeout=timeout)
         except asyncio.TimeoutError:
@@ -178,9 +180,9 @@ class Leader(BaseState):
             if tracker.pushes[nid] == "acked":
                 acked += 1
         if current:
-            if acked  > len(tracker.pushes) / 2:
+            if acked  + 1 > len(tracker.pushes) / 2: # this server counts too
                 self.logger.info('%s got consensus on index %d, applying command', self.hull.get_my_uri(),
-                                 message.prevLogIndex)
+                                 message.prevLogIndex + 1)
                 # current state is "committed" as defined in raft paper, command can
                 # be applied
                 tracker.finished = True

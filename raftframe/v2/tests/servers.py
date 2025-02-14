@@ -58,14 +58,14 @@ def set_levels(handler_names):
     info_log = dict(handlers=handler_names, level="INFO", propagate=False)
     debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
     log_loggers[''] = root_log
-    log_loggers['PausingServer'] = info_log
+    log_loggers['PausingServer'] = debug_log
     default_log =  info_log
     log_loggers['Leader'] = default_log
     log_loggers['Follower'] = default_log
     log_loggers['Candidate'] = default_log
     log_loggers['BaseState'] = default_log
     log_loggers['Hull'] = default_log
-
+    log_loggers['SimulatedNetwork'] = debug_log
     return log_loggers
 
 @pytest.fixture
@@ -458,8 +458,6 @@ class NetManager:
         for part in segments:
             disp.append(f"{len(part)}")
             net = Network(part, self)
-            for uir,node in part.items():
-                node.hull.cluster_config.node_uris = list(part.keys())
             self.segments.append(net)
         
         self.logger.info(f"Split {len(self.full_cluster.nodes)} node network into {','.join(disp)}")
