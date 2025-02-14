@@ -3,19 +3,19 @@ import asyncio
 import logging
 import pytest
 import time
-from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
-from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
+from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
-from raftframe.v2.tests.servers import setup_logging
+from servers import setup_logging
 
 setup_logging()
 
-from raftframe.v2.tests.servers import WhenMessageOut, WhenMessageIn
-from raftframe.v2.tests.servers import WhenIsLeader, WhenHasLeader
-from raftframe.v2.tests.servers import WhenElectionDone
-from raftframe.v2.tests.servers import WhenAllMessagesForwarded, WhenAllInMessagesHandled
-from raftframe.v2.tests.servers import WhenInMessageCount
-from raftframe.v2.tests.servers import PausingCluster, cluster_maker
+from servers import WhenMessageOut, WhenMessageIn
+from servers import WhenIsLeader, WhenHasLeader
+from servers import WhenElectionDone
+from servers import WhenAllMessagesForwarded, WhenAllInMessagesHandled
+from servers import WhenInMessageCount
+from servers import PausingCluster, cluster_maker
 
 
 async def test_stepwise_election_1(cluster_maker):

@@ -1,7 +1,7 @@
 import abc
 from dataclasses import dataclass
 from typing import List, Any
-from raftframe.v2.log.log_api import LogAPI
+from raftframe.log.log_api import LogAPI
 
 class PilotAPI(metaclass=abc.ABCMeta):
     """

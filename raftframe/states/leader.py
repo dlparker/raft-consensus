@@ -6,9 +6,9 @@ import traceback
 from dataclasses import dataclass
 from typing import Dict, List, Any
 from enum import Enum
-from raftframe.v2.states.base_state import StateCode, BaseState
-from raftframe.v2.log.log_api import LogRec
-from raftframe.v2.messages.append_entries import AppendEntriesMessage
+from raftframe.states.base_state import StateCode, BaseState
+from raftframe.log.log_api import LogRec
+from raftframe.messages.append_entries import AppendEntriesMessage
 
 class PushStatusCode(str, Enum):
     sent = "SENT"

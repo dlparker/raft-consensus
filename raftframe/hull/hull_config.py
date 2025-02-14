@@ -4,8 +4,8 @@ Configuration classes for setting up an instance of the class::`Server` class.
 from dataclasses import dataclass
 from typing import Any, Type, Callable, Awaitable
 import os
-from raftframe.v2.log.log_api import LogAPI
-from raftframe.v2.messages.base_message import BaseMessage
+from raftframe.log.log_api import LogAPI
+from raftframe.messages.base_message import BaseMessage
 
 @dataclass
 class LocalConfig:

@@ -7,13 +7,13 @@ import dataclasses
 from pathlib import Path
 from logging.config import dictConfig
 from collections import defaultdict
-from raftframe.v2.hull.hull_config import ClusterConfig, LocalConfig
-from raftframe.v2.hull.hull import Hull
-from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
-from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
-from raftframe.v2.messages.base_message import BaseMessage
+from raftframe.hull.hull_config import ClusterConfig, LocalConfig
+from raftframe.hull.hull import Hull
+from raftframe.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
+from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.messages.base_message import BaseMessage
 from dev_tools.memory_log_v2 import MemoryLog
-from raftframe.v2.hull.api import PilotAPI
+from raftframe.hull.api import PilotAPI
 
 def setup_logging():
     lfstring = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'

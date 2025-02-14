@@ -1,8 +1,8 @@
 import asyncio
 import random
 import logging
-from raftframe.v2.states.base_state import StateCode, Substate, BaseState
-from raftframe.v2.messages.request_vote import RequestVoteMessage
+from raftframe.states.base_state import StateCode, Substate, BaseState
+from raftframe.messages.request_vote import RequestVoteMessage
 
 class Candidate(BaseState):
 

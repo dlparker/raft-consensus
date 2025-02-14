@@ -2,12 +2,12 @@ import asyncio
 import traceback
 import logging
 import random
-from raftframe.v2.messages.base_message import BaseMessage
-from raftframe.v2.states.base_state import StateCode, BaseState
-from raftframe.v2.states.follower import Follower
-from raftframe.v2.states.candidate import Candidate
-from raftframe.v2.states.leader import Leader
-from raftframe.v2.hull.api import PilotAPI
+from raftframe.messages.base_message import BaseMessage
+from raftframe.states.base_state import StateCode, BaseState
+from raftframe.states.follower import Follower
+from raftframe.states.candidate import Candidate
+from raftframe.states.leader import Leader
+from raftframe.hull.api import PilotAPI
 
 class Hull:
 
@@ -15,7 +15,7 @@ class Hull:
         self.cluster_config = cluster_config
         self.local_config = local_config
         if not isinstance(pilot, PilotAPI):
-            raise Exception('Must supply a raftframe.v2.hull.api.PilotAPI implementation')
+            raise Exception('Must supply a raftframe.hull.api.PilotAPI implementation')
         self.pilot = pilot
         self.log = pilot.get_log()
         self.state = BaseState(self, StateCode.paused)

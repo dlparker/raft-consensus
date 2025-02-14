@@ -2,10 +2,10 @@ import time
 import traceback
 import logging
 import json
-from raftframe.v2.log.log_api import LogRec
-from raftframe.v2.states.base_state import StateCode, Substate, BaseState
-from raftframe.v2.messages.append_entries import AppendResponseMessage
-from raftframe.v2.messages.request_vote import RequestVoteResponseMessage
+from raftframe.log.log_api import LogRec
+from raftframe.states.base_state import StateCode, Substate, BaseState
+from raftframe.messages.append_entries import AppendResponseMessage
+from raftframe.messages.request_vote import RequestVoteResponseMessage
 
 class Follower(BaseState):
 

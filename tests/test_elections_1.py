@@ -3,11 +3,11 @@ import asyncio
 import logging
 import pytest
 import time
-from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
-from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
+from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
-from raftframe.v2.tests.servers import PausingCluster, cluster_maker
-from raftframe.v2.tests.servers import setup_logging
+from servers import PausingCluster, cluster_maker
+from servers import setup_logging
 
 setup_logging()
 

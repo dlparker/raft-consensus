@@ -1,8 +1,8 @@
 import asyncio
 import logging
 from enum import Enum
-from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
-from raftframe.v2.messages.request_vote import RequestVoteMessage, RequestVoteResponseMessage
+from raftframe.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.messages.request_vote import RequestVoteMessage, RequestVoteResponseMessage
 
 class StateCode(str, Enum):
 
