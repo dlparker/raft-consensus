@@ -36,6 +36,7 @@ class Leader(BaseState):
         self.last_broadcast_time = 0
         self.pending_command = None
         self.old_commands = dict()  # commands that have not yet got all response, but are committed
+        self.logger = logging.getLogger("Leader")
 
     async def start(self):
         await super().start()
@@ -54,11 +55,11 @@ class Leader(BaseState):
             msg += f" {self.pending_command.commands}"
             raise Exception(msg)
         self.logger.info("%s starting command sequence for index %d", self.hull.get_my_uri(),
-                         self.log.get_last_index())
+                         await self.log.get_last_index())
         consensus_condition = asyncio.Condition()
-        self.pending_command = CommandTracker(term=self.log.get_term(),
-                                              prevIndex=self.log.get_last_index(),
-                                              prevTerm=self.log.get_last_term(),
+        self.pending_command = CommandTracker(term=await self.log.get_term(),
+                                              prevIndex=await self.log.get_last_index(),
+                                              prevTerm=await self.log.get_last_term(),
                                               finished=False,
                                               pushes=dict(),
                                               commands=[command,])
@@ -76,7 +77,7 @@ class Leader(BaseState):
             raise Exception(msg)
         try:
             self.logger.info("%s applying command committed at index %d", self.hull.get_my_uri(),
-                             self.log.get_last_index())
+                             await self.log.get_last_index())
             processor = self.hull.get_processor()
             result,error = await processor.process_command(command)
         except Exception as e:
@@ -85,9 +86,9 @@ class Leader(BaseState):
         run_result = dict(command=command,
                           result=result,
                           error=error)
-        new_rec = LogRec(term=self.log.get_term(),
+        new_rec = LogRec(term=await self.log.get_term(),
                          user_data=json.dumps(run_result))
-        self.log.append([new_rec,])
+        await self.log.append([new_rec,])
         return result, error
         
     async def send_heartbeats(self):
@@ -108,10 +109,10 @@ class Leader(BaseState):
                 continue
             message = AppendEntriesMessage(sender=self.hull.get_my_uri(),
                                            receiver=nid,
-                                           term=self.log.get_term(),
+                                           term=await self.log.get_term(),
                                            entries=[],
-                                           prevLogTerm=self.log.get_term(),
-                                           prevLogIndex=self.log.get_last_index())
+                                           prevLogTerm=await self.log.get_term(),
+                                           prevLogIndex=await self.log.get_last_index())
             self.logger.debug("%s sending heartbeat to %s", message.sender, message.receiver)
             await self.hull.send_message(message)
         self.last_broadcast_time = time.time()
@@ -137,15 +138,15 @@ class Leader(BaseState):
         if message.prevLogIndex == message.myPrevLogIndex:
             return
         # get the first log record they are missing, send that one
-        rec = self.log.read(message.myPrevLogIndex + 1)
+        rec = await self.log.read(message.myPrevLogIndex + 1)
         command = json.loads(rec.user_data)['command']
         entries = [command,]
         message = AppendEntriesMessage(sender=self.hull.get_my_uri(),
                                        receiver=message.sender,
-                                       term=self.log.get_term(),
+                                       term=await self.log.get_term(),
                                        entries=entries,
-                                       prevLogTerm=self.log.get_term(),
-                                       prevLogIndex=self.log.get_last_index())
+                                       prevLogTerm=await self.log.get_term(),
+                                       prevLogIndex=await self.log.get_last_index())
         self.logger.info("sending catchup %s", message)
         await self.hull.send_message(message)
         
@@ -191,7 +192,7 @@ class Leader(BaseState):
                 del self.old_commands[tracker.prevIndex]
         
     async def term_expired(self, message):
-        self.log.set_term(message.term)
+        await self.log.set_term(message.term)
         await self.hull.demote_and_handle(message)
         # don't reprocess message
         return None

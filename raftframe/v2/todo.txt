@@ -1,3 +1,30 @@
+Immediatly:
+
+1. !!!!! IMPORTANT !!!! Figure out how to reconcile candidates always uping the term with healing
+                         back to an older term. Must have misread something in the raft doc.
+			 build tests for it and make em work. Need PreVote and CheckQuorum.
+
+			 https://dev.to/tarantool/raft-notalmighty-how-to-make-it-more-robust-3a11
+
+4X. Add "caller_context" to command ops
+4y. rough out ideas for cluster class
+    1. Knows about "static config" provided at startup. Can be programatically changed?
+    2. Knows about "dynamic config" resulting from cluster changes while running.
+    3. teach candidate and leader to use it
+    4. build quorum feature such that (if configed) there is a minimum dynamic cluster
+       size for starting election, with default of 1/2 + 1 of static config. Prove this
+       prevents the inconsistent values at same log index problem after partition heal
+
+6. Think deep about reporting errors in raft code, and detecting them in testing. Break something
+   such as rejected append entries and fiddle.
+
+
+
+DONE!!!!!!7. !!!!! IMPORTANT !!!! change log api to be async
+
+DONE! 8. fiddle with test logging to make it more helpful. different loggers for things, for example
+       
+
 DONE! 1. Messaege classes update
    a. Also remove leaderCommit from vote.
    b. Consider removing the data stuff from the messages too, it is not requred except for
@@ -18,35 +45,18 @@ DONE! 4. Build test wrapper (maybe an implementation of "pilot"?) that supports
    c. Add support for firing breakpoint in on_message when condition met. Maybe subclass
       hull? Maybe monkey patch it? DONE!
 
-4W. Pull message transport code into simnet class, teach it to simulate partions.
+DONE! 4W. Pull message transport code into simnet class, teach it to simulate partions.
     a. Keep granular api in current server and cluster that allows individual messages
        and the deliver_all_pending functions, along with the condition variable stuff
 
-4X. Add "caller_context" to command ops
 
-4y. rough out ideas for cluster class
-    1. Knows about "static config" provided at startup. Can be programatically changed?
-    2. Knows about "dynamic config" resulting from cluster changes while running.
-    3. teach candidate and leader to use it
-    4. build quorum feature such that (if configed) there is a minimum dynamic cluster
-       size for starting election, with default of 1/2 + 1 of static config. Prove this
-       prevents the inconsistent values at same log index problem after partition heal
-       
+DONE! 5. Need timeout mechanism for command (timeout supplied to condition.wait)
 
-5. Need timeout mechanism for command (timeout supplied to condition.wait)
-
-6. Think deep about reporting errors in raft code, and detecting them in testing. Break something
-   such as rejected append entries and fiddle.
    
 DONE 6. fix the asyncio fixture setting problem in tests, have to update the re-election tests
 
-7. !!!!! IMPORTANT !!!! change log api to be async
-7b. !!!!! IMPORTANT !!!! Figure out how to reconcile candidates always uping the term with healing
-                         back to an older term. Must have misread something in the raft doc.
 
-8. fiddle with test logging to make it more helpful. different loggers for things, for example
-
-9. Think about providing an option uri map implementation for users.
+9. Think about providing an optional uri map implementation for users.
 
 10. Consider adding the state map logic or something like it so that "pilot" can receive
     callbacks to notify about state changes. Prolly simpler than the original. Maybe

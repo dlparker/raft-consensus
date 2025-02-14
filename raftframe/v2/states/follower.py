@@ -19,6 +19,7 @@ class Follower(BaseState):
         # Needs to be as recent as configured maximum silence period, or we raise hell.
         # Pretend we just got a call, that gives possible actual leader time to ping us
         self.last_leader_contact = time.time()
+        self.logger = logging.getLogger("Follower")
 
     async def start(self):
         await super().start()
@@ -28,18 +29,18 @@ class Follower(BaseState):
     async def on_append_entries(self, message):
         self.logger.debug("%s append term = %d prev_index = %d local_term = %d local_index = %d",
                           self.hull.get_my_uri(),  message.term,
-                          message.prevLogIndex, self.log.get_term(), self.log.get_last_index())
+                          message.prevLogIndex, await self.log.get_term(), await self.log.get_last_index())
 
         # Very rare case, sender thinks it is leader but has old term, probably
         # a network partition, or some kind of latency problem with the claimant's
         # operations that made us have an election. Te1ll the sender it is not leader any more.
-        if message.term < self.log.get_term():
+        if message.term < await self.log.get_term():
             await self.send_reject_append_response(message)
             return
         self.last_leader_contact = time.time()
         # We know message.term == term cause we can never get here with
         # a higher term, we'd have updated ours first.
-        if (message.prevLogIndex == self.log.get_last_index() and message.entries == []):
+        if (message.prevLogIndex == await self.log.get_last_index() and message.entries == []):
             if self.leader_uri != message.sender:
                 self.leader_uri = message.sender
                 self.last_vote = message
@@ -50,7 +51,7 @@ class Follower(BaseState):
                                   message.sender)
             await self.send_append_entries_response(message, None)
             return
-        if (message.prevLogIndex > self.log.get_last_index() and message.entries == []):
+        if (message.prevLogIndex > await self.log.get_last_index() and message.entries == []):
             # we are behind, request a catch up
             self.logger.debug("%s log at leader %s is ahead, asking for catchup",
                               self.hull.get_my_uri(), message.sender)
@@ -85,9 +86,9 @@ class Follower(BaseState):
                               result=result,
                               error=error)
             if error is None:
-                new_rec = LogRec(term=self.log.get_term(),
+                new_rec = LogRec(term=await self.log.get_term(),
                                  user_data=json.dumps(run_result))
-                self.log.append([new_rec,])
+                await self.log.append([new_rec,])
         await self.send_append_entries_response(message, recs)
         return
 
@@ -104,10 +105,10 @@ class Follower(BaseState):
             
         # Leadership claims have to be for max log commit index of
         # at least the same as our local copy
-        last_index = self.log.get_last_index()
+        last_index = await self.log.get_last_index()
         # If the messages claim for log index or term are not at least as high
         # as our local values, then vote no.
-        if message.prevLogIndex < last_index or message.term < self.log.get_term():
+        if message.prevLogIndex < last_index or message.term < await self.log.get_term():
             self.logger.info("%s voting false on %s", self.hull.get_my_uri(),
                              message.sender)
             vote = False
@@ -122,7 +123,7 @@ class Follower(BaseState):
         # value that they receive in a message. Always means an election has
         # happened and we are in the new term.
         # Followers never decide that a higher term is not valid
-        self.log.set_term(message.term)
+        await self.log.set_term(message.term)
         # Tell the base class method to route the message back to us as normal
         return message
 
@@ -130,13 +131,13 @@ class Follower(BaseState):
     async def ask_for_catchup(self, message):
         append_response = AppendResponseMessage(sender=self.hull.get_my_uri(),
                                                 receiver=message.sender,
-                                                term=self.log.get_term(),
+                                                term=await self.log.get_term(),
                                                 entries=[],
                                                 results=[],
                                                 prevLogIndex=message.prevLogIndex,
                                                 prevLogTerm=message.prevLogTerm,
-                                                myPrevLogIndex=self.log.get_last_index(),
-                                                myPrevLogTerm=self.log.get_last_term())
+                                                myPrevLogIndex=await self.log.get_last_index(),
+                                                myPrevLogTerm=await self.log.get_last_term())
         await self.hull.send_response(message, append_response)
         
     async def leader_lost(self):
@@ -146,8 +147,8 @@ class Follower(BaseState):
         vote_response = RequestVoteResponseMessage(sender=self.hull.get_my_uri(),
                                                    receiver=message.sender,
                                                    term=message.term,
-                                                   prevLogIndex=self.log.get_last_index(),
-                                                   prevLogTerm=self.log.get_last_term(),
+                                                   prevLogIndex=await self.log.get_last_index(),
+                                                   prevLogTerm=await self.log.get_last_term(),
                                                    vote=votedYes)
         await self.hull.send_response(message, vote_response)
         
@@ -156,13 +157,13 @@ class Follower(BaseState):
             new_records = []
         append_response = AppendResponseMessage(sender=self.hull.get_my_uri(),
                                                 receiver=message.sender,
-                                                term=self.log.get_term(),
+                                                term=await self.log.get_term(),
                                                 entries=message.entries,
                                                 results=new_records,
                                                 prevLogIndex=message.prevLogIndex,
                                                 prevLogTerm=message.prevLogTerm,
-                                                myPrevLogIndex=self.log.get_last_index(),
-                                                myPrevLogTerm=self.log.get_last_term())
+                                                myPrevLogIndex=await self.log.get_last_index(),
+                                                myPrevLogTerm=await self.log.get_last_term())
         await self.hull.send_response(message, append_response)
 
     async def contact_checker(self):

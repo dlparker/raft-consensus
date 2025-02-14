@@ -67,7 +67,7 @@ class BaseState:
     def __init__(self, hull, state_code):
         self.hull = hull
         self.state_code = state_code
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger("BaseState")
         self.substate = Substate.starting
         self.log = hull.get_log()
         self.stopped = False
@@ -106,7 +106,7 @@ class BaseState:
         await self.hull.cancel_state_run_after()
         
     async def on_message(self, message):
-        if message.term > self.log.get_term():
+        if message.term > await self.log.get_term():
             self.logger.debug('%s received message from higher term, calling self.term_expired',
                               self.hull.get_my_uri())
             res = await self.term_expired(message)
@@ -140,7 +140,7 @@ class BaseState:
         await self.hull.record_message_problem(message, problem)
 
     async def on_vote_response(self, message):
-        if self.state_code == "LEADER" and message.term == self.log.get_term():
+        if self.state_code == "LEADER" and message.term == await self.log.get_term():
             self.logger.info('request_vote_response leftover from finished election, ignoring')
             return
         problem = 'request_vote_response not implemented in the class '
@@ -150,17 +150,17 @@ class BaseState:
         
     async def send_reject_append_response(self, message):
         data = dict(success=False,
-                    last_index=self.log.get_last_index(),
-                    last_term=self.log.get_last_term())
+                    last_index=await self.log.get_last_index(),
+                    last_term=await self.log.get_last_term())
         reply = AppendResponseMessage(message.receiver,
                                       message.sender,
-                                      term=self.log.get_term(),
+                                      term=await self.log.get_term(),
                                       entries=message.entries,
                                       results=[],
                                       prevLogTerm=message.prevLogTerm,
                                       prevLogIndex=message.prevLogIndex,
-                                      myPrevLogTerm=self.log.get_last_term(),
-                                      myPrevLogIndex=self.log.get_last_index())
+                                      myPrevLogTerm=await self.log.get_last_term(),
+                                      myPrevLogIndex=await self.log.get_last_index())
         await self.hull.send_response(message, reply)
 
     async def send_reject_vote_response(self, message):
@@ -168,8 +168,8 @@ class BaseState:
         reply = RequestVoteResponseMessage(message.receiver,
                                            message.sender,
                                            term=message.term,
-                                           prevLogIndex=self.log.get_last_index(),
-                                           prevLogTerm=self.log.get_last_term(),
+                                           prevLogIndex=await self.log.get_last_index(),
+                                           prevLogTerm=await self.log.get_last_term(),
                                            vote=False)
         await self.hull.send_response(message, reply)
 

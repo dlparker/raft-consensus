@@ -6,7 +6,9 @@ import time
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
-logging.basicConfig(level=logging.DEBUG)
+from raftframe.v2.tests.servers import setup_logging
+
+setup_logging()
 
 from raftframe.v2.tests.servers import WhenMessageOut, WhenMessageIn
 from raftframe.v2.tests.servers import WhenIsLeader, WhenHasLeader
@@ -51,9 +53,9 @@ async def test_stepwise_election_1(cluster_maker):
     # Candidate is poised to send request for vote to other two servers
     # let the messages go out
     candidate = ts_3.hull.state
-    logger.debug("Candidate posted vote requests for term %d", candidate.log.get_term())
-    logger.debug("ts_1 term %d", ts_1.log.get_term())
-    logger.debug("ts_2 term %d", ts_1.log.get_term())
+    logger.debug("Candidate posted vote requests for term %d", await candidate.log.get_term())
+    logger.debug("ts_1 term %d", await ts_1.log.get_term())
+    logger.debug("ts_2 term %d", await ts_1.log.get_term())
 
     # let just these messages go
     ts_3.set_trigger(WhenAllMessagesForwarded())
@@ -189,9 +191,9 @@ async def test_election_timeout_1(cluster_maker):
     await ts_2.hull.state.leader_lost()
 
     # now delay for more than the timeout, should start new election with new term
-    old_term = ts_2.hull.log.get_term()
+    old_term = await ts_2.hull.log.get_term()
     await asyncio.sleep(0.015)
-    new_term = ts_2.hull.log.get_term()
+    new_term = await ts_2.hull.log.get_term()
     assert new_term == old_term + 1
 
     # now it should just finish, everybody should know what to do
@@ -224,11 +226,11 @@ async def test_election_timeout_1(cluster_maker):
     # don't call stop(), it cancels the timeout
     ts_1.hull.state.stopped = True
     # now delay for more than the timeout, should start new election with new term
-    old_term = ts_1.hull.get_term()
+    old_term = await ts_1.hull.get_term()
     assert ts_1.hull.state_async_handle is not None
     await asyncio.sleep(0.015)
     assert ts_1.hull.get_state_code() == "CANDIDATE"
-    new_term = ts_1.hull.get_term()
+    new_term = await ts_1.hull.get_term()
     assert new_term == old_term
 
     
@@ -361,8 +363,8 @@ async def test_election_candidate_too_slow_1(cluster_maker):
     # two candidates to try election but fiddle one of them
     # to have a higher term
     await ts_2.hull.state.leader_lost()
-    term = ts_3.hull.log.get_term()
-    ts_3.hull.log.set_term(term + 1)
+    term = await ts_3.hull.log.get_term()
+    await ts_3.hull.log.set_term(term + 1)
     await ts_3.hull.state.leader_lost()
 
     # Let the low term one send vote request first,

@@ -4,6 +4,8 @@ import time
 import pytest
 import functools
 import dataclasses
+from pathlib import Path
+from logging.config import dictConfig
 from collections import defaultdict
 from raftframe.v2.hull.hull_config import ClusterConfig, LocalConfig
 from raftframe.v2.hull.hull import Hull
@@ -12,6 +14,59 @@ from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendRes
 from raftframe.v2.messages.base_message import BaseMessage
 from dev_tools.memory_log_v2 import MemoryLog
 from raftframe.v2.hull.api import PilotAPI
+
+def setup_logging():
+    lfstring = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    log_formaters = dict(standard=dict(format=lfstring))
+    logfile_path = Path('.', "test.log")
+    if False:
+        file_handler = dict(level="DEBUG",
+                            formatter="standard",
+                            encoding='utf-8',
+                            mode='w',
+                            filename=str(logfile_path))
+        file_handler['class'] = "logging.FileHandler"
+    stdout_handler =  dict(level="DEBUG",
+                           formatter="standard",
+                           stream="ext://sys.stdout")
+    # can't us "class" in above form
+    stdout_handler['class'] = "logging.StreamHandler"
+    log_handlers = dict(stdout=stdout_handler)
+    handler_names = ['stdout']
+    if False:
+        log_handlers = dict(file=file_handler, stdout=stdout_handler)
+        handler_names = ['file', 'stdout']
+    log_loggers = set_levels(handler_names)
+    log_config = dict(version=1, disable_existing_loggers=False,
+                      formatters=log_formaters,
+                      handlers=log_handlers,
+                      loggers=log_loggers)
+        # apply the caller's modifications to the level specs
+    try:
+        dictConfig(log_config)
+    except:
+        from pprint import pprint
+        pprint(log_config)
+        raise
+    return log_config
+
+def set_levels(handler_names):
+    log_loggers = dict()
+    err_log = dict(handlers=handler_names, level="ERROR", propagate=False)
+    warn_log = dict(handlers=handler_names, level="WARNING", propagate=False)
+    root_log = dict(handlers=handler_names, level="ERROR", propagate=False)
+    info_log = dict(handlers=handler_names, level="INFO", propagate=False)
+    debug_log = dict(handlers=handler_names, level="DEBUG", propagate=False)
+    log_loggers[''] = root_log
+    log_loggers['PausingServer'] = info_log
+    default_log =  info_log
+    log_loggers['Leader'] = default_log
+    log_loggers['Follower'] = default_log
+    log_loggers['Candidate'] = default_log
+    log_loggers['BaseState'] = default_log
+    log_loggers['Hull'] = default_log
+
+    return log_loggers
 
 @pytest.fixture
 async def cluster_maker():
@@ -30,7 +85,7 @@ class simpleOps():
     explode = False
     exploded = False
     async def process_command(self, command):
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("simpleOps")
         error = None
         result = None
         self.exploded = False
@@ -47,7 +102,7 @@ class simpleOps():
         elif op == "sub":
             self.total -= int(operand)
         result = self.total
-        logger.error("command %s returning %s no error", command, result)
+        logger.debug("command %s returning %s no error", command, result)
         return result, None
 
 
@@ -131,7 +186,7 @@ class WhenInMessageCount(PauseTrigger):
         return msg
     
     async def is_tripped(self, server):
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("Triggers")
         for message in server.in_messages:
             if message.get_code() == self.message_code:
                 if message not in self.captured:
@@ -212,7 +267,7 @@ class WhenHasLogIndex(PauseTrigger):
         return msg
         
     async def is_tripped(self, server):
-        if server.hull.log.get_last_index() >= self.index:
+        if await server.hull.log.get_last_index() >= self.index:
             return True
         return False
     
@@ -228,7 +283,7 @@ class WhenElectionDone(PauseTrigger):
         return msg
         
     async def is_tripped(self, server):
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("Triggers")
         quiet = []
         have_leader = False
         for uri, node in server.cluster.nodes.items():
@@ -266,7 +321,7 @@ class TriggerSet:
         self.triggers.append(trigger)
 
     async def is_tripped(self, server):
-        logger = logging.getLogger(__name__)
+        logger = logging.getLogger("Triggers")
         for_set = 0
         for cond in self.triggers:
             is_tripped = await cond.is_tripped(server)
@@ -429,7 +484,7 @@ class PausingServer(PilotAPI):
         self.in_messages = []
         self.out_messages = []
         self.lost_out_messages = []
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("PausingServer")
         self.log = MemoryLog()
         self.trigger_set = None
         self.trigger = None
@@ -593,7 +648,7 @@ class PausingCluster:
     def __init__(self, node_count):
         self.node_uris = []
         self.nodes = dict()
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("PausingCluster")
         self.auto_comms_flag = False
         self.async_handle = None
         for i in range(node_count):

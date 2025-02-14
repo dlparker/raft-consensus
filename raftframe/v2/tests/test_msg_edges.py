@@ -6,10 +6,11 @@ import time
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
-logging.basicConfig(level=logging.DEBUG)
-
 from raftframe.v2.tests.servers import WhenElectionDone
 from raftframe.v2.tests.servers import PausingCluster, cluster_maker
+from raftframe.v2.tests.servers import setup_logging
+
+setup_logging()
 
 async def test_restart_during_heartbeat(cluster_maker):
     cluster = cluster_maker(3)
@@ -133,9 +134,9 @@ async def test_slow_voter(cluster_maker):
     assert msg is not None
     assert len(ts_1.out_messages) == 1
     assert len(ts_2.out_messages) == 1
-    old_term = ts_3.hull.log.get_term()
+    old_term = await ts_3.hull.log.get_term()
     await ts_3.hull.state.start_campaign()
-    assert old_term + 1 == ts_3.hull.log.get_term()
+    assert old_term + 1 == await ts_3.hull.log.get_term()
     # this should be a stale vote
     msg = await ts_1.do_next_out_msg()
     msg = await ts_3.do_next_in_msg()
@@ -152,7 +153,7 @@ async def test_slow_voter(cluster_maker):
     # then two outs from them to get their new votes
     # then two ins to candiate and the first one should
     # settle the election
-    new_term = ts_3.hull.log.get_term()
+    new_term = await ts_3.hull.log.get_term()
     msg = await ts_3.do_next_out_msg()
     assert msg.term == new_term
     msg = await ts_3.do_next_out_msg()

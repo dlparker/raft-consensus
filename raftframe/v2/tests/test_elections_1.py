@@ -7,8 +7,10 @@ from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteRes
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
 from raftframe.v2.tests.servers import PausingCluster, cluster_maker
+from raftframe.v2.tests.servers import setup_logging
 
-logging.basicConfig(level=logging.DEBUG)
+setup_logging()
+
 
 async def test_election_1(cluster_maker):
     """This is the happy path, everybody has same state, only one server

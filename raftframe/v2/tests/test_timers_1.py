@@ -6,10 +6,12 @@ import time
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
-logging.basicConfig(level=logging.DEBUG)
 
 from raftframe.v2.tests.servers import WhenElectionDone
 from raftframe.v2.tests.servers import PausingCluster, cluster_maker
+from raftframe.v2.tests.servers import setup_logging
+
+setup_logging()
 
 async def test_heartbeat_1(cluster_maker):
     cluster = cluster_maker(3)

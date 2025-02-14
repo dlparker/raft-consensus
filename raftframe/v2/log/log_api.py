@@ -45,23 +45,23 @@ class LogAPI(metaclass=abc.ABCMeta):
     """
     
     @abc.abstractmethod
-    def start(self, working_directory: os.PathLike): # pragma: no cover abstract
+    async def start(self, working_directory: os.PathLike): # pragma: no cover abstract
         raise NotImplementedError
     
     @abc.abstractmethod
-    def get_term(self) -> int:  # pragma: no cover abstract
+    async def get_term(self) -> int:  # pragma: no cover abstract
         raise NotImplementedError
     
     @abc.abstractmethod
-    def set_term(self, value: int):  # pragma: no cover abstract
+    async def set_term(self, value: int):  # pragma: no cover abstract
         raise NotImplementedError
     
     @abc.abstractmethod
-    def incr_term(self) -> int:  # pragma: no cover abstract
+    async def incr_term(self) -> int:  # pragma: no cover abstract
         raise NotImplementedError
     
     @abc.abstractmethod
-    def append(self, entries: List[LogRec]):  # pragma: no cover abstract
+    async def append(self, entries: List[LogRec]):  # pragma: no cover abstract
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -69,15 +69,15 @@ class LogAPI(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:  # pragma: no cover abstract
+    async def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:  # pragma: no cover abstract
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_last_index(self) -> int:  # pragma: no cover abstract
+    async def get_last_index(self) -> int:  # pragma: no cover abstract
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_last_term(self) -> int:  # pragma: no cover abstract
+    async def get_last_term(self) -> int:  # pragma: no cover abstract
         raise NotImplementedError
 
     

@@ -19,7 +19,7 @@ class Hull:
         self.pilot = pilot
         self.log = pilot.get_log()
         self.state = BaseState(self, StateCode.paused)
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger("Hull")
         self.state_async_handle = None
         self.state_run_after_target = None
         self.message_problem_history = []
@@ -39,7 +39,7 @@ class Hull:
         await self.stop_state()
         self.state = Candidate(self)
         await self.state.start()
-        self.logger.warning("%s started campaign %s", self.get_my_uri(), self.log.get_term())
+        self.logger.warning("%s started campaign %s", self.get_my_uri(), await self.log.get_term())
 
     async def win_vote(self, new_term):
         await self.stop_state()
@@ -126,8 +126,8 @@ class Hull:
     def get_processor(self):
         return self.pilot
     
-    def get_term(self):
-        return self.log.get_term()
+    async def get_term(self):
+        return await self.log.get_term()
 
     def get_cluster_node_ids(self):
         return self.cluster_config.node_uris

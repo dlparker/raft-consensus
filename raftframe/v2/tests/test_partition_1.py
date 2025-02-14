@@ -5,8 +5,9 @@ import pytest
 import time
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
+from raftframe.v2.tests.servers import setup_logging
 
-logging.basicConfig(level=logging.DEBUG)
+setup_logging()
 
 from raftframe.v2.tests.servers import WhenElectionDone
 from raftframe.v2.tests.servers import PausingCluster, cluster_maker

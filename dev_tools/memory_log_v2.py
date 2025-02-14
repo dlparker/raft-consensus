@@ -43,21 +43,25 @@ class MemoryLog(LogAPI):
         self.working_directory = None
         self.logger = logging.getLogger(__name__)
         
-    def start(self, server, working_directory):
+    async def start(self, server, working_directory):
         self.server = server
         self.working_directory = working_directory
     
-    def get_term(self) -> Union[int, None]:
+    async def get_term(self) -> Union[int, None]:
+        if not isinstance(self.term, int):
+            breakpoint()
         return self.term
     
-    def set_term(self, value: int):
+    async def set_term(self, value: int):
+        if not isinstance(value, int):
+            breakpoint()
         self.term = value
 
-    def incr_term(self):
+    async def incr_term(self):
         self.term += 1
         return self.term
 
-    def append(self, entries: List[LogRec]) -> None:
+    async def append(self, entries: List[LogRec]) -> None:
         # make copies
         for entry in entries:
             save_rec = LogRec(code=entry.code,
@@ -67,7 +71,7 @@ class MemoryLog(LogAPI):
             self.records.add_entry(save_rec)
         self.logger.debug("new log record %s", save_rec.index)
 
-    def replace_or_append(self, entry:LogRec) -> LogRec:
+    async def replace_or_append(self, entry:LogRec) -> LogRec:
         if entry.index is None:
             raise Exception("api usage error, call append for new record")
         if entry.index == 0:
@@ -89,7 +93,7 @@ class MemoryLog(LogAPI):
             self.records.insert_entry(save_rec)
         return deepcopy(save_rec)
     
-    def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:
+    async def read(self, index: Union[int, None] = None) -> Union[LogRec, None]:
         if index is None:
             rec = self.records.get_last_entry()
         else:
@@ -102,10 +106,10 @@ class MemoryLog(LogAPI):
             return None
         return deepcopy(rec)
 
-    def get_last_index(self):
+    async def get_last_index(self):
         return self.records.index
 
-    def get_last_term(self):
+    async def get_last_term(self):
         if self.records.index == 0:
             return 0
         rec = self.records.get_last_entry()

@@ -7,13 +7,14 @@ import traceback
 from raftframe.v2.messages.request_vote import RequestVoteMessage,RequestVoteResponseMessage
 from raftframe.v2.messages.append_entries import AppendEntriesMessage, AppendResponseMessage
 
-logging.basicConfig(level=logging.DEBUG)
-
 from raftframe.v2.tests.servers import WhenMessageOut, WhenMessageIn
 from raftframe.v2.tests.servers import WhenHasLogIndex
 from raftframe.v2.tests.servers import WhenInMessageCount, WhenElectionDone
 from raftframe.v2.tests.servers import WhenAllMessagesForwarded, WhenAllInMessagesHandled
 from raftframe.v2.tests.servers import PausingCluster, cluster_maker
+from raftframe.v2.tests.servers import setup_logging
+
+setup_logging()
 
 async def test_command_1(cluster_maker):
     cluster = cluster_maker(3)
@@ -54,13 +55,13 @@ async def test_command_1(cluster_maker):
     assert ts_1.operations.total == 1
     assert ts_2.operations.total == 1
     assert ts_3.operations.total == 1
-    term = ts_3.hull.log.get_term()
-    index = ts_3.hull.log.get_last_index()
+    term = await ts_3.hull.log.get_term()
+    index = await ts_3.hull.log.get_last_index()
     assert index == 1
-    assert ts_1.hull.log.get_term() == term
-    assert ts_1.hull.log.get_last_index() == index
-    assert ts_2.hull.log.get_term() == term
-    assert ts_2.hull.log.get_last_index() == index
+    assert await ts_1.hull.log.get_term() == term
+    assert await ts_1.hull.log.get_last_index() == index
+    assert await ts_2.hull.log.get_term() == term
+    assert await ts_2.hull.log.get_last_index() == index
     logger.debug('------------------------ Correct command done')
     
     await cluster.stop_auto_comms()
@@ -68,7 +69,7 @@ async def test_command_1(cluster_maker):
     assert command_result['redirect'] == uri_3
     logger.debug('------------------------ Correct redirect (follower) done')
     
-    orig_term =  ts_1.hull.get_term() 
+    orig_term =  await ts_1.hull.get_term() 
     await ts_1.hull.state.leader_lost()
     assert ts_1.hull.get_state_code() == "CANDIDATE"
     command_result = await ts_1.hull.apply_command("add 1")
@@ -77,7 +78,7 @@ async def test_command_1(cluster_maker):
     # cleanup attempt to start election
     ts_1.clear_all_msgs()
     # set term back so it won't trigger leader to quit
-    ts_1.hull.get_log().set_term(orig_term)
+    await ts_1.hull.get_log().set_term(orig_term)
 
     await ts_1.hull.demote_and_handle()
     await ts_3.hull.state.send_heartbeats()
@@ -103,7 +104,7 @@ async def test_command_1(cluster_maker):
         logger.debug('running command in background done')
     
     ts_1.operations.explode = True
-    orig_index = ts_3.hull.get_log().get_last_index()
+    orig_index = await ts_3.hull.get_log().get_last_index()
     ts_3.set_trigger(WhenHasLogIndex(orig_index + 1))
     # also have to fiddle the heartbeat timer or the messages won't be sent
     loop = asyncio.get_event_loop()
@@ -125,7 +126,7 @@ async def test_command_1(cluster_maker):
     # do it a couple more times so we can test that catch up function works
     # when follower is behind more than one record
     
-    orig_index = ts_3.hull.get_log().get_last_index()
+    orig_index = await ts_3.hull.get_log().get_last_index()
     ts_3.set_trigger(WhenHasLogIndex(orig_index + 1))
     # also have to fiddle the heartbeat timer or the messages won't be sent
     loop = asyncio.get_event_loop()
@@ -141,7 +142,7 @@ async def test_command_1(cluster_maker):
     assert ts_3.operations.total == 3
     assert ts_1.operations.total == 1
 
-    orig_index = ts_3.hull.get_log().get_last_index()
+    orig_index = await ts_3.hull.get_log().get_last_index()
     ts_3.set_trigger(WhenHasLogIndex(orig_index + 1))
     # also have to fiddle the heartbeat timer or the messages won't be sent
     loop = asyncio.get_event_loop()
@@ -162,7 +163,7 @@ async def test_command_1(cluster_maker):
     ts_3.hull.state.last_broadcast_time = 0
     logger.debug('---------Sending heartbeat and starting run_till_triggers with others ---')
     await ts_3.hull.state.send_heartbeats()
-    cur_index = ts_3.hull.get_log().get_last_index()
+    cur_index = await ts_3.hull.get_log().get_last_index()
     ts_1.set_trigger(WhenHasLogIndex(cur_index))
     await ts_1.run_till_triggers(free_others=True)
     assert ts_1.operations.total == 4
